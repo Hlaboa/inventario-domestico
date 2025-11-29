@@ -14,10 +14,7 @@
   }
 
   function hydrate(data = {}) {
-    state = {
-      ...state,
-      ...data,
-    };
+    state = { ...state, ...data };
     notify();
     return state;
   }

@@ -155,6 +155,39 @@ let isDraggingSelectionPopup = false;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
 
+function getInventoryContext() {
+  return {
+    refs: {
+      productTableBody,
+      filterSearchInput,
+      filterShelfSelect,
+      filterBlockSelect,
+      filterTypeSelect,
+      filterStoreSelect,
+      filterStatusSelect,
+      summaryInfo,
+    },
+    state: {
+      products,
+      productDrafts,
+    },
+    helpers: {
+      createTableInput,
+      createTableTextarea,
+      createFamilySelect,
+      createTypeSelect,
+      linkFamilyTypeSelects,
+      buildFamilyStripeMap,
+      compareShelfBlockTypeName,
+      productMatchesStore,
+      getSelectionLabelForProduct,
+      getSelectionStoresForProduct,
+      createSelectionButton,
+      handleInventoryTableClick,
+    },
+  };
+}
+
 // ==============================
 //  INICIALIZACIÓN
 // ==============================
@@ -432,6 +465,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Carga datos y renderizado inicial
   loadAllData();
+  InventoryView.init(getInventoryContext());
   renderAll();
   document.addEventListener("keydown", handleGlobalSaveShortcut);
   document.addEventListener("keydown", handleGlobalEscape);
@@ -706,25 +740,59 @@ function loadProductInstances() {
 }
 
 function saveProducts() {
+  if (window.AppStorage && typeof window.AppStorage.saveProducts === "function") {
+    window.AppStorage.saveProducts(products);
+    return;
+  }
   saveList(STORAGE_KEY, products);
 }
 function saveExtraProducts() {
+  if (window.AppStorage && typeof window.AppStorage.saveExtraProducts === "function") {
+    window.AppStorage.saveExtraProducts(extraProducts);
+    return;
+  }
   saveList(STORAGE_KEY_EXTRA, extraProducts);
 }
 function saveSuppliers() {
+  if (window.AppStorage && typeof window.AppStorage.saveSuppliers === "function") {
+    window.AppStorage.saveSuppliers(suppliers);
+    return;
+  }
   saveList(STORAGE_KEY_SUPPLIERS, suppliers);
 }
 function saveProducers() {
+  if (window.AppStorage && typeof window.AppStorage.saveProducers === "function") {
+    window.AppStorage.saveProducers(producers);
+    return;
+  }
   saveList(STORAGE_KEY_PRODUCERS, producers);
 }
 function saveProductInstances() {
+  if (window.AppStorage && typeof window.AppStorage.saveProductInstances === "function") {
+    window.AppStorage.saveProductInstances(productInstances);
+    return;
+  }
   saveList(STORAGE_KEY_INSTANCES, productInstances);
 }
 function saveClassifications() {
+  if (window.AppStorage && typeof window.AppStorage.saveClassifications === "function") {
+    window.AppStorage.saveClassifications(classifications);
+    return;
+  }
   saveList(STORAGE_KEY_CLASSIFICATIONS, classifications);
 }
 
 function loadAllData() {
+  if (window.AppStorage && typeof window.AppStorage.loadAllData === "function") {
+    const data = window.AppStorage.loadAllData();
+    products = data.products || [];
+    extraProducts = data.extraProducts || [];
+    suppliers = data.suppliers || [];
+    producers = data.producers || [];
+    classifications = data.classifications || [];
+    productInstances = data.productInstances || [];
+    return;
+  }
   loadProducts();
   loadExtraProducts();
   loadSuppliers();
@@ -746,10 +814,16 @@ function todayDateString() {
 }
 
 function nowIsoString() {
+  if (window.AppUtils && typeof window.AppUtils.nowIsoString === "function") {
+    return window.AppUtils.nowIsoString();
+  }
   return new Date().toISOString();
 }
 
 function safeLoadList(storageKey, normalizeItem) {
+  if (window.AppUtils && typeof window.AppUtils.safeLoadList === "function") {
+    return window.AppUtils.safeLoadList(storageKey, normalizeItem);
+  }
   try {
     const raw = localStorage.getItem(storageKey);
     const parsed = raw ? JSON.parse(raw) : [];
@@ -764,6 +838,9 @@ function safeLoadList(storageKey, normalizeItem) {
 }
 
 function saveList(storageKey, list) {
+  if (window.AppUtils && typeof window.AppUtils.saveList === "function") {
+    return window.AppUtils.saveList(storageKey, list);
+  }
   const data = Array.isArray(list) ? list : [];
   localStorage.setItem(storageKey, JSON.stringify(data));
 }
@@ -969,6 +1046,9 @@ function getFamilyForInstance(inst) {
 }
 
 function createTableInput(field, value = "", type = "text") {
+  if (window.AppUtils && typeof window.AppUtils.createTableInput === "function") {
+    return window.AppUtils.createTableInput(field, value, type);
+  }
   const input = document.createElement("input");
   input.type = type;
   input.value = value || "";
@@ -978,6 +1058,12 @@ function createTableInput(field, value = "", type = "text") {
 }
 
 function createTableTextarea(field, value = "") {
+  if (
+    window.AppUtils &&
+    typeof window.AppUtils.createTableTextarea === "function"
+  ) {
+    return window.AppUtils.createTableTextarea(field, value);
+  }
   const area = document.createElement("textarea");
   area.className = "table-input";
   if (field) area.dataset.field = field;
@@ -2331,200 +2417,7 @@ function renderProductsDatalist() {
 // ==============================
 
 function renderProducts() {
-  if (!productTableBody) return;
-  productTableBody.innerHTML = "";
-
-  let items = products.slice();
-  items.sort(compareShelfBlockTypeName);
-  const stripeMap = buildFamilyStripeMap(items);
-
-  const search = (filterSearchInput.value || "").toLowerCase();
-  const filterBlock = filterBlockSelect.value || "";
-  const filterType = filterTypeSelect.value || "";
-  const filterShelf = filterShelfSelect.value || "";
-  const filterStoreId = filterStoreSelect.value || "";
-  const status = filterStatusSelect.value || "all";
-
-  const rows = [];
-  let total = 0;
-  let haveCount = 0;
-  let missingCount = 0;
-
-  // Draft rows (inline formulario)
-  productDrafts.forEach((d) => {
-    const tr = document.createElement("tr");
-    tr.className = "product-draft-row";
-    tr.dataset.draftId = d.id;
-
-    let td = document.createElement("td");
-    td.appendChild(createTableInput("name", d.name || ""));
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    const famSel = createFamilySelect(d.block || "");
-    famSel.dataset.field = "block";
-    td.appendChild(famSel);
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    const typeSel = createTypeSelect(d.block || "", d.type || "");
-    typeSel.dataset.field = "type";
-    linkFamilyTypeSelects(famSel, typeSel);
-    td.appendChild(typeSel);
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    td.appendChild(createTableInput("shelf", d.shelf || ""));
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    td.appendChild(createTableInput("quantity", d.quantity || ""));
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    td.textContent = "—";
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    td.textContent = "—";
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    const haveChk = createTableInput("have", d.have ? "on" : "", "checkbox");
-    haveChk.checked = !!d.have;
-    td.appendChild(haveChk);
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    const adq = createTableInput("acquisitionDate", d.acquisitionDate || "", "date");
-    td.appendChild(adq);
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    td.appendChild(createTableInput("expiryText", d.expiryText || ""));
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    td.appendChild(createTableTextarea("notes", d.notes || ""));
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    const cancelBtn = document.createElement("button");
-    cancelBtn.className = "btn btn-small btn-danger";
-    cancelBtn.dataset.action = "cancel-draft-product";
-    cancelBtn.dataset.id = d.id;
-    cancelBtn.textContent = "✕";
-    td.appendChild(cancelBtn);
-    tr.appendChild(td);
-
-    productTableBody.appendChild(tr);
-  });
-
-  for (const p of items) {
-    if (filterBlock && (p.block || "") !== filterBlock) continue;
-    if (filterType && (p.type || "") !== filterType) continue;
-    if (filterShelf && (p.shelf || "") !== filterShelf) continue;
-
-    if (filterStoreId && !productMatchesStore(p, filterStoreId)) continue;
-
-    if (status === "have" && !p.have) continue;
-    if (status === "missing" && p.have) continue;
-
-    const searchHaystack =
-      (p.name || "") +
-      " " +
-      (p.block || "") +
-      " " +
-      (p.type || "") +
-      " " +
-      (p.shelf || "") +
-      " " +
-      (p.quantity || "") +
-      " " +
-      (p.notes || "") +
-      " " +
-      getSelectionLabelForProduct(p) +
-      " " +
-      getSelectionStoresForProduct(p);
-
-    if (search) {
-      if (!searchHaystack.toLowerCase().includes(search)) continue;
-    }
-
-    total++;
-    if (p.have) haveCount++;
-    else missingCount++;
-
-    const tr = document.createElement("tr");
-    tr.dataset.id = p.id;
-    const stripe = stripeMap[(p.block || "").trim() || "__none__"] || 0;
-    tr.classList.add(`family-stripe-${stripe}`);
-
-    const addCellText = (text) => {
-      const td = document.createElement("td");
-      td.textContent = text || "";
-      tr.appendChild(td);
-    };
-
-    addCellText(p.name || "");
-    addCellText(p.block || "");
-    addCellText(p.type || "");
-    addCellText(p.shelf || "");
-    addCellText(p.quantity || "");
-    const selTd = document.createElement("td");
-    selTd.className = "selection-td";
-    const selCell = document.createElement("div");
-    selCell.className = "selection-cell";
-    const selBtn = createSelectionButton(p.selectionId, p.id);
-    selCell.appendChild(selBtn);
-    const selText = document.createElement("div");
-    selText.className = "selection-text";
-    selText.textContent = getSelectionLabelForProduct(p);
-    selCell.appendChild(selText);
-    selTd.appendChild(selCell);
-    tr.appendChild(selTd);
-    addCellText(getSelectionStoresForProduct(p));
-
-    // Tengo
-    let td = document.createElement("td");
-    const haveCheck = document.createElement("input");
-    haveCheck.type = "checkbox";
-    haveCheck.checked = !!p.have;
-    haveCheck.dataset.field = "have";
-    haveCheck.dataset.id = p.id;
-    td.appendChild(haveCheck);
-    tr.appendChild(td);
-
-    addCellText(p.acquisitionDate || "");
-    addCellText(p.expiryText || "");
-    addCellText(p.notes || "");
-
-  // Acciones
-  td = document.createElement("td");
-  const moveBtn = document.createElement("button");
-  moveBtn.className = "btn btn-small btn-icon";
-  moveBtn.textContent = "→";
-  moveBtn.dataset.action = "move-to-extra";
-  moveBtn.dataset.id = p.id;
-  td.appendChild(moveBtn);
-
-    tr.appendChild(td);
-    productTableBody.appendChild(tr);
-    rows.push(tr);
-  }
-
-  if (rows.length === 0) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 12;
-    td.textContent = "No hay productos que coincidan con los filtros.";
-    tr.appendChild(td);
-    productTableBody.appendChild(tr);
-  }
-
-  if (summaryInfo) {
-    summaryInfo.textContent = `Total: ${total} · Tengo: ${haveCount} · Faltan: ${missingCount}`;
-  }
+  InventoryView.render(getInventoryContext());
 }
 
 function handleInventoryTableClick(e) {
