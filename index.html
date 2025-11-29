@@ -316,6 +316,35 @@
 
             <!-- Vista rápida -->
             <div id="otrosListPanel" class="sub-panel active">
+              <template id="extraQuickRowTemplate">
+                <tr>
+                  <td data-field="name"></td>
+                  <td data-field="block"></td>
+                  <td data-field="type"></td>
+                  <td data-field="quantity"></td>
+                  <td class="selection-td">
+                    <div class="selection-cell">
+                      <button data-role="selection-btn" class="btn btn-small btn-secondary"></button>
+                      <div class="selection-text" data-field="selectionText"></div>
+                    </div>
+                  </td>
+                  <td data-field="stores"></td>
+                  <td>
+                    <input type="checkbox" data-field="buy" />
+                  </td>
+                  <td data-field="notes"></td>
+                  <td>
+                    <button
+                      type="button"
+                      class="btn btn-small btn-icon"
+                      data-role="move"
+                    >
+                      →
+                    </button>
+                  </td>
+                </tr>
+              </template>
+
               <div class="filters filters-edit">
                 <div class="form-group quick-add-group">
                   <label>&nbsp;</label>

@@ -161,6 +161,7 @@ let extraEditFilterSearchInput;
 let extraEditFilterFamilySelect;
 let extraEditFilterTypeSelect;
 let extraEditFilterStoreSelect;
+let extraQuickRowTemplate;
 
 // Productores
 let producersSearchInput;
@@ -344,6 +345,7 @@ document.addEventListener("DOMContentLoaded", () => {
   );
   extraEditFilterTypeSelect = document.getElementById("extraEditFilterType");
   extraEditFilterStoreSelect = document.getElementById("extraEditFilterStore");
+  extraQuickRowTemplate = document.getElementById("extraQuickRowTemplate");
 
   // Productores
   producersSearchInput = document.getElementById("producersSearch");
@@ -703,6 +705,9 @@ document.addEventListener("DOMContentLoaded", () => {
           },
         })
       : null;
+  if (extraController && typeof extraController.render === "function") {
+    extraController.render();
+  }
 
   instancesController =
     window.InstancesController && window.InstancesController.create
@@ -712,6 +717,13 @@ document.addEventListener("DOMContentLoaded", () => {
           context: instancesViewContext,
         })
       : null;
+  if (instancesController && typeof instancesController.render === "function") {
+    instancesController.render();
+  }
+
+  if (window.InventoryView && typeof window.InventoryView.init === "function") {
+    window.InventoryView.init(getInventoryContext());
+  }
 
   classificationController =
     window.ClassificationController && window.ClassificationController.create

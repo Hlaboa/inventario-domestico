@@ -142,14 +142,16 @@
         data.unifiedProducts || [],
         normalizers.unifiedProduct
       );
+      const legacyProducts = normalizeList(data.products || [], normalizers.product);
+      const legacyExtras = normalizeList(data.extraProducts || [], normalizers.extraProduct);
       const products =
         unified.length > 0
           ? unified.filter((p) => p.scope === "almacen")
-          : normalizeList(data.products || [], normalizers.product);
+          : legacyProducts;
       const extraProducts =
         unified.length > 0
           ? unified.filter((p) => p.scope === "otros")
-          : normalizeList(data.extraProducts || [], normalizers.extraProduct);
+          : legacyExtras;
 
       return {
         products: normalizeList(products, normalizers.product),
@@ -182,12 +184,18 @@
         fallbackLoad(storageKeys.unifiedProducts, normalizers.unifiedProduct),
       normalizers.unifiedProduct
     );
-    const products = unifiedProducts
-      .filter((p) => p.scope === "almacen")
-      .map((p) => ({ ...p, scope: "almacen" }));
-    const extraProducts = unifiedProducts
-      .filter((p) => p.scope === "otros")
-      .map((p) => ({ ...p, scope: "otros" }));
+    const legacyProducts = fallbackLoad("inventarioCocinaAlmacen", normalizers.product);
+    const legacyExtras = fallbackLoad("otrosProductosCompra", normalizers.extraProduct);
+    const products = unifiedProducts.length
+      ? unifiedProducts
+          .filter((p) => p.scope === "almacen")
+          .map((p) => ({ ...p, scope: "almacen" }))
+      : legacyProducts.map((p) => ({ ...p, scope: "almacen" }));
+    const extraProducts = unifiedProducts.length
+      ? unifiedProducts
+          .filter((p) => p.scope === "otros")
+          .map((p) => ({ ...p, scope: "otros" }))
+      : legacyExtras.map((p) => ({ ...p, scope: "otros" }));
     const suppliers = normalizeList(
       (loadMap.suppliers && loadMap.suppliers()) ||
         fallbackLoad(storageKeys.suppliers, normalizers.supplier),
