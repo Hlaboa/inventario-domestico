@@ -298,6 +298,21 @@ let isDraggingSelectionPopup = false;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
 let filtersDefaultsApplied = false;
+let selectionDragCleanup = null;
+let selectionPopupInitialized = false;
+
+function showToast(message, timeout = 1800) {
+  if (window.UIHelpers && typeof window.UIHelpers.showToast === "function") {
+    window.UIHelpers.showToast(message, timeout);
+    return;
+  }
+  if (!message) return;
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), timeout + 400);
+}
 
 function getInventoryContext() {
   return {
@@ -447,7 +462,14 @@ document.addEventListener("DOMContentLoaded", () => {
   } = { ...refs });
 
   productAutocompleteDropdown =
-    productAutocompleteDropdown || createProductAutocompleteDropdown();
+    productAutocompleteDropdown ||
+    (window.UIHelpers && typeof window.UIHelpers.createAutocompleteDropdown === "function"
+      ? window.UIHelpers.createAutocompleteDropdown({
+          onSelect: (name) => applyProductAutocompleteSelection(name),
+        })
+      : createProductAutocompleteDropdown());
+
+  ensureSelectionPopupInit();
 
   if (window.AppBootstrap) {
     window.AppBootstrap.initMainNav(refs, {
@@ -1675,6 +1697,47 @@ function ensureInstanceFamilies({ persist = false } = {}) {
   }
 }
 
+function ensureSelectionPopupInit() {
+  if (selectionPopupInitialized || !window.SelectionPopup) return;
+  const refs = {
+    overlay: selectionPopupOverlay,
+    popup: selectionPopup,
+    closeBtn: selectionPopupClose,
+    title: selectionPopupTitle,
+    list: selectionPopupList,
+  };
+  window.SelectionPopup.init({
+    refs,
+    onClose: () => {
+      if (lastSelectionTrigger && typeof lastSelectionTrigger.focus === "function") {
+        try {
+          lastSelectionTrigger.focus();
+        } catch {}
+      }
+    },
+    initDrag: () => {
+      if (
+        window.UIHelpers &&
+        typeof window.UIHelpers.makeDraggable === "function" &&
+        selectionPopup
+      ) {
+        selectionDragCleanup = window.UIHelpers.makeDraggable(
+          selectionPopup,
+          selectionPopupHeader || selectionPopup,
+          {}
+        );
+      }
+    },
+    initResize: () => {
+      window.addEventListener("resize", handleSelectionPopupResize);
+    },
+    initKeydown: () => {
+      document.addEventListener("keydown", handleSelectionPopupKeydown);
+    },
+  });
+  selectionPopupInitialized = true;
+}
+
 function createTableInput(field, value = "", type = "text") {
   if (window.AppUtils && typeof window.AppUtils.createTableInput === "function") {
     return window.AppUtils.createTableInput(field, value, type);
@@ -1991,6 +2054,7 @@ function getSelectionMainStoreName(product) {
 
 function openSelectionPopupForProduct(productId) {
   if (!selectionPopupOverlay || !selectionPopup || !selectionPopupList) return;
+  ensureSelectionPopupInit();
   lastSelectionTrigger = document.activeElement;
 
   const product = findProductById(productId);
@@ -2344,9 +2408,13 @@ function openSelectionPopupForProduct(productId) {
   }
 
   // Mostrar overlay
-  selectionPopupOverlay.classList.add("visible");
-  centerSelectionPopup();
-  requestAnimationFrame(centerSelectionPopup);
+  if (window.SelectionPopup && typeof window.SelectionPopup.open === "function") {
+    window.SelectionPopup.open(selectionPopupTitle.textContent);
+  } else {
+    selectionPopupOverlay.classList.add("visible");
+    centerSelectionPopup();
+    requestAnimationFrame(centerSelectionPopup);
+  }
 }
 
 function clampSelectionPopupPosition(left, top) {
@@ -2402,18 +2470,21 @@ function handleSelectionPopupResize() {
 }
 
 function closeSelectionPopup() {
+  if (window.SelectionPopup && typeof window.SelectionPopup.close === "function") {
+    window.SelectionPopup.close();
+    return;
+  }
   if (!selectionPopupOverlay) return;
-  stopSelectionPopupDrag();
   selectionPopupOverlay.classList.remove("visible");
   if (selectionPopup) {
     selectionPopup.classList.remove("dragging");
     selectionPopup.style.transition = "";
   }
-   if (lastSelectionTrigger && typeof lastSelectionTrigger.focus === "function") {
-     try {
-       lastSelectionTrigger.focus();
-     } catch {}
-   }
+  if (lastSelectionTrigger && typeof lastSelectionTrigger.focus === "function") {
+    try {
+      lastSelectionTrigger.focus();
+    } catch {}
+  }
 }
 
 function handleSelectionPopupKeydown(e) {
@@ -2617,12 +2688,16 @@ function initHorizontalTableScroll() {
 // ==============================
 
 function createProductAutocompleteDropdown() {
+  if (window.UIHelpers && typeof window.UIHelpers.createAutocompleteDropdown === "function") {
+    return window.UIHelpers.createAutocompleteDropdown({
+      onSelect: (name) => applyProductAutocompleteSelection(name),
+    });
+  }
   const div = document.createElement("div");
   div.id = "productAutocompleteDropdown";
   div.className = "product-autocomplete-dropdown";
   div.style.display = "none";
   document.body.appendChild(div);
-
   div.addEventListener("mousedown", (e) => {
     const item = e.target.closest(".product-autocomplete-item");
     if (!item) return;
@@ -2630,21 +2705,6 @@ function createProductAutocompleteDropdown() {
     const name = item.dataset.name || "";
     applyProductAutocompleteSelection(name);
   });
-
-  const handleWheel = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (typeof e.stopImmediatePropagation === "function") {
-      e.stopImmediatePropagation();
-    }
-    const maxScroll = Math.max(div.scrollHeight - div.clientHeight, 0);
-    const next = Math.min(Math.max(div.scrollTop + e.deltaY, 0), maxScroll);
-    div.scrollTop = next;
-  };
-
-  div.addEventListener("wheel", handleWheel, { passive: false });
-  div.addEventListener("wheel", handleWheel, { passive: false, capture: true });
-
   return div;
 }
 
