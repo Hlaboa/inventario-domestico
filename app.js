@@ -162,6 +162,7 @@ let extraEditFilterFamilySelect;
 let extraEditFilterTypeSelect;
 let extraEditFilterStoreSelect;
 let extraQuickRowTemplate;
+let inventoryRowTemplate;
 
 // Productores
 let producersSearchInput;
@@ -197,11 +198,60 @@ let producersViewContext;
 let storesViewContext;
 let instancesViewContext;
 let inventoryController;
+let inventoryEditRowTemplate;
+let extraEditRowTemplate;
+let classificationRowTemplate;
+let producersRowTemplate;
+let storesRowTemplate;
+let instancesRowTemplate;
 let extraController;
 let instancesController;
 let classificationController;
 let producersController;
 let storesController;
+// Snapshot helper para export/import en modo store o standalone
+function getLatestStateSnapshot() {
+  if (window.AppStore && typeof window.AppStore.getState === "function") {
+    return window.AppStore.getState() || {};
+  }
+  if (window.AppState && typeof window.AppState.getState === "function") {
+    return window.AppState.getState() || {};
+  }
+  return {
+    products: products || [],
+    extraProducts: extraProducts || [],
+    unifiedProducts: unifiedProducts || recomputeUnifiedFromDerived(),
+    suppliers: suppliers || [],
+    producers: producers || [],
+    classifications: classifications || [],
+    productInstances: productInstances || [],
+  };
+}
+
+function initNavAccessibility() {
+  const tabsMain = document.querySelector(".tabs-main");
+  if (tabsMain) {
+    tabsMain.setAttribute("role", "tablist");
+    tabsMain.querySelectorAll(".tab-button").forEach((btn) => {
+      btn.setAttribute("role", "tab");
+    });
+  }
+}
+
+function initFiltersAccessibility() {
+  document.querySelectorAll(".filters").forEach((filter) => {
+    filter.setAttribute("role", "search");
+    if (!filter.getAttribute("aria-label")) {
+      const title = filter.closest("section")?.querySelector("h2");
+      if (title) {
+        filter.setAttribute(
+          "aria-label",
+          `Filtros para ${title.textContent.trim()}`
+        );
+      }
+    }
+  });
+}
 
 // Tabs tiendas/productores
 let producersPanel;
@@ -255,6 +305,7 @@ function getInventoryContext() {
       filterStoreSelect,
       filterStatusSelect,
       summaryInfo,
+      inventoryRowTemplate,
     },
     state: {
       products: products,
@@ -316,6 +367,12 @@ document.addEventListener("DOMContentLoaded", () => {
   filterStoreSelect = document.getElementById("filterStore");
   filterStatusSelect = document.getElementById("filterStatus");
   productTableBody = document.getElementById("productTableBody");
+  inventoryRowTemplate = document.getElementById("inventoryRowTemplate");
+  inventoryEditRowTemplate = document.getElementById("inventoryEditRowTemplate");
+  classificationRowTemplate = document.getElementById("classificationRowTemplate");
+  producersRowTemplate = document.getElementById("producersRowTemplate");
+  storesRowTemplate = document.getElementById("storesRowTemplate");
+  instancesRowTemplate = document.getElementById("instancesRowTemplate");
 
   // Almacén (editar)
   gridTableBody = document.getElementById("gridTableBody");
@@ -346,6 +403,7 @@ document.addEventListener("DOMContentLoaded", () => {
   extraEditFilterTypeSelect = document.getElementById("extraEditFilterType");
   extraEditFilterStoreSelect = document.getElementById("extraEditFilterStore");
   extraQuickRowTemplate = document.getElementById("extraQuickRowTemplate");
+  extraEditRowTemplate = document.getElementById("extraEditRowTemplate");
 
   // Productores
   producersSearchInput = document.getElementById("producersSearch");
@@ -570,6 +628,7 @@ document.addEventListener("DOMContentLoaded", () => {
       tableBody: classificationTableBody,
       addButton: addClassificationButton,
       saveButton: saveClassificationsButton,
+      rowTemplate: classificationRowTemplate,
     },
     getClassifications: () => classifications,
     persist: (list) => {
@@ -591,6 +650,7 @@ document.addEventListener("DOMContentLoaded", () => {
       saveButton: saveProducersButton,
       searchInput: producersSearchInput,
       locationFilter: producersLocationFilterSelect,
+      rowTemplate: producersRowTemplate,
     },
     getProducers: () => producers,
     persist: (list) => {
@@ -613,6 +673,7 @@ document.addEventListener("DOMContentLoaded", () => {
       searchInput: storesSearchInput,
       typeFilter: storesTypeFilterSelect,
       locationFilter: storesLocationFilterSelect,
+      rowTemplate: storesRowTemplate,
     },
     getStores: () => suppliers,
     persist: (list) => {
@@ -636,6 +697,7 @@ document.addEventListener("DOMContentLoaded", () => {
       familyFilter: instancesFamilyFilterSelect,
       producerFilter: instancesProducerFilterSelect,
       storeFilter: instancesStoreFilterSelect,
+      rowTemplate: instancesRowTemplate,
     },
     data: {
       instances: productInstances,
@@ -767,6 +829,8 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("keydown", handleGlobalSaveShortcut);
   document.addEventListener("keydown", handleGlobalEscape);
 
+  initNavAccessibility();
+  initFiltersAccessibility();
   setMainSection("almacen");
   setAlmacenMode(false);
   setOtrosMode(false);
@@ -786,8 +850,16 @@ function setMainSection(section) {
   const isStores = section === "stores";
   const isProveedores = isSelection || isProd || isStores;
 
+  const setAriaCurrent = (btn, active) => {
+    if (!btn) return;
+    if (active) btn.setAttribute("aria-current", "page");
+    else btn.removeAttribute("aria-current");
+  };
+
   mainAlmacenButton.classList.toggle("active", isAlmacen);
   mainOtrosButton.classList.toggle("active", isOtros);
+  setAriaCurrent(mainAlmacenButton, isAlmacen);
+  setAriaCurrent(mainOtrosButton, isOtros);
   if (mainSelectionButton)
     mainSelectionButton.classList.toggle("active", isSelection);
   if (mainClassificationButton)
@@ -795,6 +867,10 @@ function setMainSection(section) {
   if (mainProducersButton)
     mainProducersButton.classList.toggle("active", isProd);
   if (mainStoresButton) mainStoresButton.classList.toggle("active", isStores);
+  setAriaCurrent(mainSelectionButton, isSelection);
+  setAriaCurrent(mainClassificationButton, isClassification);
+  setAriaCurrent(mainProducersButton, isProd);
+  setAriaCurrent(mainStoresButton, isStores);
 
   almacenSection.classList.toggle("active", isAlmacen);
   otrosSection.classList.toggle("active", isOtros);
@@ -1803,9 +1879,12 @@ function openSelectionPopupForProduct(productId) {
   });
   selectionPopupList.appendChild(liNone);
 
-  const instances = productInstances.filter(
-    (inst) => inst.productId === productId
-  );
+  const nameLower = (product.name || "").trim().toLowerCase();
+  const instances = productInstances.filter((inst) => {
+    if (inst.productId === productId) return true;
+    const instName = (inst.productName || "").trim().toLowerCase();
+    return nameLower && instName && instName === nameLower;
+  });
 
   if (instances.length === 0) {
     const empty = document.createElement("p");
@@ -2182,32 +2261,27 @@ function handleSelectionPopupKeydown(e) {
 }
 
 function applySelectionToProduct(productId, selectionId) {
+  refreshProductsFromUnified();
   const now = nowIsoString();
   let found = false;
 
-  products.forEach((p) => {
+  unifiedProducts = (unifiedProducts || []).map((p) => {
     if (p.id === productId) {
-      p.selectionId = selectionId;
-      p.updatedAt = now;
       found = true;
+      return { ...p, selectionId, updatedAt: now };
     }
+    return p;
   });
-  extraProducts.forEach((p) => {
-    if (p.id === productId) {
-      p.selectionId = selectionId;
-      p.updatedAt = now;
-      found = true;
-    }
-  });
+  refreshProductsFromUnified();
 
   if (found) {
+    persistUnified(unifiedProducts);
     saveProducts();
     saveExtraProducts();
     renderProducts();
-    if (!isStoreActive()) {
-      renderExtraQuickTable();
-      renderExtraEditTable();
-    }
+    renderGridRows();
+    renderExtraQuickTable();
+    renderExtraEditTable();
     renderShoppingList();
   }
 
@@ -2834,16 +2908,28 @@ function renderProductsDatalist() {
 function renderProducts() {
   refreshProductsFromUnified();
   products = getPantryProducts();
+  if (!productTableBody) return;
+  // InventoryView se encarga del render (usa plantilla cuando está disponible)
   if (window.InventoryView) {
-    const ctx = getInventoryContext();
-    InventoryView.render(ctx);
+    InventoryView.render(getInventoryContext());
+    return;
   }
 }
 
 function handleInventoryTableClick(e) {
   refreshProductsFromUnified();
-  const target = e.target;
-  const action = target.dataset.action;
+  const target = e.target.closest("button,[data-action],[data-role]") || e.target;
+  const roleActionMap = {
+    "selection-btn": "select-selection",
+    move: "move-to-extra",
+    delete: "delete",
+  };
+  let action = target.dataset.action || roleActionMap[target.dataset.role];
+  if (!action && target.closest("button")) {
+    const text = target.closest("button").textContent.trim();
+    if (text === "✕") action = "delete";
+    if (text === "→") action = "move-to-extra";
+  }
 
   if (action === "cancel-draft-product") {
     const id = target.dataset.id;
@@ -2869,7 +2955,7 @@ function handleInventoryTableClick(e) {
 
   if (!action) return;
 
-  const id = target.dataset.id;
+  const id = target.dataset.id || target.closest("tr")?.dataset.id;
 
   if (action === "move-to-extra") {
     moveProductToExtra(id);
@@ -3086,112 +3172,121 @@ function commitDraftExtras() {
 //  ALMACÉN: EDICIÓN
 // ==============================
 
-function renderGridRows() {
-  refreshProductsFromUnified();
-  if (!gridTableBody) return;
-  gridTableBody.innerHTML = "";
+function createInventoryEditRow(p, stripe = 0) {
+  const components = window.AppComponents || {};
+  const hasTemplate =
+    inventoryEditRowTemplate &&
+    typeof components.cloneRowFromTemplate === "function" &&
+    typeof components.hydrateRow === "function";
 
-  const items = getPantryProducts().slice().sort(compareShelfBlockTypeName);
-  const stripeMap = buildFamilyStripeMap(items);
+  const famSel = createFamilySelect(p.block || "");
+  const typeSel = createTypeSelect(p.block || "", p.type || "");
+  linkFamilyTypeSelects(famSel, typeSel);
 
-  if (items.length === 0) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 12;
-    td.textContent =
-      "No hay productos todavía. Usa 'Añadir producto' para crear uno nuevo.";
-    tr.appendChild(td);
-    gridTableBody.appendChild(tr);
-    return;
+  const selectionBtn = createSelectionButton(p.selectionId, p.id);
+  const haveCheckbox = document.createElement("input");
+  haveCheckbox.type = "checkbox";
+  haveCheckbox.dataset.field = "have";
+  haveCheckbox.checked = !!p.have;
+
+  const adqInput = document.createElement("input");
+  adqInput.type = "date";
+  adqInput.className = "table-input";
+  adqInput.dataset.field = "acquisitionDate";
+  adqInput.value = p.acquisitionDate || "";
+
+  if (hasTemplate) {
+    const row = components.cloneRowFromTemplate(inventoryEditRowTemplate);
+    if (!row) return null;
+    components.hydrateRow(row, {
+      dataset: { id: p.id },
+      classes: [`family-stripe-${stripe}`],
+      text: {
+        "[data-field='selectionText']": getSelectionLabelForProduct(p),
+        "[data-field='stores']": getSelectionStoresForProduct(p),
+      },
+      actions: {
+        "[data-role='selection-btn']": { action: "select-selection", id: p.id },
+        "[data-role='move']": { action: "move-to-extra", id: p.id },
+        "[data-role='delete']": { action: "delete", id: p.id },
+      },
+      replacements: {
+        "[data-slot='name']": createTableInput("name", p.name),
+        "[data-slot='block']": famSel,
+        "[data-slot='type']": typeSel,
+        "[data-slot='shelf']": createTableInput("shelf", p.shelf),
+        "[data-slot='quantity']": createTableInput("quantity", p.quantity),
+        "[data-slot='have']": haveCheckbox,
+        "[data-slot='acquisitionDate']": adqInput,
+        "[data-slot='expiryText']": createTableInput("expiryText", p.expiryText),
+        "[data-slot='notes']": createTableTextarea("notes", p.notes || ""),
+        "[data-role='selection-btn']": selectionBtn,
+      },
+    });
+    return row;
   }
 
-  items.forEach((p) => {
-    const tr = document.createElement("tr");
-    tr.dataset.id = p.id;
-    const stripe = stripeMap[(p.block || "").trim() || "__none__"] || 0;
-    tr.classList.add(`family-stripe-${stripe}`);
+  const tr = document.createElement("tr");
+  tr.dataset.id = p.id;
+  tr.classList.add(`family-stripe-${stripe}`);
+  tr.classList.add(`family-stripe-${stripe}`);
 
-    let td;
+  let td;
 
-    // Producto
-    td = document.createElement("td");
-    td.appendChild(createTableInput("name", p.name));
-    tr.appendChild(td);
+  td = document.createElement("td");
+  td.appendChild(createTableInput("name", p.name));
+  tr.appendChild(td);
 
-    // Familia
-    td = document.createElement("td");
-    const famSel = createFamilySelect(p.block || "");
-    td.appendChild(famSel);
-    tr.appendChild(td);
+  td = document.createElement("td");
+  td.appendChild(famSel);
+  tr.appendChild(td);
 
-    // Tipo
-    td = document.createElement("td");
-    const typeSel = createTypeSelect(p.block || "", p.type || "");
-    linkFamilyTypeSelects(famSel, typeSel);
-    td.appendChild(typeSel);
-    tr.appendChild(td);
+  td = document.createElement("td");
+  td.appendChild(typeSel);
+  tr.appendChild(td);
 
-    // Ubicación
-    td = document.createElement("td");
-    td.appendChild(createTableInput("shelf", p.shelf));
-    tr.appendChild(td);
+  td = document.createElement("td");
+  td.appendChild(createTableInput("shelf", p.shelf));
+  tr.appendChild(td);
 
-    // Cantidad
-    td = document.createElement("td");
-    td.appendChild(createTableInput("quantity", p.quantity));
-    tr.appendChild(td);
+  td = document.createElement("td");
+  td.appendChild(createTableInput("quantity", p.quantity));
+  tr.appendChild(td);
 
-    // Selección (solo texto)
-    td = document.createElement("td");
-    td.className = "selection-td";
-    const selCell = document.createElement("div");
-    selCell.className = "selection-cell";
-    const spanSel = document.createElement("span");
-    spanSel.className = "selection-text";
-    spanSel.textContent = getSelectionLabelForProduct(p);
-    selCell.appendChild(spanSel);
-    const selectBtn = createSelectionButton(p.selectionId, p.id);
-    selCell.appendChild(selectBtn);
-    td.appendChild(selCell);
-    tr.appendChild(td);
+  td = document.createElement("td");
+  td.className = "selection-td";
+  const selCell = document.createElement("div");
+  selCell.className = "selection-cell";
+  const spanSel = document.createElement("span");
+  spanSel.className = "selection-text";
+  spanSel.textContent = getSelectionLabelForProduct(p);
+  selCell.appendChild(spanSel);
+  selCell.appendChild(selectionBtn);
+  td.appendChild(selCell);
+  tr.appendChild(td);
 
-    // Tiendas (solo texto)
-    td = document.createElement("td");
-    const spanStores = document.createElement("span");
-    spanStores.textContent = getSelectionStoresForProduct(p);
-    td.appendChild(spanStores);
-    tr.appendChild(td);
+  td = document.createElement("td");
+  const spanStores = document.createElement("span");
+  spanStores.textContent = getSelectionStoresForProduct(p);
+  td.appendChild(spanStores);
+  tr.appendChild(td);
 
-    // Tengo
-    td = document.createElement("td");
-    const chk = document.createElement("input");
-    chk.type = "checkbox";
-    chk.checked = !!p.have;
-    chk.dataset.field = "have";
-    td.appendChild(chk);
-    tr.appendChild(td);
+  td = document.createElement("td");
+  td.appendChild(haveCheckbox);
+  tr.appendChild(td);
 
-    // F. adquisición
-    td = document.createElement("td");
-    const adq = document.createElement("input");
-    adq.type = "date";
-    adq.value = p.acquisitionDate || "";
-    adq.className = "table-input";
-    adq.dataset.field = "acquisitionDate";
-    td.appendChild(adq);
-    tr.appendChild(td);
+  td = document.createElement("td");
+  td.appendChild(adqInput);
+  tr.appendChild(td);
 
-    // Caducidad (texto libre)
-    td = document.createElement("td");
-    td.appendChild(createTableInput("expiryText", p.expiryText));
-    tr.appendChild(td);
+  td = document.createElement("td");
+  td.appendChild(createTableInput("expiryText", p.expiryText));
+  tr.appendChild(td);
 
-    // Notas
-    td = document.createElement("td");
-    td.appendChild(createTableTextarea("notes", p.notes || ""));
-    tr.appendChild(td);
+  td = document.createElement("td");
+  td.appendChild(createTableTextarea("notes", p.notes || ""));
+  tr.appendChild(td);
 
-  // Acciones
   td = document.createElement("td");
   const moveBtn = document.createElement("button");
   moveBtn.className = "btn btn-small btn-icon";
@@ -3208,9 +3303,53 @@ function renderGridRows() {
   td.appendChild(delBtn);
 
   tr.appendChild(td);
+  return tr;
+}
 
+function renderGridRows() {
+  refreshProductsFromUnified();
+  if (!gridTableBody) return;
+  gridTableBody.innerHTML = "";
+
+  const items = getPantryProducts().slice().sort(compareShelfBlockTypeName);
+  const stripeMap = buildFamilyStripeMap(items);
+  const components = window.AppComponents || {};
+  const hasTemplate =
+    inventoryEditRowTemplate &&
+    typeof components.cloneRowFromTemplate === "function" &&
+    typeof components.hydrateRow === "function";
+
+  if (items.length === 0) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 12;
+    td.textContent =
+      "No hay productos todavía. Usa 'Añadir producto' para crear uno nuevo.";
+    tr.appendChild(td);
     gridTableBody.appendChild(tr);
-  });
+    return;
+  }
+
+  if (hasTemplate && typeof components.renderTable === "function") {
+    components.renderTable(gridTableBody, items, {
+      template: inventoryEditRowTemplate,
+      emptyMessage:
+        "No hay productos todavía. Usa 'Añadir producto' para crear uno nuevo.",
+      emptyColSpan: 12,
+      createRow: (item) => {
+        const stripe = stripeMap[(item.block || "").trim() || "__none__"] || 0;
+        return createInventoryEditRow(item, stripe);
+      },
+    });
+  } else {
+    const frag = document.createDocumentFragment();
+    items.forEach((p) => {
+      const stripe = stripeMap[(p.block || "").trim() || "__none__"] || 0;
+      const row = createInventoryEditRow(p, stripe);
+      if (row) frag.appendChild(row);
+    });
+    gridTableBody.appendChild(frag);
+  }
 
   filterGridRows();
 }
@@ -3234,124 +3373,56 @@ function handleAddGridRow() {
   const defType = editFilterTypeSelect.value || "";
   const defShelf = editFilterShelfSelect.value || "";
 
-  const tr = document.createElement("tr");
-  tr.dataset.id = id;
+  const product = {
+    id,
+    name: "",
+    block: defBlock,
+    type: defType,
+    shelf: defShelf,
+    quantity: "",
+    have: false,
+    acquisitionDate: "",
+    expiryText: "",
+    notes: "",
+    selectionId: "",
+  };
 
-  let td;
-
-  // Producto
-  td = document.createElement("td");
-  td.appendChild(createTableInput("name", ""));
-  tr.appendChild(td);
-
-  // Familia
-  td = document.createElement("td");
-  const famSel = createFamilySelect(defBlock);
-  td.appendChild(famSel);
-  tr.appendChild(td);
-
-  // Tipo
-  td = document.createElement("td");
-  const typeSel = createTypeSelect(defBlock, defType);
-  linkFamilyTypeSelects(famSel, typeSel);
-  td.appendChild(typeSel);
-  tr.appendChild(td);
-
-  // Ubicación
-  td = document.createElement("td");
-  td.appendChild(createTableInput("shelf", defShelf));
-  tr.appendChild(td);
-
-  // Cantidad
-  td = document.createElement("td");
-  td.appendChild(createTableInput("quantity", ""));
-  tr.appendChild(td);
-
-  // Selección (texto)
-  td = document.createElement("td");
-  td.className = "selection-td";
-  const selCell = document.createElement("div");
-  selCell.className = "selection-cell";
-  const spanSel = document.createElement("span");
-  spanSel.className = "selection-text";
-  spanSel.textContent = "";
-  selCell.appendChild(spanSel);
-  const selectBtn = createSelectionButton("", id);
-  selCell.appendChild(selectBtn);
-  td.appendChild(selCell);
-  tr.appendChild(td);
-
-  // Tiendas (texto)
-  td = document.createElement("td");
-  const spanStores = document.createElement("span");
-  spanStores.textContent = "";
-  td.appendChild(spanStores);
-  tr.appendChild(td);
-
-  // Tengo
-  td = document.createElement("td");
-  const chk = document.createElement("input");
-  chk.type = "checkbox";
-  chk.dataset.field = "have";
-  td.appendChild(chk);
-  tr.appendChild(td);
-
-  // F. adquisición
-  td = document.createElement("td");
-  const adq = document.createElement("input");
-  adq.type = "date";
-  adq.className = "table-input";
-  adq.dataset.field = "acquisitionDate";
-  td.appendChild(adq);
-  tr.appendChild(td);
-
-  // Caducidad
-  td = document.createElement("td");
-  td.appendChild(createTableInput("expiryText", ""));
-  tr.appendChild(td);
-
-  // Notas
-  td = document.createElement("td");
-  td.appendChild(createTableTextarea("notes", ""));
-  tr.appendChild(td);
-
-  // Acciones
-  td = document.createElement("td");
-  const moveBtn = document.createElement("button");
-  moveBtn.className = "btn btn-small btn-icon";
-  moveBtn.textContent = "→";
-  moveBtn.dataset.action = "move-to-extra";
-  moveBtn.dataset.id = id;
-  td.appendChild(moveBtn);
-
-  const delBtn = document.createElement("button");
-  delBtn.className = "btn btn-small btn-danger";
-  delBtn.textContent = "✕";
-  delBtn.dataset.action = "delete";
-  delBtn.dataset.id = id;
-  td.appendChild(delBtn);
-  tr.appendChild(td);
-
-  gridTableBody.appendChild(tr);
+  const row = createInventoryEditRow(product, 0);
+  if (row) gridTableBody.prepend(row);
 }
 
 function handleGridClick(e) {
-  const target = e.target;
-  const action = target.dataset.action;
+  const target = e.target.closest("button,[data-action],[data-role]") || e.target;
+  const roleActionMap = {
+    "selection-btn": "select-selection",
+    move: "move-to-extra",
+    delete: "delete",
+  };
+  let action = target.dataset.action || roleActionMap[target.dataset.role];
+  if (!action && target.closest("button")) {
+    const text = target.closest("button").textContent.trim();
+    if (text === "✕") action = "delete";
+    if (text === "→") action = "move-to-extra";
+  }
   if (!action) return;
 
   if (action === "delete") {
     const tr = target.closest("tr");
-    if (tr) tr.remove();
+    const id = tr?.dataset.id || target.dataset.id;
+    if (id) {
+      removeProductById(id);
+    } else if (tr) {
+      tr.remove();
+    }
   } else if (action === "move-to-extra") {
     const tr = target.closest("tr");
     if (!tr) return;
-    const id = tr.dataset.id;
+    const id = tr.dataset.id || target.dataset.id;
     moveProductToExtra(id);
   } else if (action === "select-selection") {
     const tr = target.closest("tr");
     if (!tr) return;
-    const id = tr.dataset.id;
+    const id = tr.dataset.id || target.dataset.id;
     if (!id) return;
     const product = products.find((p) => p.id === id);
     if (!product) return;
@@ -3416,15 +3487,14 @@ function handleSaveGrid() {
   products = newProducts;
   const hasStore = isStoreActive() && window.AppStore && window.AppStore.actions && typeof window.AppStore.actions.setProducts === "function";
   saveProducts();
-  if (!hasStore) {
-    renderShelfOptions();
-    renderBlockOptions();
-    renderTypeOptions();
-    updateInstanceFilterOptions();
-    renderProductsDatalist();
-    renderProducts();
-    renderShoppingList();
-  }
+  renderShelfOptions();
+  renderBlockOptions();
+  renderTypeOptions();
+  updateInstanceFilterOptions();
+  renderProductsDatalist();
+  renderProducts();
+  renderShoppingList();
+  // Sal de modo edición aunque haya store activo
   setAlmacenMode(false);
 }
 
@@ -3614,64 +3684,122 @@ function renderExtraQuickTable() {
     return;
   }
 
+  const frag = document.createDocumentFragment();
   items.forEach((p) => {
-    const tr = document.createElement("tr");
-    tr.dataset.id = p.id;
     const stripe = stripeMap[(p.block || "").trim() || "__none__"] || 0;
-    tr.classList.add(`family-stripe-${stripe}`);
-
-    const addCellText = (t) => {
-      const td = document.createElement("td");
-      td.textContent = t || "";
-      tr.appendChild(td);
-    };
-
-    addCellText(p.name || "");
-    addCellText(p.block || "");
-    addCellText(p.type || "");
-    addCellText(p.quantity || "");
-    const selTd = document.createElement("td");
-    selTd.className = "selection-td";
-    const selCell = document.createElement("div");
-    selCell.className = "selection-cell";
-    const selBtn = createSelectionButton(p.selectionId, p.id);
-    selCell.appendChild(selBtn);
-    const selText = document.createElement("div");
-    selText.className = "selection-text";
-    selText.textContent = getSelectionLabelForProduct(p);
-    selCell.appendChild(selText);
-    selTd.appendChild(selCell);
-    tr.appendChild(selTd);
-    addCellText(getSelectionStoresForProduct(p));
-
-    // Comprar
-    let td = document.createElement("td");
-    const chk = document.createElement("input");
-    chk.type = "checkbox";
-    chk.checked = !!p.buy;
-    chk.dataset.field = "buy";
-    chk.dataset.id = p.id;
-    td.appendChild(chk);
-    tr.appendChild(td);
-
-    addCellText(p.notes || "");
-
-    // Acciones
-    td = document.createElement("td");
-    const moveBtn = document.createElement("button");
-    moveBtn.className = "btn btn-small btn-icon";
-    moveBtn.textContent = "→";
-    moveBtn.dataset.action = "move-to-almacen";
-    moveBtn.dataset.id = p.id;
-    td.appendChild(moveBtn);
-
-    tr.appendChild(td);
-    extraListTableBody.appendChild(tr);
+    const row = cloneExtraQuickRow(p, stripe);
+    if (row) frag.appendChild(row);
   });
+  extraListTableBody.appendChild(frag);
+}
+
+// Fila para tabla de "Otros" usando template o fallback imperativo
+function cloneExtraQuickRow(product, stripe = 0) {
+  let tr = null;
+  const components = window.AppComponents || {};
+  const canUseTemplate =
+    extraQuickRowTemplate &&
+    typeof components.cloneRowFromTemplate === "function" &&
+    typeof components.hydrateRow === "function";
+
+  if (canUseTemplate) {
+    tr = components.cloneRowFromTemplate(extraQuickRowTemplate);
+    if (tr) {
+      const selectionBtn = createSelectionButton(product.selectionId, product.id);
+      components.hydrateRow(tr, {
+        dataset: { id: product.id },
+        classes: [`family-stripe-${stripe}`],
+        text: {
+          "[data-field='name']": product.name,
+          "[data-field='block']": product.block,
+          "[data-field='type']": product.type,
+          "[data-field='quantity']": product.quantity,
+          "[data-field='notes']": product.notes,
+          "[data-field='stores']": getSelectionStoresForProduct(product),
+          "[data-field='selectionText']": getSelectionLabelForProduct(product),
+        },
+        checkboxes: {
+          'input[data-field="buy"]': !!product.buy,
+        },
+        attributes: {
+          'input[data-field="buy"]': { dataset: { id: product.id } },
+        },
+        actions: {
+          "[data-role='move']": { action: "move-to-almacen", id: product.id },
+        },
+        replacements: {
+          "[data-role='selection-btn']": selectionBtn,
+        },
+      });
+      return tr;
+    }
+  }
+
+  // Fallback imperativo
+  tr = document.createElement("tr");
+  tr.dataset.id = product.id;
+  tr.classList.add(`family-stripe-${stripe}`);
+
+  const addCellText = (t) => {
+    const td = document.createElement("td");
+    td.textContent = t || "";
+    tr.appendChild(td);
+  };
+
+  addCellText(product.name || "");
+  addCellText(product.block || "");
+  addCellText(product.type || "");
+  addCellText(product.quantity || "");
+  const selTd = document.createElement("td");
+  selTd.className = "selection-td";
+  const selCell = document.createElement("div");
+  selCell.className = "selection-cell";
+  const selBtn = createSelectionButton(product.selectionId, product.id);
+  selCell.appendChild(selBtn);
+  const selText = document.createElement("div");
+  selText.className = "selection-text";
+  selText.textContent = getSelectionLabelForProduct(product);
+  selCell.appendChild(selText);
+  selTd.appendChild(selCell);
+  tr.appendChild(selTd);
+  addCellText(getSelectionStoresForProduct(product));
+
+  let td = document.createElement("td");
+  const chk = document.createElement("input");
+  chk.type = "checkbox";
+  chk.checked = !!product.buy;
+  chk.dataset.field = "buy";
+  chk.dataset.id = product.id;
+  td.appendChild(chk);
+  tr.appendChild(td);
+
+  addCellText(product.notes || "");
+
+  td = document.createElement("td");
+  const moveBtn = document.createElement("button");
+  moveBtn.className = "btn btn-small btn-icon";
+  moveBtn.textContent = "→";
+  moveBtn.dataset.action = "move-to-almacen";
+  moveBtn.dataset.id = product.id;
+  td.appendChild(moveBtn);
+
+  tr.appendChild(td);
+  return tr;
 }
 
 function handleExtraListClick(e) {
-  const target = e.target;
+  const target = e.target.closest("button,[data-action],[data-role]") || e.target;
+  const roleActionMap = {
+    "selection-btn": "select-selection",
+    move: "move-to-almacen",
+    delete: "delete",
+  };
+  let action = target.dataset.action || roleActionMap[target.dataset.role];
+  if (!action && target.closest("button")) {
+    const text = target.closest("button").textContent.trim();
+    if (text === "✕") action = "delete";
+    if (text === "→") action = "move-to-almacen";
+  }
 
   if (target.dataset.action === "cancel-draft-extra") {
     const id = target.dataset.id;
@@ -3690,9 +3818,8 @@ function handleExtraListClick(e) {
     return;
   }
 
-  const action = target.dataset.action;
   if (!action) return;
-  const id = target.dataset.id;
+  const id = target.dataset.id || target.closest("tr")?.dataset.id;
 
   if (action === "move-to-almacen") {
     moveExtraToAlmacen(id);
@@ -3729,9 +3856,147 @@ function moveExtraToAlmacen(id) {
   renderShoppingList();
 }
 
+function removeExtraById(id) {
+  if (!id) return;
+  const before = extraProducts.length;
+  extraProducts = extraProducts.filter((p) => p.id !== id);
+  unifiedProducts = unifiedProducts.filter((p) => p.id !== id);
+  if (extraProducts.length === before) return;
+  persistUnified(unifiedProducts);
+  saveExtraProducts();
+  renderExtraEditTable();
+  renderExtraQuickTable();
+  renderShoppingList();
+}
+
+function removeProductById(id) {
+  if (!id) return;
+  const before = products.length;
+  products = products.filter((p) => p.id !== id);
+  unifiedProducts = unifiedProducts.filter((p) => p.id !== id);
+  if (products.length === before) return;
+  persistUnified(unifiedProducts);
+  saveProducts();
+  renderGridRows();
+  renderProducts();
+  renderExtraQuickTable();
+  renderExtraEditTable();
+  renderShoppingList();
+}
+
 // ==============================
 //  OTROS PRODUCTOS: EDICIÓN
 // ==============================
+
+function createExtraEditRow(p, stripe = 0) {
+  const components = window.AppComponents || {};
+  const hasTemplate =
+    extraEditRowTemplate &&
+    typeof components.cloneRowFromTemplate === "function" &&
+    typeof components.hydrateRow === "function";
+
+  const famSel = createFamilySelect(p.block || "");
+  const typeSel = createTypeSelect(p.block || "", p.type || "");
+  linkFamilyTypeSelects(famSel, typeSel);
+  const selectionBtn = createSelectionButton(p.selectionId, p.id);
+  const buyCheckbox = document.createElement("input");
+  buyCheckbox.type = "checkbox";
+  buyCheckbox.dataset.field = "buy";
+  buyCheckbox.checked = !!p.buy;
+
+  if (hasTemplate) {
+    const row = components.cloneRowFromTemplate(extraEditRowTemplate);
+    if (!row) return null;
+    components.hydrateRow(row, {
+      dataset: { id: p.id },
+      classes: [`family-stripe-${stripe}`],
+      text: {
+        "[data-field='selectionText']": getSelectionLabelForProduct(p),
+        "[data-field='stores']": getSelectionStoresForProduct(p),
+      },
+      actions: {
+        "[data-role='selection-btn']": { action: "select-selection", id: p.id },
+        "[data-role='move']": { action: "move-to-almacen", id: p.id },
+        "[data-role='delete']": { action: "delete", id: p.id },
+      },
+      replacements: {
+        "[data-slot='name']": createTableInput("name", p.name),
+        "[data-slot='block']": famSel,
+        "[data-slot='type']": typeSel,
+        "[data-slot='quantity']": createTableInput("quantity", p.quantity),
+        "[data-slot='buy']": buyCheckbox,
+        "[data-slot='notes']": createTableTextarea("notes", p.notes || ""),
+        "[data-role='selection-btn']": selectionBtn,
+      },
+    });
+    return row;
+  }
+
+  const tr = document.createElement("tr");
+  tr.dataset.id = p.id;
+
+  let td;
+
+  td = document.createElement("td");
+  td.appendChild(createTableInput("name", p.name));
+  tr.appendChild(td);
+
+  td = document.createElement("td");
+  td.appendChild(famSel);
+  tr.appendChild(td);
+
+  td = document.createElement("td");
+  td.appendChild(typeSel);
+  tr.appendChild(td);
+
+  td = document.createElement("td");
+  td.appendChild(createTableInput("quantity", p.quantity));
+  tr.appendChild(td);
+
+  td = document.createElement("td");
+  td.className = "selection-td";
+  const selCell = document.createElement("div");
+  selCell.className = "selection-cell";
+  const spanSel = document.createElement("span");
+  spanSel.className = "selection-text";
+  spanSel.textContent = getSelectionLabelForProduct(p);
+  selCell.appendChild(spanSel);
+  selCell.appendChild(selectionBtn);
+  td.appendChild(selCell);
+  tr.appendChild(td);
+
+  td = document.createElement("td");
+  const spanStores = document.createElement("span");
+  spanStores.textContent = getSelectionStoresForProduct(p);
+  td.appendChild(spanStores);
+  tr.appendChild(td);
+
+  td = document.createElement("td");
+  td.appendChild(buyCheckbox);
+  tr.appendChild(td);
+
+  td = document.createElement("td");
+  td.appendChild(createTableTextarea("notes", p.notes || ""));
+  tr.appendChild(td);
+
+  td = document.createElement("td");
+  const moveBtn = document.createElement("button");
+  moveBtn.className = "btn btn-small btn-icon";
+  moveBtn.textContent = "→";
+  moveBtn.dataset.action = "move-to-almacen";
+  moveBtn.dataset.id = p.id;
+  td.appendChild(moveBtn);
+
+  const delBtn = document.createElement("button");
+  delBtn.className = "btn btn-small btn-danger";
+  delBtn.textContent = "✕";
+  delBtn.dataset.action = "delete";
+  delBtn.dataset.id = p.id;
+  td.appendChild(delBtn);
+  tr.appendChild(td);
+
+  return tr;
+}
 
 function renderExtraEditTable() {
   refreshProductsFromUnified();
@@ -3750,105 +4015,43 @@ function renderExtraEditTable() {
         sensitivity: "base",
       })
     );
+  const stripeMap = buildFamilyStripeMap(items);
 
-  if (items.length === 0) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 9;
-    td.textContent =
-      "No hay otros productos todavía. Usa 'Añadir producto' para crear uno.";
-    tr.appendChild(td);
-    extraTableBody.appendChild(tr);
-    return;
+  if (
+    extraEditRowTemplate &&
+    window.AppComponents &&
+    typeof window.AppComponents.renderTable === "function"
+  ) {
+    window.AppComponents.renderTable(extraTableBody, items, {
+      template: extraEditRowTemplate,
+      emptyMessage:
+        "No hay otros productos todavía. Usa 'Añadir producto' para crear uno.",
+      emptyColSpan: 9,
+      createRow: (item) => {
+        const stripe = stripeMap[(item.block || "").trim() || "__none__"] || 0;
+        return createExtraEditRow(item, stripe);
+      },
+    });
+  } else {
+    if (items.length === 0) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 9;
+      td.textContent =
+        "No hay otros productos todavía. Usa 'Añadir producto' para crear uno.";
+      tr.appendChild(td);
+      extraTableBody.appendChild(tr);
+      return;
+    }
+
+    const frag = document.createDocumentFragment();
+    items.forEach((p) => {
+      const stripe = stripeMap[(p.block || "").trim() || "__none__"] || 0;
+      const row = createExtraEditRow(p, stripe);
+      if (row) frag.appendChild(row);
+    });
+    extraTableBody.appendChild(frag);
   }
-
-  items.forEach((p) => {
-    const tr = document.createElement("tr");
-    tr.dataset.id = p.id;
-
-    let td;
-
-    // Producto
-    td = document.createElement("td");
-    td.appendChild(createTableInput("name", p.name));
-    tr.appendChild(td);
-
-    // Familia
-    td = document.createElement("td");
-    const famSel = createFamilySelect(p.block || "");
-    td.appendChild(famSel);
-    tr.appendChild(td);
-
-    // Tipo
-    td = document.createElement("td");
-    const typeSel = createTypeSelect(p.block || "", p.type || "");
-    linkFamilyTypeSelects(famSel, typeSel);
-    td.appendChild(typeSel);
-    tr.appendChild(td);
-
-    // Cantidad
-    td = document.createElement("td");
-    td.appendChild(createTableInput("quantity", p.quantity));
-    tr.appendChild(td);
-
-    // Selección (texto)
-    td = document.createElement("td");
-    td.className = "selection-td";
-    const selCell = document.createElement("div");
-    selCell.className = "selection-cell";
-    const spanSel = document.createElement("span");
-    spanSel.className = "selection-text";
-    spanSel.textContent = getSelectionLabelForProduct(p);
-    selCell.appendChild(spanSel);
-    const selectBtn = createSelectionButton(p.selectionId, p.id);
-    selCell.appendChild(selectBtn);
-    td.appendChild(selCell);
-    tr.appendChild(td);
-
-    // Tiendas (texto)
-    td = document.createElement("td");
-    const spanStores = document.createElement("span");
-    spanStores.textContent = getSelectionStoresForProduct(p);
-    td.appendChild(spanStores);
-    tr.appendChild(td);
-
-    // Comprar
-    td = document.createElement("td");
-    const chk = document.createElement("input");
-    chk.type = "checkbox";
-    chk.checked = !!p.buy;
-    chk.dataset.field = "buy";
-    td.appendChild(chk);
-    tr.appendChild(td);
-
-    // Notas
-    td = document.createElement("td");
-    const area = document.createElement("textarea");
-    area.className = "table-input";
-    area.dataset.field = "notes";
-    area.value = p.notes || "";
-    td.appendChild(area);
-    tr.appendChild(td);
-
-    // Acciones
-    td = document.createElement("td");
-    const moveBtn = document.createElement("button");
-    moveBtn.className = "btn btn-small btn-icon";
-    moveBtn.textContent = "→";
-    moveBtn.dataset.action = "move-to-almacen";
-    moveBtn.dataset.id = p.id;
-    td.appendChild(moveBtn);
-
-    const delBtn = document.createElement("button");
-    delBtn.className = "btn btn-small btn-danger";
-    delBtn.textContent = "✕";
-    delBtn.dataset.action = "delete";
-    delBtn.dataset.id = p.id;
-    td.appendChild(delBtn);
-    tr.appendChild(td);
-
-    extraTableBody.appendChild(tr);
-  });
 
   filterExtraEditRows();
 }
@@ -3872,97 +4075,57 @@ function handleAddExtraRow() {
   const defBlock = extraEditFilterFamilySelect.value || "";
   const defType = extraEditFilterTypeSelect.value || "";
 
-  const tr = document.createElement("tr");
-  tr.dataset.id = id;
+  const product = {
+    id,
+    name: "",
+    block: defBlock,
+    type: defType,
+    quantity: "",
+    notes: "",
+    buy: false,
+    selectionId: "",
+  };
 
-  let td;
-
-  // Producto
-  td = document.createElement("td");
-  td.appendChild(createTableInput("name", ""));
-  tr.appendChild(td);
-
-  // Familia
-  td = document.createElement("td");
-  const famSel = createFamilySelect(defBlock);
-  td.appendChild(famSel);
-  tr.appendChild(td);
-
-  // Tipo
-  td = document.createElement("td");
-  const typeSel = createTypeSelect(defBlock, defType);
-  linkFamilyTypeSelects(famSel, typeSel);
-  td.appendChild(typeSel);
-  tr.appendChild(td);
-
-  // Cantidad
-  td = document.createElement("td");
-  td.appendChild(createTableInput("quantity", ""));
-  tr.appendChild(td);
-
-  // Selección (texto)
-  td = document.createElement("td");
-  const spanSel = document.createElement("span");
-  spanSel.textContent = "";
-  td.appendChild(spanSel);
-  tr.appendChild(td);
-
-  // Tiendas (texto)
-  td = document.createElement("td");
-  const spanStores = document.createElement("span");
-  spanStores.textContent = "";
-  td.appendChild(spanStores);
-  tr.appendChild(td);
-
-  // Comprar
-  td = document.createElement("td");
-  const chk = document.createElement("input");
-  chk.type = "checkbox";
-  chk.dataset.field = "buy";
-  td.appendChild(chk);
-  tr.appendChild(td);
-
-  // Notas
-  td = document.createElement("td");
-  const area = document.createElement("textarea");
-  area.className = "table-input";
-  area.dataset.field = "notes";
-  td.appendChild(area);
-  tr.appendChild(td);
-
-  // Acciones
-  td = document.createElement("td");
-  const moveBtn = document.createElement("button");
-  moveBtn.className = "btn btn-small btn-icon";
-  moveBtn.textContent = "→";
-  moveBtn.dataset.action = "move-to-almacen";
-  moveBtn.dataset.id = id;
-  td.appendChild(moveBtn);
-
-  const delBtn = document.createElement("button");
-  delBtn.className = "btn btn-small btn-danger";
-  delBtn.textContent = "✕";
-  delBtn.dataset.action = "delete";
-  delBtn.dataset.id = id;
-  td.appendChild(delBtn);
-  tr.appendChild(td);
-
-  extraTableBody.prepend(tr);
+  const row = createExtraEditRow(product, 0);
+  if (row) extraTableBody.prepend(row);
 }
 
 function handleExtraEditClick(e) {
-  const target = e.target;
-  const action = target.dataset.action;
+  const target = e.target.closest("button,[data-action],[data-role]") || e.target;
+  const roleActionMap = {
+    "selection-btn": "select-selection",
+    move: "move-to-almacen",
+    delete: "delete",
+  };
+  let action = target.dataset.action || roleActionMap[target.dataset.role];
+  if (!action && target.closest("button")) {
+    const text = target.closest("button").textContent.trim();
+    if (text === "✕") action = "delete";
+    if (text === "→") action = "move-to-almacen";
+  }
   if (!action) return;
 
   if (action === "delete") {
     const tr = target.closest("tr");
-    if (tr) tr.remove();
+    const id = tr?.dataset.id || target.dataset.id;
+    if (id) {
+      removeExtraById(id);
+    } else if (tr) {
+      tr.remove();
+    }
   } else if (action === "move-to-almacen") {
     const tr = target.closest("tr");
     if (!tr) return;
-    const id = tr.dataset.id;
+    const id = tr.dataset.id || target.dataset.id;
     moveExtraToAlmacen(id);
+  } else if (action === "select-selection") {
+    const tr = target.closest("tr");
+    if (!tr) return;
+    const id = tr.dataset.id || target.dataset.id;
+    if (!id) return;
+    const product = extraProducts.find((p) => p.id === id);
+    if (!product) return;
+    openSelectionPopupForProduct(id);
   }
 }
 
@@ -4024,15 +4187,12 @@ function handleSaveExtra() {
 
   extraProducts = newExtra;
   saveExtraProducts();
-  const hasStore = isStoreActive() && window.AppStore && window.AppStore.actions && typeof window.AppStore.actions.setExtraProducts === "function";
-  if (!hasStore) {
-    renderBlockOptions();
-    renderTypeOptions();
-    updateInstanceFilterOptions();
-    renderProductsDatalist();
-    renderExtraQuickTable();
-    renderShoppingList();
-  }
+  renderBlockOptions();
+  renderTypeOptions();
+  updateInstanceFilterOptions();
+  renderProductsDatalist();
+  renderExtraQuickTable();
+  renderShoppingList();
   setOtrosMode(false);
 }
 
@@ -4206,7 +4366,12 @@ function handleStoresDependencies() {
   renderShoppingList();
 }
 
-function persistInstances(list) {
+function persistInstances(list, options = {}) {
+  if (!Array.isArray(list)) return productInstances;
+  const allowClear = options.allowClear === true;
+  if (!allowClear && list.length === 0 && productInstances.length > 0) {
+    return productInstances;
+  }
   const now = nowIsoString();
   const allProducts = getAllProductsForAssociationList();
   const updates = new Map();
@@ -4236,24 +4401,7 @@ function persistInstances(list) {
     });
   });
 
-  const next = [];
-  const seen = new Set();
-
-  productInstances.forEach((inst) => {
-    if (updates.has(inst.id)) {
-      next.push(updates.get(inst.id));
-      seen.add(inst.id);
-    } else {
-      next.push(inst);
-    }
-  });
-
-  updates.forEach((val, id) => {
-    if (!seen.has(id)) {
-      next.push(val);
-    }
-  });
-
+  const next = Array.from(updates.values());
   productInstances = consolidateInstances(next, now);
   saveProductInstances();
   cleanupSelectionsWithInstances();
@@ -4420,7 +4568,6 @@ function renderInstancesTable() {
     window.InstancesView.render(instancesViewContext);
   }
 }
-
 
 function handleAddInstanceRow() {
   if (window.InstancesView && typeof window.InstancesView.addRow === "function") {
@@ -4822,14 +4969,27 @@ async function handleCopyList() {
 // ==============================
 
 function handleExportBackup() {
+  const snap = getLatestStateSnapshot();
   const data = {
-    products,
-    extraProducts,
-    unifiedProducts,
-    suppliers,
-    producers,
-    productInstances,
-    classifications,
+    products: snap.products || products,
+    extraProducts: snap.extraProducts || extraProducts,
+    unifiedProducts:
+      snap.unifiedProducts && snap.unifiedProducts.length
+        ? snap.unifiedProducts
+        : [
+            ...((snap.products || products || []).map((p) => ({
+              ...p,
+              scope: p.scope || "almacen",
+            })) || []),
+            ...((snap.extraProducts || extraProducts || []).map((p) => ({
+              ...p,
+              scope: p.scope || "otros",
+            })) || []),
+          ],
+    suppliers: snap.suppliers || suppliers,
+    producers: snap.producers || producers,
+    productInstances: snap.productInstances || productInstances,
+    classifications: snap.classifications || classifications,
   };
 
   const json = JSON.stringify(data, null, 2);
@@ -4884,6 +5044,7 @@ function handleBackupFileChange(e) {
 
       if (window.AppStore && typeof window.AppStore.setState === "function") {
         window.AppStore.setState(snapshot);
+        syncFromAppStore();
       } else {
         unifiedProducts = snapshot.unifiedProducts;
         suppliers = snapshot.suppliers;
@@ -4945,8 +5106,18 @@ function handleExportOtrosCsv() {
 }
 
 function exportUnifiedCsv(scope, filename, sheetName) {
-  refreshProductsFromUnified();
-  const rows = (unifiedProducts || [])
+  const snap = getLatestStateSnapshot();
+  const list =
+    (snap && Array.isArray(snap.unifiedProducts) && snap.unifiedProducts.length
+      ? snap.unifiedProducts
+      : [
+          ...((snap && snap.products) || products || []),
+          ...(((snap && snap.extraProducts) || extraProducts || []).map((p) => ({
+            ...p,
+            scope: p.scope || "otros",
+          })) || []),
+        ]) || [];
+  const rows = list
     .filter((p) => (scope ? p.scope === scope : true))
     .sort(compareShelfBlockTypeName)
     .map((p) => ({

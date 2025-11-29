@@ -37,12 +37,91 @@
     const context = getCtx(c);
     const refs = context.refs || {};
     const tableBody = refs.tableBody;
+    const rowTemplate = refs.rowTemplate;
     if (!tableBody) return;
 
     const list =
       (typeof context.getStores === "function" ? context.getStores() : []) || [];
 
     tableBody.innerHTML = "";
+
+    const components = window.AppComponents || {};
+    const canUseTemplate =
+      rowTemplate &&
+      typeof components.cloneRowFromTemplate === "function" &&
+      typeof components.hydrateRow === "function";
+
+    const buildRow = (s) => {
+      const nameInput = makeInput("name", s.name);
+      const sel = document.createElement("select");
+      sel.className = "table-input";
+      sel.dataset.field = "type";
+      ["", "fisico", "online"].forEach((val) => {
+        const o = document.createElement("option");
+        o.value = val;
+        if (val === "") o.textContent = "—";
+        else if (val === "fisico") o.textContent = "Físico";
+        else if (val === "online") o.textContent = "Online";
+        sel.appendChild(o);
+      });
+      sel.value = s.type || "";
+      const locInput = makeInput("location", s.location);
+      const webInput = makeInput("website", s.website);
+      const notesInput = makeTextarea("notes", s.notes || "");
+
+      if (canUseTemplate) {
+        const row = components.cloneRowFromTemplate(rowTemplate);
+        if (!row) return null;
+        components.hydrateRow(row, {
+          dataset: { id: s.id },
+          replacements: {
+            "[data-slot='name']": nameInput,
+            "[data-slot='type']": sel,
+            "[data-slot='location']": locInput,
+            "[data-slot='website']": webInput,
+            "[data-slot='notes']": notesInput,
+          },
+          actions: {
+            "[data-role='delete']": { action: "delete", id: s.id },
+          },
+        });
+        return row;
+      }
+
+      const tr = document.createElement("tr");
+      tr.dataset.id = s.id;
+
+      let td = document.createElement("td");
+      td.appendChild(nameInput);
+      tr.appendChild(td);
+
+      td = document.createElement("td");
+      td.appendChild(sel);
+      tr.appendChild(td);
+
+      td = document.createElement("td");
+      td.appendChild(locInput);
+      tr.appendChild(td);
+
+      td = document.createElement("td");
+      td.appendChild(webInput);
+      tr.appendChild(td);
+
+      td = document.createElement("td");
+      td.appendChild(notesInput);
+      tr.appendChild(td);
+
+      td = document.createElement("td");
+      const delBtn = document.createElement("button");
+      delBtn.className = "btn btn-small btn-danger";
+      delBtn.textContent = "✕";
+      delBtn.dataset.action = "delete";
+      delBtn.dataset.id = s.id;
+      td.appendChild(delBtn);
+      tr.appendChild(td);
+
+      return tr;
+    };
 
     const items = list
       .slice()
@@ -56,6 +135,18 @@
           })
       );
 
+    if (canUseTemplate && typeof components.renderTable === "function") {
+      components.renderTable(tableBody, items, {
+        template: rowTemplate,
+        emptyMessage:
+          "No hay tiendas todavía. Usa 'Añadir tienda' para crear una.",
+        emptyColSpan: 6,
+        createRow: (item) => buildRow(item),
+      });
+      filterRows(context);
+      return;
+    }
+
     if (items.length === 0) {
       const tr = document.createElement("tr");
       const td = document.createElement("td");
@@ -68,51 +159,8 @@
     }
 
     items.forEach((s) => {
-      const tr = document.createElement("tr");
-      tr.dataset.id = s.id;
-
-      let td = document.createElement("td");
-      td.appendChild(makeInput("name", s.name));
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      const sel = document.createElement("select");
-      sel.className = "table-input";
-      sel.dataset.field = "type";
-      ["", "fisico", "online"].forEach((val) => {
-        const o = document.createElement("option");
-        o.value = val;
-        if (val === "") o.textContent = "—";
-        else if (val === "fisico") o.textContent = "Físico";
-        else if (val === "online") o.textContent = "Online";
-        sel.appendChild(o);
-      });
-      sel.value = s.type || "";
-      td.appendChild(sel);
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      td.appendChild(makeInput("location", s.location));
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      td.appendChild(makeInput("website", s.website));
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      td.appendChild(makeTextarea("notes", s.notes || ""));
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      const delBtn = document.createElement("button");
-      delBtn.className = "btn btn-small btn-danger";
-      delBtn.textContent = "✕";
-      delBtn.dataset.action = "delete";
-      delBtn.dataset.id = s.id;
-      td.appendChild(delBtn);
-      tr.appendChild(td);
-
-      tableBody.appendChild(tr);
+      const row = buildRow(s);
+      if (row) tableBody.appendChild(row);
     });
 
     filterRows(context);
@@ -122,6 +170,7 @@
     const context = getCtx(c);
     const refs = context.refs || {};
     const tableBody = refs.tableBody;
+    const rowTemplate = refs.rowTemplate;
     if (!tableBody) return;
 
     if (
@@ -135,6 +184,44 @@
       (crypto.randomUUID ? crypto.randomUUID() : "store-" + Date.now()) +
       "-" +
       Math.random().toString(36).slice(2);
+
+    if (
+      rowTemplate &&
+      window.AppComponents &&
+      typeof window.AppComponents.cloneRowFromTemplate === "function"
+    ) {
+      const row = window.AppComponents.cloneRowFromTemplate(rowTemplate);
+      if (row) {
+        window.AppComponents.hydrateRow(row, {
+          dataset: { id },
+          replacements: {
+            "[data-slot='name']": makeInput("name", ""),
+            "[data-slot='type']": (() => {
+              const sel = document.createElement("select");
+              sel.className = "table-input";
+              sel.dataset.field = "type";
+              ["", "fisico", "online"].forEach((val) => {
+                const o = document.createElement("option");
+                o.value = val;
+                if (val === "") o.textContent = "—";
+                else if (val === "fisico") o.textContent = "Físico";
+                else if (val === "online") o.textContent = "Online";
+                sel.appendChild(o);
+              });
+              return sel;
+            })(),
+            "[data-slot='location']": makeInput("location", ""),
+            "[data-slot='website']": makeInput("website", ""),
+            "[data-slot='notes']": makeTextarea("notes", ""),
+          },
+          actions: {
+            "[data-role='delete']": { action: "delete", id },
+          },
+        });
+        tableBody.prepend(row);
+        return;
+      }
+    }
 
     const tr = document.createElement("tr");
     tr.dataset.id = id;

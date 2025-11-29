@@ -9,10 +9,111 @@
       filterStoreSelect,
       filterStatusSelect,
       summaryInfo,
+      inventoryRowTemplate,
     } = refs;
     const { products, productDrafts } = state;
     if (!productTableBody) return;
     productTableBody.innerHTML = "";
+
+    const components = window.AppComponents || {};
+    const canUseTemplate =
+      inventoryRowTemplate &&
+      typeof components.cloneRowFromTemplate === "function" &&
+      typeof components.hydrateRow === "function";
+
+    const buildRowFromTemplate = (product, stripe) => {
+      if (!canUseTemplate) return null;
+      const row = components.cloneRowFromTemplate(inventoryRowTemplate);
+      if (!row) return null;
+      const selectionBtn = helpers.createSelectionButton(product.selectionId, product.id);
+
+      components.hydrateRow(row, {
+        dataset: { id: product.id },
+        classes: [`family-stripe-${stripe}`],
+        text: {
+          "[data-field='name']": product.name || "",
+          "[data-field='block']": product.block || "",
+          "[data-field='type']": product.type || "",
+          "[data-field='shelf']": product.shelf || "",
+          "[data-field='quantity']": product.quantity || "",
+          "[data-field='selectionText']": helpers.getSelectionLabelForProduct(product),
+          "[data-field='stores']": helpers.getSelectionStoresForProduct(product),
+          "[data-field='acquisitionDate']": product.acquisitionDate || "",
+          "[data-field='expiryText']": product.expiryText || "",
+          "[data-field='notes']": product.notes || "",
+        },
+        checkboxes: {
+          "input[data-field='have']": !!product.have,
+        },
+        attributes: {
+          "input[data-field='have']": { dataset: { id: product.id } },
+        },
+        actions: {
+          "[data-role='selection-btn']": { action: "select-selection", id: product.id },
+          "[data-role='move']": { action: "move-to-extra", id: product.id },
+        },
+        replacements: {
+          "[data-role='selection-btn']": selectionBtn,
+        },
+      });
+
+      return row;
+    };
+
+    const buildFallbackRow = (p, stripe) => {
+      const tr = document.createElement("tr");
+      tr.dataset.id = p.id;
+      tr.classList.add(`family-stripe-${stripe}`);
+
+      const addCellText = (text) => {
+        const td = document.createElement("td");
+        td.textContent = text || "";
+        tr.appendChild(td);
+      };
+
+      addCellText(p.name || "");
+      addCellText(p.block || "");
+      addCellText(p.type || "");
+      addCellText(p.shelf || "");
+      addCellText(p.quantity || "");
+      const selTd = document.createElement("td");
+      selTd.className = "selection-td";
+      const selCell = document.createElement("div");
+      selCell.className = "selection-cell";
+      const selBtn = helpers.createSelectionButton(p.selectionId, p.id);
+      selCell.appendChild(selBtn);
+      const selText = document.createElement("div");
+      selText.className = "selection-text";
+      selText.textContent = helpers.getSelectionLabelForProduct(p);
+      selCell.appendChild(selText);
+      selTd.appendChild(selCell);
+      tr.appendChild(selTd);
+      addCellText(helpers.getSelectionStoresForProduct(p));
+
+      let td = document.createElement("td");
+      const haveCheck = document.createElement("input");
+      haveCheck.type = "checkbox";
+      haveCheck.checked = !!p.have;
+      haveCheck.dataset.field = "have";
+      haveCheck.dataset.id = p.id;
+      td.appendChild(haveCheck);
+      tr.appendChild(td);
+
+      addCellText(p.acquisitionDate || "");
+      addCellText(p.expiryText || "");
+      addCellText(p.notes || "");
+
+      td = document.createElement("td");
+      const moveBtn = document.createElement("button");
+      moveBtn.className = "btn btn-small btn-icon";
+      moveBtn.textContent = "→";
+      moveBtn.dataset.action = "move-to-extra";
+      moveBtn.dataset.id = p.id;
+      td.appendChild(moveBtn);
+
+      tr.appendChild(td);
+      return tr;
+    };
 
     let items = products.slice();
     items.sort(helpers.compareShelfBlockTypeName);
@@ -25,6 +126,11 @@
     const filterStoreId = filterStoreSelect.value || "";
     const status = filterStatusSelect.value || "all";
 
+    const frag =
+      typeof document !== "undefined" && document.createDocumentFragment
+        ? document.createDocumentFragment()
+        : null;
+    const target = frag || productTableBody;
     const rows = [];
     let total = 0;
     let haveCount = 0;
@@ -104,7 +210,7 @@
       td.appendChild(cancelBtn);
       tr.appendChild(td);
 
-      productTableBody.appendChild(tr);
+      target.appendChild(tr);
     });
 
     for (const p of items) {
@@ -140,60 +246,13 @@
       if (p.have) haveCount++;
       else missingCount++;
 
-      const tr = document.createElement("tr");
-      tr.dataset.id = p.id;
       const stripe = stripeMap[(p.block || "").trim() || "__none__"] || 0;
-      tr.classList.add(`family-stripe-${stripe}`);
-
-      const addCellText = (text) => {
-        const td = document.createElement("td");
-        td.textContent = text || "";
-        tr.appendChild(td);
-      };
-
-      addCellText(p.name || "");
-      addCellText(p.block || "");
-      addCellText(p.type || "");
-      addCellText(p.shelf || "");
-      addCellText(p.quantity || "");
-      const selTd = document.createElement("td");
-      selTd.className = "selection-td";
-      const selCell = document.createElement("div");
-      selCell.className = "selection-cell";
-      const selBtn = helpers.createSelectionButton(p.selectionId, p.id);
-      selCell.appendChild(selBtn);
-      const selText = document.createElement("div");
-      selText.className = "selection-text";
-      selText.textContent = helpers.getSelectionLabelForProduct(p);
-      selCell.appendChild(selText);
-      selTd.appendChild(selCell);
-      tr.appendChild(selTd);
-      addCellText(helpers.getSelectionStoresForProduct(p));
-
-      let td = document.createElement("td");
-      const haveCheck = document.createElement("input");
-      haveCheck.type = "checkbox";
-      haveCheck.checked = !!p.have;
-      haveCheck.dataset.field = "have";
-      haveCheck.dataset.id = p.id;
-      td.appendChild(haveCheck);
-      tr.appendChild(td);
-
-      addCellText(p.acquisitionDate || "");
-      addCellText(p.expiryText || "");
-      addCellText(p.notes || "");
-
-      td = document.createElement("td");
-      const moveBtn = document.createElement("button");
-      moveBtn.className = "btn btn-small btn-icon";
-      moveBtn.textContent = "→";
-      moveBtn.dataset.action = "move-to-extra";
-      moveBtn.dataset.id = p.id;
-      td.appendChild(moveBtn);
-
-      tr.appendChild(td);
-      productTableBody.appendChild(tr);
-      rows.push(tr);
+      const tr =
+        buildRowFromTemplate(p, stripe) || buildFallbackRow(p, stripe);
+      if (tr) {
+        target.appendChild(tr);
+        rows.push(tr);
+      }
     }
 
     if (rows.length === 0) {
@@ -202,7 +261,11 @@
       td.colSpan = 12;
       td.textContent = "No hay productos que coincidan con los filtros.";
       tr.appendChild(td);
-      productTableBody.appendChild(tr);
+      target.appendChild(tr);
+    }
+
+    if (frag) {
+      productTableBody.appendChild(frag);
     }
 
     if (summaryInfo) {

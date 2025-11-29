@@ -267,7 +267,11 @@
     const setter = dataSetters[name];
     if (typeof setter === "function") {
       const res = setter(list);
-      captureState(appState?.getState?.() || state);
+      const merged =
+        appState && typeof appState.getState === "function"
+          ? { ...state, ...appState.getState(), [name]: res }
+          : { ...state, [name]: res };
+      captureState(merged);
       notify();
       return res;
     }

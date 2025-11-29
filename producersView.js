@@ -37,6 +37,7 @@
     const context = getCtx(c);
     const refs = context.refs || {};
     const tableBody = refs.tableBody;
+    const rowTemplate = refs.rowTemplate;
     if (!tableBody) return;
 
     const list =
@@ -45,6 +46,60 @@
         : []) || [];
 
     tableBody.innerHTML = "";
+
+    const components = window.AppComponents || {};
+    const canUseTemplate =
+      rowTemplate &&
+      typeof components.cloneRowFromTemplate === "function" &&
+      typeof components.hydrateRow === "function";
+
+    const buildRow = (p) => {
+      const nameInput = makeInput("name", p.name);
+      const locInput = makeInput("location", p.location);
+      const notesInput = makeTextarea("notes", p.notes || "");
+      if (canUseTemplate) {
+        const row = components.cloneRowFromTemplate(rowTemplate);
+        if (!row) return null;
+        components.hydrateRow(row, {
+          dataset: { id: p.id },
+          replacements: {
+            "[data-slot='name']": nameInput,
+            "[data-slot='location']": locInput,
+            "[data-slot='notes']": notesInput,
+          },
+          actions: {
+            "[data-role='delete']": { action: "delete", id: p.id },
+          },
+        });
+        return row;
+      }
+
+      const tr = document.createElement("tr");
+      tr.dataset.id = p.id;
+
+      let td = document.createElement("td");
+      td.appendChild(nameInput);
+      tr.appendChild(td);
+
+      td = document.createElement("td");
+      td.appendChild(locInput);
+      tr.appendChild(td);
+
+      td = document.createElement("td");
+      td.appendChild(notesInput);
+      tr.appendChild(td);
+
+      td = document.createElement("td");
+      const delBtn = document.createElement("button");
+      delBtn.className = "btn btn-small btn-danger";
+      delBtn.textContent = "✕";
+      delBtn.dataset.action = "delete";
+      delBtn.dataset.id = p.id;
+      td.appendChild(delBtn);
+      tr.appendChild(td);
+
+      return tr;
+    };
 
     const items = list
       .slice()
@@ -58,6 +113,18 @@
           })
       );
 
+    if (canUseTemplate && typeof components.renderTable === "function") {
+      components.renderTable(tableBody, items, {
+        template: rowTemplate,
+        emptyMessage:
+          "No hay productores todavía. Usa 'Añadir productor' para crear uno.",
+        emptyColSpan: 4,
+        createRow: (item) => buildRow(item),
+      });
+      filterRows(context);
+      return;
+    }
+
     if (items.length === 0) {
       const tr = document.createElement("tr");
       const td = document.createElement("td");
@@ -70,31 +137,8 @@
     }
 
     items.forEach((p) => {
-      const tr = document.createElement("tr");
-      tr.dataset.id = p.id;
-
-      let td = document.createElement("td");
-      td.appendChild(makeInput("name", p.name));
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      td.appendChild(makeInput("location", p.location));
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      td.appendChild(makeTextarea("notes", p.notes || ""));
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      const delBtn = document.createElement("button");
-      delBtn.className = "btn btn-small btn-danger";
-      delBtn.textContent = "✕";
-      delBtn.dataset.action = "delete";
-      delBtn.dataset.id = p.id;
-      td.appendChild(delBtn);
-      tr.appendChild(td);
-
-      tableBody.appendChild(tr);
+      const row = buildRow(p);
+      if (row) tableBody.appendChild(row);
     });
 
     filterRows(context);
@@ -104,6 +148,7 @@
     const context = getCtx(c);
     const refs = context.refs || {};
     const tableBody = refs.tableBody;
+    const rowTemplate = refs.rowTemplate;
     if (!tableBody) return;
 
     if (
@@ -117,6 +162,29 @@
       (crypto.randomUUID ? crypto.randomUUID() : "prod-" + Date.now()) +
       "-" +
       Math.random().toString(36).slice(2);
+
+    if (
+      rowTemplate &&
+      window.AppComponents &&
+      typeof window.AppComponents.cloneRowFromTemplate === "function"
+    ) {
+      const row = window.AppComponents.cloneRowFromTemplate(rowTemplate);
+      if (row) {
+        window.AppComponents.hydrateRow(row, {
+          dataset: { id },
+          replacements: {
+            "[data-slot='name']": makeInput("name", ""),
+            "[data-slot='location']": makeInput("location", ""),
+            "[data-slot='notes']": makeTextarea("notes", ""),
+          },
+          actions: {
+            "[data-role='delete']": { action: "delete", id },
+          },
+        });
+        tableBody.prepend(row);
+        return;
+      }
+    }
 
     const tr = document.createElement("tr");
     tr.dataset.id = id;

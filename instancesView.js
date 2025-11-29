@@ -11,6 +11,7 @@
     const context = getCtx(c);
     const refs = context.refs || {};
     const tableBody = refs.tableBody;
+    const rowTemplate = refs.rowTemplate;
     if (!tableBody) return;
 
     const {
@@ -64,6 +65,12 @@
           )
         : {};
 
+    const components = window.AppComponents || {};
+    const canUseTemplate =
+      rowTemplate &&
+      typeof components.cloneRowFromTemplate === "function" &&
+      typeof components.hydrateRow === "function";
+
     const makeInput = (field, value = "", type = "text") => {
       if (window.AppUtils && typeof window.AppUtils.createTableInput === "function") {
         return window.AppUtils.createTableInput(field, value, type);
@@ -91,14 +98,9 @@
     };
 
     items.forEach((inst) => {
-      const tr = document.createElement("tr");
-      tr.dataset.id = inst.id;
       const stripeKey = getFamilyForInstance(inst) || "__none__";
       const stripe = stripeMap[stripeKey] || 0;
-      tr.classList.add(`family-stripe-${stripe}`);
 
-      // Producto
-      let td = document.createElement("td");
       const inputName = makeInput("productName", inst.productName);
       inputName.dataset.id = inst.id;
       inputName.dataset.field = "productName";
@@ -106,39 +108,18 @@
       inputName.classList.add("product-name-input");
       inputName.setAttribute("autocomplete", "off");
       inputName.placeholder = "Escribe para buscar en tu inventario...";
-      td.appendChild(inputName);
+
       const createBtn = document.createElement("button");
       createBtn.type = "button";
       createBtn.className = "btn btn-small btn-icon";
       createBtn.textContent = "+";
       createBtn.title = "Crear producto en 'Otros productos'";
       createBtn.dataset.action = "create-product-selection";
-      td.appendChild(createBtn);
-      tr.appendChild(td);
 
-      // Familia
-      td = document.createElement("td");
-      td.className = "instances-family-cell";
-      td.textContent = getFamilyForInstance(inst) || "—";
-      tr.appendChild(td);
-      if (
-        typeof context.isKnownProduct === "function" &&
-        typeof context.getFamilyByProductName === "function"
-      ) {
-        const updateMissingState = () => {
-          const known = context.isKnownProduct(inputName.value, inst.productId);
-          tr.classList.toggle("instance-missing-product", !known);
-          td.textContent = context.getFamilyByProductName(inputName.value) || "—";
-          if (createBtn) {
-            createBtn.style.display = known ? "none" : "inline-flex";
-          }
-        };
-        inputName.addEventListener("input", updateMissingState);
-        updateMissingState();
-      }
+      const familyCell = document.createElement("td");
+      familyCell.className = "instances-family-cell";
+      familyCell.textContent = getFamilyForInstance(inst) || "—";
 
-      // Productor
-      td = document.createElement("td");
       const selProducer = document.createElement("select");
       selProducer.className = "table-input";
       selProducer.dataset.field = "producerId";
@@ -160,16 +141,9 @@
           selProducer.appendChild(o);
         });
       selProducer.value = inst.producerId || "";
-      td.appendChild(selProducer);
-      tr.appendChild(td);
 
-      // Marca
-      td = document.createElement("td");
-      td.appendChild(makeInput("brand", inst.brand || ""));
-      tr.appendChild(td);
+      const brandInput = makeInput("brand", inst.brand || "");
 
-      // Tiendas
-      td = document.createElement("td");
       const selStores = document.createElement("select");
       selStores.className = "table-input inline-stores-select";
       selStores.multiple = true;
@@ -188,25 +162,117 @@
           o.selected = Array.isArray(inst.storeIds) && inst.storeIds.includes(s.id);
           selStores.appendChild(o);
         });
-      td.appendChild(selStores);
-      tr.appendChild(td);
 
-      // Notas
-      td = document.createElement("td");
-      td.appendChild(makeTextarea("notes", inst.notes || ""));
-      tr.appendChild(td);
+      const notesArea = makeTextarea("notes", inst.notes || "");
 
-      // Acciones
-      td = document.createElement("td");
-      const delBtn = document.createElement("button");
-      delBtn.className = "btn btn-small btn-danger";
-      delBtn.dataset.action = "delete-instance";
-      delBtn.dataset.id = inst.id;
-      delBtn.textContent = "✕";
-      td.appendChild(delBtn);
-      tr.appendChild(td);
+      let row = null;
+      if (canUseTemplate) {
+        row = components.cloneRowFromTemplate(rowTemplate);
+        if (row) {
+          components.hydrateRow(row, {
+            dataset: { id: inst.id },
+            classes: [`family-stripe-${stripe}`],
+            text: {
+              "[data-field='family']": getFamilyForInstance(inst) || "—",
+            },
+            actions: {
+              "[data-role='delete']": { action: "delete-instance", id: inst.id },
+              "[data-action='create-product-selection']": {
+                action: "create-product-selection",
+                id: inst.id,
+              },
+            },
+            replacements: {
+              "[data-slot='productName']": (() => {
+                const wrap = document.createElement("div");
+                wrap.className = "instances-product-cell";
+                wrap.appendChild(inputName);
+                wrap.appendChild(createBtn);
+                return wrap;
+              })(),
+              "[data-slot='producer']": selProducer,
+              "[data-slot='brand']": brandInput,
+              "[data-slot='stores']": selStores,
+              "[data-slot='notes']": notesArea,
+            },
+          });
+        }
+      }
 
-      tableBody.appendChild(tr);
+      if (!row) {
+        row = document.createElement("tr");
+        row.dataset.id = inst.id;
+        row.classList.add(`family-stripe-${stripe}`);
+
+        // Producto
+        let td = document.createElement("td");
+        td.appendChild(inputName);
+        td.appendChild(createBtn);
+        row.appendChild(td);
+
+        // Familia
+        row.appendChild(familyCell);
+
+        // Productor
+        td = document.createElement("td");
+        td.appendChild(selProducer);
+        row.appendChild(td);
+
+        // Marca
+        td = document.createElement("td");
+        td.appendChild(brandInput);
+        row.appendChild(td);
+
+        // Tiendas
+        td = document.createElement("td");
+        td.appendChild(selStores);
+        row.appendChild(td);
+
+        // Notas
+        td = document.createElement("td");
+        td.appendChild(notesArea);
+        row.appendChild(td);
+
+        // Acciones
+        td = document.createElement("td");
+        const delBtn = document.createElement("button");
+        delBtn.className = "btn btn-small btn-danger";
+        delBtn.dataset.action = "delete-instance";
+        delBtn.dataset.id = inst.id;
+        delBtn.textContent = "✕";
+        td.appendChild(delBtn);
+        row.appendChild(td);
+      }
+
+      const familyCellEl =
+        row.querySelector(".instances-family-cell") ||
+        row.querySelector('[data-field="family"]');
+      const createBtnEl =
+        row.querySelector('[data-action="create-product-selection"]') || createBtn;
+      const inputNameEl =
+        row.querySelector('input[data-field="productName"]') || inputName;
+
+      if (
+        inputNameEl &&
+        typeof context.isKnownProduct === "function" &&
+        typeof context.getFamilyByProductName === "function"
+      ) {
+        const updateMissingState = () => {
+          const known = context.isKnownProduct(inputNameEl.value, inst.productId);
+          row.classList.toggle("instance-missing-product", !known);
+          if (familyCellEl) {
+            familyCellEl.textContent =
+              context.getFamilyByProductName(inputNameEl.value) || "—";
+          }
+          if (createBtnEl) {
+            createBtnEl.style.display = known ? "none" : "inline-flex";
+          }
+        };
+        inputNameEl.addEventListener("input", updateMissingState);
+        updateMissingState();
+      }
+
+      tableBody.appendChild(row);
     });
 
     if (typeof context.attachMultiSelectToggle === "function") {
@@ -216,10 +282,10 @@
     }
   }
 
-  function persistAndRender(context, list) {
+  function persistAndRender(context, list, options = {}) {
     const data = context.data || {};
     if (typeof context.persist === "function") {
-      context.persist(list);
+      context.persist(list, options);
     }
     context.data = { ...data, instances: list };
     render(context);
@@ -320,17 +386,22 @@
   }
 
   function handleClick(e) {
-    const target = e.target;
-    const action = target.dataset.action;
+    let target = e.target;
+    if (
+      (!target.dataset || (!target.dataset.action && !target.dataset.role)) &&
+      typeof target.closest === "function"
+    ) {
+      target = target.closest("button,[data-action],[data-role]") || target;
+    }
+    const roleActionMap = { delete: "delete-instance" };
+    const action = target.dataset.action || roleActionMap[target.dataset.role];
     if (!action) return;
     if (action === "delete-instance") {
       const tr = target.closest("tr");
       if (!tr) return;
-      const id = tr.dataset.id;
-      const current = (getCtx().data?.instances || []).filter(
-        (i) => i.id !== id
-      );
-      persistAndRender(getCtx(), current);
+      const id = target.dataset.id || tr.dataset.id;
+      const current = (getCtx().data?.instances || []).filter((i) => i.id !== id);
+      persistAndRender(getCtx(), current, { allowClear: true });
     } else if (action === "create-product-selection") {
       if (typeof getCtx().onCreateProduct === "function") {
         const tr = target.closest("tr");
@@ -342,7 +413,7 @@
   function save(c) {
     const context = getCtx(c);
     const list = collectRows(context);
-    persistAndRender(context, list);
+    persistAndRender(context, list, { allowClear: true });
   }
 
   function bindFilters(context) {

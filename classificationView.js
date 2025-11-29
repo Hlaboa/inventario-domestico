@@ -7,10 +7,20 @@
       ? c.nowIsoString()
       : new Date().toISOString());
 
+  const makeInput = (field, value = "", type = "text") => {
+    const input = document.createElement("input");
+    input.type = type;
+    input.value = value || "";
+    input.className = "table-input";
+    input.dataset.field = field;
+    return input;
+  };
+
   function render(c) {
     const context = getCtx(c);
     const refs = context.refs || {};
     const tableBody = refs.tableBody;
+    const rowTemplate = refs.rowTemplate;
     if (!tableBody) return;
 
     const list =
@@ -19,6 +29,74 @@
         : []) || [];
 
     tableBody.innerHTML = "";
+
+    const components = window.AppComponents || {};
+    const canUseTemplate =
+      rowTemplate &&
+      typeof components.cloneRowFromTemplate === "function" &&
+      typeof components.hydrateRow === "function";
+
+    const buildRow = (c) => {
+      const blockInput = makeInput("block", c.block);
+      const typeInput = makeInput("type", c.type);
+      const notesInput = makeInput("notes", c.notes);
+      if (canUseTemplate) {
+        const row = components.cloneRowFromTemplate(rowTemplate);
+        if (!row) return null;
+        components.hydrateRow(row, {
+          dataset: { id: c.id },
+          replacements: {
+            "[data-slot='block']": blockInput,
+            "[data-slot='type']": typeInput,
+            "[data-slot='notes']": notesInput,
+          },
+          actions: {
+            "[data-role='delete']": {
+              action: "delete-classification",
+              id: c.id,
+            },
+          },
+        });
+        return row;
+      }
+
+      const tr = document.createElement("tr");
+      tr.dataset.id = c.id;
+
+      let td = document.createElement("td");
+      td.appendChild(blockInput);
+      tr.appendChild(td);
+
+      td = document.createElement("td");
+      td.appendChild(typeInput);
+      tr.appendChild(td);
+
+      td = document.createElement("td");
+      td.appendChild(notesInput);
+      tr.appendChild(td);
+
+      td = document.createElement("td");
+      const del = document.createElement("button");
+      del.className = "btn btn-small btn-danger";
+      del.dataset.action = "delete-classification";
+      del.dataset.id = c.id;
+      del.textContent = "✕";
+      td.appendChild(del);
+      tr.appendChild(td);
+
+      return tr;
+    };
+
+    if (canUseTemplate && typeof components.renderTable === "function") {
+      components.renderTable(tableBody, list, {
+        template: rowTemplate,
+        emptyMessage:
+          "No hay combinaciones todavía. Añade una familia/tipo para empezar.",
+        emptyColSpan: 4,
+        createRow: (item) => buildRow(item),
+      });
+      return;
+    }
 
     if (list.length === 0) {
       const tr = document.createElement("tr");
@@ -31,41 +109,9 @@
       return;
     }
 
-    const makeInput = (field, value = "", type = "text") => {
-      const input = document.createElement("input");
-      input.type = type;
-      input.value = value || "";
-      input.className = "table-input";
-      input.dataset.field = field;
-      return input;
-    };
-
     list.forEach((c) => {
-      const tr = document.createElement("tr");
-      tr.dataset.id = c.id;
-
-      let td = document.createElement("td");
-      td.appendChild(makeInput("block", c.block));
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      td.appendChild(makeInput("type", c.type));
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      td.appendChild(makeInput("notes", c.notes));
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      const del = document.createElement("button");
-      del.className = "btn btn-small btn-danger";
-      del.dataset.action = "delete-classification";
-      del.dataset.id = c.id;
-      del.textContent = "✕";
-      td.appendChild(del);
-      tr.appendChild(td);
-
-      tableBody.appendChild(tr);
+      const row = buildRow(c);
+      if (row) tableBody.appendChild(row);
     });
   }
 
@@ -73,6 +119,7 @@
     const context = getCtx(c);
     const refs = context.refs || {};
     const tableBody = refs.tableBody;
+    const rowTemplate = refs.rowTemplate;
     if (!tableBody) return;
 
     const id =
@@ -80,14 +127,33 @@
       "-" +
       Math.random().toString(36).slice(2);
 
-    const makeInput = (field, value = "", type = "text") => {
-      const input = document.createElement("input");
-      input.type = type;
-      input.value = value || "";
-      input.className = "table-input";
-      input.dataset.field = field;
-      return input;
-    };
+    const row =
+      rowTemplate && window.AppComponents
+        ? (() => {
+            const base = window.AppComponents.cloneRowFromTemplate(rowTemplate);
+            if (!base) return null;
+            window.AppComponents.hydrateRow(base, {
+              dataset: { id },
+              replacements: {
+                "[data-slot='block']": makeInput("block", ""),
+                "[data-slot='type']": makeInput("type", ""),
+                "[data-slot='notes']": makeInput("notes", ""),
+              },
+              actions: {
+                "[data-role='delete']": {
+                  action: "delete-classification",
+                  id,
+                },
+              },
+            });
+            return base;
+          })()
+        : null;
+
+    if (row) {
+      tableBody.prepend(row);
+      return;
+    }
 
     const tr = document.createElement("tr");
     tr.dataset.id = id;

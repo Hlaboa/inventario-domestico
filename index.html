@@ -75,6 +75,31 @@
 
             <!-- Vista principal -->
             <div id="almacenInventoryPanel" class="sub-panel active">
+              <template id="inventoryRowTemplate">
+                <tr>
+                  <td data-field="name"></td>
+                  <td data-field="block"></td>
+                  <td data-field="type"></td>
+                  <td data-field="shelf"></td>
+                  <td data-field="quantity"></td>
+                  <td class="selection-td">
+                    <div class="selection-cell">
+                      <button data-role="selection-btn" class="btn btn-small btn-secondary"></button>
+                      <div class="selection-text" data-field="selectionText"></div>
+                    </div>
+                  </td>
+                  <td data-field="stores"></td>
+                  <td>
+                    <input type="checkbox" data-field="have" />
+                  </td>
+                  <td data-field="acquisitionDate"></td>
+                  <td data-field="expiryText"></td>
+                  <td data-field="notes"></td>
+                  <td>
+                    <button class="btn btn-small btn-icon" data-role="move">→</button>
+                  </td>
+                </tr>
+              </template>
               <div class="filters">
                 <div class="form-group quick-add-group">
                   <label>&nbsp;</label>
@@ -223,6 +248,30 @@
 
               <div class="table-wrapper">
                 <div class="table-scroll">
+                  <template id="inventoryEditRowTemplate">
+                    <tr>
+                      <td data-slot="name"></td>
+                      <td data-slot="block"></td>
+                      <td data-slot="type"></td>
+                      <td data-slot="shelf"></td>
+                      <td data-slot="quantity"></td>
+                      <td class="selection-td">
+                        <div class="selection-cell">
+                          <span class="selection-text" data-field="selectionText"></span>
+                          <button class="btn btn-small btn-icon" data-role="selection-btn">+</button>
+                        </div>
+                      </td>
+                      <td><span data-field="stores"></span></td>
+                      <td data-slot="have"></td>
+                      <td data-slot="acquisitionDate"></td>
+                      <td data-slot="expiryText"></td>
+                      <td data-slot="notes"></td>
+                      <td>
+                        <button class="btn btn-small btn-icon" data-role="move">→</button>
+                        <button class="btn btn-small btn-danger" data-role="delete">✕</button>
+                      </td>
+                    </tr>
+                  </template>
                   <table class="product-table">
                     <thead>
                       <tr>
@@ -278,6 +327,16 @@
 
             <div class="table-wrapper">
               <div class="table-scroll">
+                <template id="classificationRowTemplate">
+                  <tr>
+                    <td data-slot="block"></td>
+                    <td data-slot="type"></td>
+                    <td data-slot="notes"></td>
+                    <td>
+                      <button class="btn btn-small btn-danger" data-role="delete">✕</button>
+                    </td>
+                  </tr>
+                </template>
                 <table class="product-table">
                   <thead>
                     <tr>
@@ -394,6 +453,27 @@
 
               <div class="table-wrapper">
                 <div class="table-scroll">
+                  <template id="extraEditRowTemplate">
+                    <tr>
+                      <td data-slot="name"></td>
+                      <td data-slot="block"></td>
+                      <td data-slot="type"></td>
+                      <td data-slot="quantity"></td>
+                      <td class="selection-td">
+                        <div class="selection-cell">
+                          <span class="selection-text" data-field="selectionText"></span>
+                          <button class="btn btn-small btn-icon" data-role="selection-btn">+</button>
+                        </div>
+                      </td>
+                      <td><span data-field="stores"></span></td>
+                      <td data-slot="buy"></td>
+                      <td data-slot="notes"></td>
+                      <td>
+                        <button class="btn btn-small btn-icon" data-role="move">→</button>
+                        <button class="btn btn-small btn-danger" data-role="delete">✕</button>
+                      </td>
+                    </tr>
+                  </template>
                   <table class="product-table">
                     <thead>
                       <tr>
@@ -544,6 +624,16 @@
 
               <div class="table-wrapper">
                 <div class="table-scroll">
+                  <template id="producersRowTemplate">
+                    <tr>
+                      <td data-slot="name"></td>
+                      <td data-slot="location"></td>
+                      <td data-slot="notes"></td>
+                      <td>
+                        <button class="btn btn-small btn-danger" data-role="delete">✕</button>
+                      </td>
+                    </tr>
+                  </template>
                   <table class="product-table">
                   <thead>
                     <tr>
@@ -613,6 +703,18 @@
 
               <div class="table-wrapper">
                 <div class="table-scroll">
+                  <template id="storesRowTemplate">
+                    <tr>
+                      <td data-slot="name"></td>
+                      <td data-slot="type"></td>
+                      <td data-slot="location"></td>
+                      <td data-slot="website"></td>
+                      <td data-slot="notes"></td>
+                      <td>
+                        <button class="btn btn-small btn-danger" data-role="delete">✕</button>
+                      </td>
+                    </tr>
+                  </template>
                   <table class="product-table">
                   <thead>
                     <tr>
@@ -691,6 +793,19 @@
 
               <div class="table-wrapper">
                 <div class="table-scroll">
+                  <template id="instancesRowTemplate">
+                    <tr>
+                      <td data-slot="productName"></td>
+                      <td data-field="family"></td>
+                      <td data-slot="producer"></td>
+                      <td data-slot="brand"></td>
+                      <td data-slot="stores"></td>
+                      <td data-slot="notes"></td>
+                      <td>
+                        <button class="btn btn-small btn-danger" data-role="delete">✕</button>
+                      </td>
+                    </tr>
+                  </template>
                   <table class="product-table">
                   <thead>
                     <tr>
@@ -830,6 +945,7 @@
     <!-- Librería para Excel (.xlsx) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="utils.js"></script>
+    <script src="components.js"></script>
     <script src="storage.js"></script>
     <script src="state.js"></script>
     <script src="dataService.js"></script>
