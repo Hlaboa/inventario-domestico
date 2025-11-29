@@ -115,6 +115,7 @@ let addQuickExtraButton;
 let classificationTableBody;
 let addClassificationButton;
 let saveClassificationsButton;
+let classificationViewContext;
 
 // Tabs tiendas/productores
 let producersPanel;
@@ -412,12 +413,6 @@ document.addEventListener("DOMContentLoaded", () => {
     addQuickProductButton.addEventListener("click", handleAddQuickProduct);
   if (addQuickExtraButton)
     addQuickExtraButton.addEventListener("click", handleAddQuickExtra);
-  if (classificationTableBody)
-    classificationTableBody.addEventListener("click", handleClassificationTableClick);
-  if (addClassificationButton)
-    addClassificationButton.addEventListener("click", handleAddClassificationRow);
-  if (saveClassificationsButton)
-    saveClassificationsButton.addEventListener("click", handleSaveClassifications);
 
   // Lista compra
   shoppingListContainer.addEventListener("click", handleShoppingListClick);
@@ -469,6 +464,25 @@ document.addEventListener("DOMContentLoaded", () => {
   if (window.AppState && typeof window.AppState.subscribe === "function") {
     syncFromState(window.AppState.getState());
     window.AppState.subscribe(syncFromState);
+  }
+
+  classificationViewContext = {
+    refs: {
+      tableBody: classificationTableBody,
+      addButton: addClassificationButton,
+      saveButton: saveClassificationsButton,
+    },
+    getClassifications: () => classifications,
+    persist: (list) => {
+      classifications = list;
+      saveClassifications();
+    },
+    onAfterSave: handleClassificationDependencies,
+    nowIsoString,
+  };
+
+  if (window.ClassificationView && typeof window.ClassificationView.init === "function") {
+    window.ClassificationView.init(classificationViewContext);
   }
 
   InventoryView.init(getInventoryContext());
@@ -4079,157 +4093,37 @@ function renderStoresTable() {
 // ==============================
 
 function renderClassificationTable() {
-  if (!classificationTableBody) return;
-  classificationTableBody.innerHTML = "";
-
-  const items = classifications
-    .slice()
-    .sort((a, b) =>
-      (a.block || "").localeCompare(b.block || "", "es", {
-        sensitivity: "base",
-      }) || (a.type || "").localeCompare(b.type || "", "es", {
-        sensitivity: "base",
-      })
-    );
-
-  if (items.length === 0) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 4;
-    td.textContent =
-      "No hay combinaciones todavía. Añade una familia/tipo para empezar.";
-    tr.appendChild(td);
-    classificationTableBody.appendChild(tr);
-    return;
+  if (
+    window.ClassificationView &&
+    typeof window.ClassificationView.render === "function"
+  ) {
+    window.ClassificationView.render(classificationViewContext);
   }
-
-  items.forEach((c) => {
-    const tr = document.createElement("tr");
-    tr.dataset.id = c.id;
-
-    const makeInput = (field, value = "", type = "text") => {
-      const input = document.createElement("input");
-      input.type = type;
-      input.value = value || "";
-      input.className = "table-input";
-      input.dataset.field = field;
-      return input;
-    };
-
-    let td = document.createElement("td");
-    td.appendChild(makeInput("block", c.block));
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    td.appendChild(makeInput("type", c.type));
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    td.appendChild(makeInput("notes", c.notes));
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    const del = document.createElement("button");
-    del.className = "btn btn-small btn-danger";
-    del.dataset.action = "delete-classification";
-    del.dataset.id = c.id;
-    del.textContent = "✕";
-    td.appendChild(del);
-    tr.appendChild(td);
-
-    classificationTableBody.appendChild(tr);
-  });
 }
 
 function handleAddClassificationRow() {
-  if (!classificationTableBody) return;
-  const now = nowIsoString();
-  const id =
-    (crypto.randomUUID ? crypto.randomUUID() : "cls-" + Date.now()) +
-    "-" +
-    Math.random().toString(36).slice(2);
-  const tr = document.createElement("tr");
-  tr.dataset.id = id;
-
-  const makeInput = (field, value = "", type = "text") => {
-    const input = document.createElement("input");
-    input.type = type;
-    input.value = value || "";
-    input.className = "table-input";
-    input.dataset.field = field;
-    return input;
-  };
-
-  let td = document.createElement("td");
-  td.appendChild(makeInput("block", ""));
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  td.appendChild(makeInput("type", ""));
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  td.appendChild(makeInput("notes", ""));
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  const del = document.createElement("button");
-  del.className = "btn btn-small btn-danger";
-  del.dataset.action = "delete-classification";
-  del.dataset.id = id;
-  del.textContent = "✕";
-  td.appendChild(del);
-  tr.appendChild(td);
-
-  classificationTableBody.prepend(tr);
+  if (
+    window.ClassificationView &&
+    typeof window.ClassificationView.addRow === "function"
+  ) {
+    window.ClassificationView.addRow(classificationViewContext);
+  }
 }
 
 function handleClassificationTableClick(e) {
-  const target = e.target;
-  const action = target.dataset.action;
-  if (!action) return;
-  if (action === "delete-classification") {
-    const tr = target.closest("tr");
-    if (tr) tr.remove();
-  }
+  // Gestionado desde ClassificationView
 }
 
 function handleSaveClassifications() {
-  if (!classificationTableBody) return;
-  const rows = Array.from(classificationTableBody.querySelectorAll("tr"));
-  const list = [];
-  const seen = new Set();
-  const now = nowIsoString();
-
-  for (const tr of rows) {
-    const id = tr.dataset.id;
-    if (!id) continue;
-    const getField = (selector) => {
-      const el = tr.querySelector(selector);
-      return el ? el.value.trim() : "";
-    };
-    const block = getField('input[data-field="block"]');
-    const type = getField('input[data-field="type"]');
-    const notes = getField('input[data-field="notes"]');
-    if (!block && !type && !notes) continue;
-    const key = `${block.toLowerCase()}|||${type.toLowerCase()}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const existing = classifications.find((c) => c.id === id) || {};
-    const createdAt = existing.createdAt || now;
-    list.push({
-      id,
-      block,
-      type,
-      notes,
-      createdAt,
-      updatedAt: now,
-    });
+  if (
+    window.ClassificationView &&
+    typeof window.ClassificationView.save === "function"
+  ) {
+    window.ClassificationView.save(classificationViewContext);
   }
+}
 
-  classifications = list;
-  saveClassifications();
-  renderClassificationTable();
+function handleClassificationDependencies() {
   renderBlockOptions();
   renderTypeOptions();
   renderProductsDatalist();
