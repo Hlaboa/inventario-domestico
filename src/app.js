@@ -231,62 +231,6 @@ function getLatestStateSnapshot() {
   };
 }
 
-function resetFiltersToDefaults() {
-  const setValue = (el, val = "") => {
-    if (!el) return;
-    el.value = val;
-  };
-
-  setValue(filterSearchInput, "");
-  setValue(filterShelfSelect, "");
-  setValue(filterBlockSelect, "");
-  setValue(filterTypeSelect, "");
-  setValue(filterStoreSelect, "");
-  setValue(filterStatusSelect, "all");
-
-  setValue(editFilterSearchInput, "");
-  setValue(editFilterFamilySelect, "");
-  setValue(editFilterTypeSelect, "");
-  setValue(editFilterShelfSelect, "");
-  setValue(editFilterStoreSelect, "");
-
-  setValue(extraFilterSearchInput, "");
-  setValue(extraFilterFamilySelect, "");
-  setValue(extraFilterTypeSelect, "");
-  setValue(extraFilterStoreSelect, "");
-  setValue(extraFilterBuySelect, "all");
-
-  setValue(extraEditFilterSearchInput, "");
-  setValue(extraEditFilterFamilySelect, "");
-  setValue(extraEditFilterTypeSelect, "");
-  setValue(extraEditFilterStoreSelect, "");
-
-  setValue(instancesSearchInput, "");
-  setValue(instancesFamilyFilterSelect, "");
-  setValue(instancesProducerFilterSelect, "");
-  setValue(instancesStoreFilterSelect, "");
-}
-
-// Toast sencillo
-let toastContainer = null;
-function showToast(message, timeout = 1800) {
-  if (!message) return;
-  if (!toastContainer) {
-    toastContainer = document.createElement("div");
-    toastContainer.className = "toast-container";
-    document.body.appendChild(toastContainer);
-  }
-  const toast = document.createElement("div");
-  toast.className = "toast";
-  toast.textContent = message;
-  toastContainer.appendChild(toast);
-  requestAnimationFrame(() => toast.classList.add("visible"));
-  setTimeout(() => {
-    toast.classList.remove("visible");
-    setTimeout(() => toast.remove(), 300);
-  }, timeout);
-}
-
 function initNavAccessibility() {
   const tabsMain = document.querySelector(".tabs-main");
   if (tabsMain) {
@@ -394,216 +338,152 @@ function getInventoryContext() {
 // ==============================
 
 document.addEventListener("DOMContentLoaded", () => {
-  summaryInfo = document.getElementById("summaryInfo");
+  const refs =
+    window.AppBootstrap && typeof window.AppBootstrap.collectRefs === "function"
+      ? window.AppBootstrap.collectRefs()
+      : {};
 
-  // Navegación principal
-  mainAlmacenButton = document.getElementById("mainAlmacenButton");
-  mainOtrosButton = document.getElementById("mainOtrosButton");
-  mainSelectionButton = document.getElementById("mainSelectionButton");
-  mainClassificationButton = document.getElementById(
-    "mainClassificationButton"
-  );
-  mainProducersButton = document.getElementById("mainProducersButton");
-  mainStoresButton = document.getElementById("mainStoresButton");
-  almacenSection = document.getElementById("almacenSection");
-  otrosSection = document.getElementById("otrosSection");
-  classificationSection = document.getElementById("classificationSection");
-  proveedoresSection = document.getElementById("proveedoresSection");
+  ({
+    summaryInfo,
+    mainAlmacenButton,
+    mainOtrosButton,
+    mainSelectionButton,
+    mainClassificationButton,
+    mainProducersButton,
+    mainStoresButton,
+    almacenSection,
+    otrosSection,
+    classificationSection,
+    proveedoresSection,
+    almacenEditModeButton,
+    otrosEditModeButton,
+    almacenInventoryPanel,
+    almacenEditPanel,
+    otrosListPanel,
+    otrosEditPanel,
+    filterSearchInput,
+    filterShelfSelect,
+    filterBlockSelect,
+    filterTypeSelect,
+    filterStoreSelect,
+    filterStatusSelect,
+    productTableBody,
+    inventoryRowTemplate,
+    inventoryEditRowTemplate,
+    classificationRowTemplate,
+    producersRowTemplate,
+    storesRowTemplate,
+    instancesRowTemplate,
+    gridTableBody,
+    saveGridButton,
+    addGridRowButton,
+    editFilterSearchInput,
+    editFilterFamilySelect,
+    editFilterTypeSelect,
+    editFilterShelfSelect,
+    editFilterStoreSelect,
+    extraListTableBody,
+    extraFilterSearchInput,
+    extraFilterFamilySelect,
+    extraFilterTypeSelect,
+    extraFilterStoreSelect,
+    extraFilterBuySelect,
+    extraTableBody,
+    addExtraRowButton,
+    saveExtraButton,
+    extraEditFilterSearchInput,
+    extraEditFilterFamilySelect,
+    extraEditFilterTypeSelect,
+    extraEditFilterStoreSelect,
+    extraQuickRowTemplate,
+    extraEditRowTemplate,
+    producersSearchInput,
+    producersLocationFilterSelect,
+    producersTableBody,
+    addProducerButton,
+    saveProducersButton,
+    storesSearchInput,
+    storesTypeFilterSelect,
+    storesLocationFilterSelect,
+    storesTableBody,
+    addStoreButton,
+    saveStoresButton,
+    instancesSearchInput,
+    instancesFamilyFilterSelect,
+    instancesProducerFilterSelect,
+    instancesStoreFilterSelect,
+    instancesTableBody,
+    addInstanceButton,
+    saveInstancesButton,
+    productsDatalist,
+    addQuickProductButton,
+    addQuickExtraButton,
+    classificationTableBody,
+    addClassificationButton,
+    saveClassificationsButton,
+    producersPanel,
+    storesPanel,
+    instancesPanel,
+    shoppingListContainer,
+    shoppingSummary,
+    copyListButton,
+    instancesTableWrapper,
+    shoppingStoreTemplate,
+    shoppingItemTemplate,
+    exportBackupButton,
+    importBackupButton,
+    backupFileInput,
+    exportAlmacenCsvButton,
+    exportOtrosCsvButton,
+    toggleShoppingPanelButton,
+    selectionPopupOverlay,
+    selectionPopup,
+    selectionPopupTitle,
+    selectionPopupList,
+    selectionPopupClose,
+    selectionPopupHeader,
+    selectionPopupBody,
+    productAutocompleteDropdown,
+  } = { ...refs });
 
-  // Modo edición
-  almacenEditModeButton = document.getElementById("almacenEditModeButton");
-  otrosEditModeButton = document.getElementById("otrosEditModeButton");
+  productAutocompleteDropdown =
+    productAutocompleteDropdown || createProductAutocompleteDropdown();
 
-  // Paneles
-  almacenInventoryPanel = document.getElementById("almacenInventoryPanel");
-  almacenEditPanel = document.getElementById("almacenEditPanel");
-  otrosListPanel = document.getElementById("otrosListPanel");
-  otrosEditPanel = document.getElementById("otrosEditPanel");
-
-  // Almacén (vista)
-  filterSearchInput = document.getElementById("filterSearch");
-  filterShelfSelect = document.getElementById("filterShelf");
-  filterBlockSelect = document.getElementById("filterBlock");
-  filterTypeSelect = document.getElementById("filterType");
-  filterStoreSelect = document.getElementById("filterStore");
-  filterStatusSelect = document.getElementById("filterStatus");
-  productTableBody = document.getElementById("productTableBody");
-  inventoryRowTemplate = document.getElementById("inventoryRowTemplate");
-  inventoryEditRowTemplate = document.getElementById("inventoryEditRowTemplate");
-  classificationRowTemplate = document.getElementById("classificationRowTemplate");
-  producersRowTemplate = document.getElementById("producersRowTemplate");
-  storesRowTemplate = document.getElementById("storesRowTemplate");
-  instancesRowTemplate = document.getElementById("instancesRowTemplate");
-
-  // Almacén (editar)
-  gridTableBody = document.getElementById("gridTableBody");
-  saveGridButton = document.getElementById("saveGridButton");
-  addGridRowButton = document.getElementById("addGridRowButton");
-  editFilterSearchInput = document.getElementById("editFilterSearch");
-  editFilterFamilySelect = document.getElementById("editFilterFamily");
-  editFilterTypeSelect = document.getElementById("editFilterType");
-  editFilterShelfSelect = document.getElementById("editFilterShelf");
-  editFilterStoreSelect = document.getElementById("editFilterStore");
-
-  // Otros (vista)
-  extraListTableBody = document.getElementById("extraListTableBody");
-  extraFilterSearchInput = document.getElementById("extraFilterSearch");
-  extraFilterFamilySelect = document.getElementById("extraFilterFamily");
-  extraFilterTypeSelect = document.getElementById("extraFilterType");
-  extraFilterStoreSelect = document.getElementById("extraFilterStore");
-  extraFilterBuySelect = document.getElementById("extraFilterBuy");
-
-  // Otros (editar)
-  extraTableBody = document.getElementById("extraTableBody");
-  addExtraRowButton = document.getElementById("addExtraRowButton");
-  saveExtraButton = document.getElementById("saveExtraButton");
-  extraEditFilterSearchInput = document.getElementById("extraEditFilterSearch");
-  extraEditFilterFamilySelect = document.getElementById(
-    "extraEditFilterFamily"
-  );
-  extraEditFilterTypeSelect = document.getElementById("extraEditFilterType");
-  extraEditFilterStoreSelect = document.getElementById("extraEditFilterStore");
-  extraQuickRowTemplate = document.getElementById("extraQuickRowTemplate");
-  extraEditRowTemplate = document.getElementById("extraEditRowTemplate");
-
-  // Productores
-  producersSearchInput = document.getElementById("producersSearch");
-  producersLocationFilterSelect = document.getElementById(
-    "producersLocationFilter"
-  );
-  producersTableBody = document.getElementById("producersTableBody");
-  addProducerButton = document.getElementById("addProducerButton");
-  saveProducersButton = document.getElementById("saveProducersButton");
-
-  // Tiendas
-  storesSearchInput = document.getElementById("storesSearch");
-  storesTypeFilterSelect = document.getElementById("storesTypeFilter");
-  storesLocationFilterSelect = document.getElementById("storesLocationFilter");
-  storesTableBody = document.getElementById("storesTableBody");
-  addStoreButton = document.getElementById("addStoreButton");
-  saveStoresButton = document.getElementById("saveStoresButton");
-
-  // Selección de productos
-  instancesSearchInput = document.getElementById("instancesSearch");
-  instancesFamilyFilterSelect = document.getElementById("instancesFamilyFilter");
-  instancesProducerFilterSelect = document.getElementById(
-    "instancesProducerFilter"
-  );
-  instancesStoreFilterSelect = document.getElementById("instancesStoreFilter");
-  instancesTableBody = document.getElementById("instancesTableBody");
-  addInstanceButton = document.getElementById("addInstanceButton");
-  saveInstancesButton = document.getElementById("saveInstancesButton");
-  productsDatalist = document.getElementById("productsDatalist");
-  addQuickProductButton = document.getElementById("addQuickProductButton");
-  addQuickExtraButton = document.getElementById("addQuickExtraButton");
-  classificationTableBody = document.getElementById("classificationTableBody");
-  addClassificationButton = document.getElementById("addClassificationButton");
-  saveClassificationsButton = document.getElementById("saveClassificationsButton");
-
-  // Tabs Tiendas/Prod/Selección
-  producersPanel = document.getElementById("producersPanel");
-  storesPanel = document.getElementById("storesPanel");
-  instancesPanel = document.getElementById("instancesPanel");
-
-  // Lista compra
-  shoppingListContainer = document.getElementById("shoppingListContainer");
-  shoppingSummary = document.getElementById("shoppingSummary");
-  copyListButton = document.getElementById("copyListButton");
-  instancesTableWrapper = document.getElementById("instancesTableWrapper");
-  shoppingStoreTemplate = document.getElementById("shoppingStoreTemplate");
-  shoppingItemTemplate = document.getElementById("shoppingItemTemplate");
-
-  // Backup y Excel
-  exportBackupButton = document.getElementById("exportBackupButton");
-  importBackupButton = document.getElementById("importBackupButton");
-  backupFileInput = document.getElementById("backupFileInput");
-  exportAlmacenCsvButton = document.getElementById("exportAlmacenCsvButton");
-  exportOtrosCsvButton = document.getElementById("exportOtrosCsvButton");
-
-  // Toggle lista compra
-  toggleShoppingPanelButton = document.getElementById(
-    "toggleShoppingPanelButton"
-  );
-  if (toggleShoppingPanelButton) {
-    toggleShoppingPanelButton.title = "Mostrar lista de la compra";
-  }
-
-  // Popup selección
-  selectionPopupOverlay = document.getElementById("selectionPopupOverlay");
-  selectionPopup = document.getElementById("selectionPopup");
-  selectionPopupTitle = document.getElementById("selectionPopupTitle");
-  selectionPopupList = document.getElementById("selectionPopupList");
-  selectionPopupClose = document.getElementById("selectionPopupClose");
-  selectionPopupHeader = document.querySelector(".selection-popup-header");
-  selectionPopupBody = document.querySelector(".selection-popup-body");
-  productAutocompleteDropdown = createProductAutocompleteDropdown();
-
-  // Navegación principal
-  mainAlmacenButton.addEventListener("click", () => setMainSection("almacen"));
-  mainOtrosButton.addEventListener("click", () => setMainSection("otros"));
-  mainSelectionButton.addEventListener("click", () =>
-    setMainSection("selection")
-  );
-  mainClassificationButton.addEventListener("click", () =>
-    setMainSection("classification")
-  );
-  mainProducersButton.addEventListener("click", () =>
-    setMainSection("producers")
-  );
-  mainStoresButton.addEventListener("click", () => setMainSection("stores"));
-
-  // Modo edición
-  almacenEditModeButton.addEventListener("click", toggleAlmacenEditMode);
-  otrosEditModeButton.addEventListener("click", toggleOtrosEditMode);
-
-  // Productores
-  // Selección de productos
-  instancesSearchInput.addEventListener("input", renderInstancesTable);
-  instancesFamilyFilterSelect.addEventListener("change", renderInstancesTable);
-  instancesProducerFilterSelect.addEventListener(
-    "change",
-    renderInstancesTable
-  );
-  instancesStoreFilterSelect.addEventListener("change", renderInstancesTable);
-  saveInstancesButton.addEventListener("click", handleSaveInstances);
-  if (addQuickProductButton)
-    addQuickProductButton.addEventListener("click", handleAddQuickProduct);
-  if (addQuickExtraButton)
-    addQuickExtraButton.addEventListener("click", handleAddQuickExtra);
-
-  // Lista compra
-  shoppingListContainer.addEventListener("click", handleShoppingListClick);
-  copyListButton.addEventListener("click", handleCopyList);
-
-  // Backup y Excel
-  exportBackupButton.addEventListener("click", handleExportBackup);
-  importBackupButton.addEventListener("click", () => backupFileInput.click());
-  backupFileInput.addEventListener("change", handleBackupFileChange);
-  exportAlmacenCsvButton.addEventListener("click", handleExportAlmacenCsv);
-  exportOtrosCsvButton.addEventListener("click", handleExportOtrosCsv);
-
-  // Toggle lista compra
-  toggleShoppingPanelButton.addEventListener(
-    "click",
-    handleToggleShoppingPanel
-  );
-
-  // Popup selección
-  if (selectionPopupClose) {
-    selectionPopupClose.addEventListener("click", closeSelectionPopup);
-  }
-  if (selectionPopupOverlay) {
-    selectionPopupOverlay.addEventListener("click", (e) => {
-      if (e.target === selectionPopupOverlay) {
-        closeSelectionPopup();
-      }
+  if (window.AppBootstrap) {
+    window.AppBootstrap.initMainNav(refs, {
+      setMainSection,
+      toggleAlmacenEditMode,
+      toggleOtrosEditMode,
     });
+
+    window.AppBootstrap.initFilters(refs, {
+      renderInstancesTable,
+      handleSaveInstances,
+      handleAddQuickProduct,
+      handleAddQuickExtra,
+      handleShoppingListClick,
+      handleCopyList,
+      handleExportBackup,
+      handleBackupFileChange,
+      handleExportAlmacenCsv,
+      handleExportOtrosCsv,
+      handleToggleShoppingPanel,
+      triggerImportBackup: () => backupFileInput && backupFileInput.click(),
+    });
+
+    window.AppBootstrap.initPopups(refs, {
+      closeSelectionPopup,
+      handleSelectionPopupResize,
+      initSelectionPopupDrag,
+      initProductAutocompleteEvents,
+      handleSelectionPopupKeydown,
+      initHorizontalTableScroll,
+    });
+
+    if (toggleShoppingPanelButton) {
+      toggleShoppingPanelButton.title = "Mostrar lista de la compra";
+    }
   }
-  initSelectionPopupDrag();
-  window.addEventListener("resize", handleSelectionPopupResize);
-  initProductAutocompleteEvents();
-  document.addEventListener("keydown", handleSelectionPopupKeydown);
-  initHorizontalTableScroll();
 
   // Carga datos y renderizado inicial
   loadAllData();
@@ -644,7 +524,34 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (!filtersDefaultsApplied) {
       filtersDefaultsApplied = true;
-      resetFiltersToDefaults();
+      if (window.UIHelpers && typeof window.UIHelpers.resetFilters === "function") {
+        window.UIHelpers.resetFilters({
+          filterSearchInput,
+          filterShelfSelect,
+          filterBlockSelect,
+          filterTypeSelect,
+          filterStoreSelect,
+          filterStatusSelect,
+          editFilterSearchInput,
+          editFilterFamilySelect,
+          editFilterTypeSelect,
+          editFilterShelfSelect,
+          editFilterStoreSelect,
+          extraFilterSearchInput,
+          extraFilterFamilySelect,
+          extraFilterTypeSelect,
+          extraFilterStoreSelect,
+          extraFilterBuySelect,
+          extraEditFilterSearchInput,
+          extraEditFilterFamilySelect,
+          extraEditFilterTypeSelect,
+          extraEditFilterStoreSelect,
+          instancesSearchInput,
+          instancesFamilyFilterSelect,
+          instancesProducerFilterSelect,
+          instancesStoreFilterSelect,
+        });
+      }
       renderProducts();
       renderGridRows();
       renderExtraQuickTable();
