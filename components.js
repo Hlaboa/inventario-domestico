@@ -68,7 +68,12 @@
 
     Object.entries(replacements || {}).forEach(([selector, node]) => {
       const placeholder = row.querySelector(selector);
-      if (placeholder && node) {
+      if (!placeholder || !node) return;
+      const isCell = placeholder.tagName && (placeholder.tagName === "TD" || placeholder.tagName === "TH");
+      if (isCell) {
+        placeholder.innerHTML = "";
+        placeholder.appendChild(node);
+      } else {
         placeholder.replaceWith(node);
       }
     });

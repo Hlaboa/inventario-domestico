@@ -291,6 +291,33 @@ body.lock-scroll {
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.03);
 }
 
+.toast-container {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  z-index: 999;
+  pointer-events: none;
+}
+
+.toast {
+  background: rgba(47, 39, 30, 0.9);
+  color: #fffaf4;
+  padding: 0.55rem 0.85rem;
+  border-radius: 0.7rem;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+  transform: translateY(10px);
+  opacity: 0;
+  transition: all 0.18s ease;
+}
+
+.toast.visible {
+  transform: translateY(0);
+  opacity: 1;
+}
+
 .filters-edit {
   margin-top: 0.25rem;
   flex-wrap: wrap;
@@ -489,11 +516,15 @@ textarea:focus-visible {
   max-height: none;
   height: 100%;
   padding-top: 0;
+  width: 100%;
 }
 
 .table-scroll table {
   border-collapse: separate;
   border-spacing: 0;
+  width: max(100%, var(--table-min-width));
+  min-width: var(--table-min-width);
+  table-layout: auto;
 }
 
 .table-scroll thead th {
@@ -522,9 +553,11 @@ textarea:focus-visible {
 }
 
 .product-table {
-  width: 100%;
+  width: max(100%, var(--table-min-width));
+  min-width: var(--table-min-width);
   border-collapse: collapse;
   font-size: 0.78rem;
+  table-layout: auto;
 }
 
 .product-table thead,

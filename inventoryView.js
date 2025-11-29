@@ -284,12 +284,17 @@
       filterStatusSelect,
     } = refs;
 
-    filterSearchInput.addEventListener("input", () => render({ refs, state, helpers }));
-    filterShelfSelect.addEventListener("change", () => render({ refs, state, helpers }));
-    filterBlockSelect.addEventListener("change", () => render({ refs, state, helpers }));
-    filterTypeSelect.addEventListener("change", () => render({ refs, state, helpers }));
-    filterStoreSelect.addEventListener("change", () => render({ refs, state, helpers }));
-    filterStatusSelect.addEventListener("change", () => render({ refs, state, helpers }));
+    const debouncedRender =
+      window.AppUtils && typeof window.AppUtils.debounce === "function"
+        ? window.AppUtils.debounce(() => render({ refs, state, helpers }), 120)
+        : () => render({ refs, state, helpers });
+
+    filterSearchInput.addEventListener("input", debouncedRender);
+    filterShelfSelect.addEventListener("change", debouncedRender);
+    filterBlockSelect.addEventListener("change", debouncedRender);
+    filterTypeSelect.addEventListener("change", debouncedRender);
+    filterStoreSelect.addEventListener("change", debouncedRender);
+    filterStatusSelect.addEventListener("change", debouncedRender);
     productTableBody.addEventListener("click", helpers.handleInventoryTableClick);
   }
 

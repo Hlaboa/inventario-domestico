@@ -228,6 +228,62 @@ function getLatestStateSnapshot() {
   };
 }
 
+function resetFiltersToDefaults() {
+  const setValue = (el, val = "") => {
+    if (!el) return;
+    el.value = val;
+  };
+
+  setValue(filterSearchInput, "");
+  setValue(filterShelfSelect, "");
+  setValue(filterBlockSelect, "");
+  setValue(filterTypeSelect, "");
+  setValue(filterStoreSelect, "");
+  setValue(filterStatusSelect, "all");
+
+  setValue(editFilterSearchInput, "");
+  setValue(editFilterFamilySelect, "");
+  setValue(editFilterTypeSelect, "");
+  setValue(editFilterShelfSelect, "");
+  setValue(editFilterStoreSelect, "");
+
+  setValue(extraFilterSearchInput, "");
+  setValue(extraFilterFamilySelect, "");
+  setValue(extraFilterTypeSelect, "");
+  setValue(extraFilterStoreSelect, "");
+  setValue(extraFilterBuySelect, "all");
+
+  setValue(extraEditFilterSearchInput, "");
+  setValue(extraEditFilterFamilySelect, "");
+  setValue(extraEditFilterTypeSelect, "");
+  setValue(extraEditFilterStoreSelect, "");
+
+  setValue(instancesSearchInput, "");
+  setValue(instancesFamilyFilterSelect, "");
+  setValue(instancesProducerFilterSelect, "");
+  setValue(instancesStoreFilterSelect, "");
+}
+
+// Toast sencillo
+let toastContainer = null;
+function showToast(message, timeout = 1800) {
+  if (!message) return;
+  if (!toastContainer) {
+    toastContainer = document.createElement("div");
+    toastContainer.className = "toast-container";
+    document.body.appendChild(toastContainer);
+  }
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.textContent = message;
+  toastContainer.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add("visible"));
+  setTimeout(() => {
+    toast.classList.remove("visible");
+    setTimeout(() => toast.remove(), 300);
+  }, timeout);
+}
+
 function initNavAccessibility() {
   const tabsMain = document.querySelector(".tabs-main");
   if (tabsMain) {
@@ -285,6 +341,7 @@ let selectionPopupHeader;
 let selectionPopupBody;
 let productAutocompleteDropdown;
 let currentProductInput = null;
+let lastSelectionTrigger = null;
 let instancesTableWrapper;
 let inlineProducerSelect;
 let inlineBrandInput;
@@ -293,6 +350,7 @@ let inlineStoresSelect;
 let isDraggingSelectionPopup = false;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
+let filtersDefaultsApplied = false;
 
 function getInventoryContext() {
   return {
@@ -509,16 +567,41 @@ document.addEventListener("DOMContentLoaded", () => {
   // Otros productos
   extraListTableBody.addEventListener("click", handleExtraListClick);
 
+  const debouncedRenderExtras =
+    (window.AppUtils && window.AppUtils.debounce
+      ? window.AppUtils.debounce(renderExtraQuickTable, 150)
+      : renderExtraQuickTable);
+  const debouncedRenderInventory =
+    (window.AppUtils && window.AppUtils.debounce
+      ? window.AppUtils.debounce(() => renderProducts(), 150)
+      : () => renderProducts());
+  const debouncedRenderInstances =
+    (window.AppUtils && window.AppUtils.debounce
+      ? window.AppUtils.debounce(() => {
+          if (instancesController && typeof instancesController.render === "function") {
+            instancesController.render();
+          } else {
+            renderInstancesTable();
+          }
+        }, 150)
+      : () => {
+          if (instancesController && typeof instancesController.render === "function") {
+            instancesController.render();
+          } else {
+            renderInstancesTable();
+          }
+        });
+
   if (extraFilterSearchInput)
-    extraFilterSearchInput.addEventListener("input", renderExtraQuickTable);
+    extraFilterSearchInput.addEventListener("input", debouncedRenderExtras);
   if (extraFilterFamilySelect)
-    extraFilterFamilySelect.addEventListener("change", renderExtraQuickTable);
+    extraFilterFamilySelect.addEventListener("change", debouncedRenderExtras);
   if (extraFilterTypeSelect)
-    extraFilterTypeSelect.addEventListener("change", renderExtraQuickTable);
+    extraFilterTypeSelect.addEventListener("change", debouncedRenderExtras);
   if (extraFilterStoreSelect)
-    extraFilterStoreSelect.addEventListener("change", renderExtraQuickTable);
+    extraFilterStoreSelect.addEventListener("change", debouncedRenderExtras);
   if (extraFilterBuySelect)
-    extraFilterBuySelect.addEventListener("change", renderExtraQuickTable);
+    extraFilterBuySelect.addEventListener("change", debouncedRenderExtras);
 
   addExtraRowButton.addEventListener("click", handleAddExtraRow);
   saveExtraButton.addEventListener("click", handleSaveExtra);
@@ -584,6 +667,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const syncFromState = (next) => {
     applyStateSnapshot(next || {});
+    ensureInstanceFamilies({ persist: false });
     renderShelfOptions();
     renderBlockOptions();
     renderTypeOptions();
@@ -614,6 +698,16 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     renderShoppingList();
     initResizableTables();
+
+    if (!filtersDefaultsApplied) {
+      filtersDefaultsApplied = true;
+      resetFiltersToDefaults();
+      renderProducts();
+      renderGridRows();
+      renderExtraQuickTable();
+      renderExtraEditTable();
+      renderInstancesTable();
+    }
   };
 
   if (window.AppStore && window.ViewControllers && typeof window.ViewControllers.create === "function") {
@@ -704,6 +798,7 @@ document.addEventListener("DOMContentLoaded", () => {
       producers,
       stores: suppliers,
     },
+    getAllProducts: () => getAllProductsForAssociationList(),
     getFamilyForInstance,
     getProducerName,
     getStoreNames,
@@ -1219,6 +1314,7 @@ function loadAllData() {
   if (window.AppStore && typeof window.AppStore.bootstrap === "function") {
     const snapshot = window.AppStore.bootstrap();
     applyStateSnapshot(snapshot);
+    ensureInstanceFamilies({ persist: false });
     return;
   }
 
@@ -1228,12 +1324,14 @@ function loadAllData() {
   ) {
     const data = window.DataService.hydrateFromStorage();
     applyStateSnapshot(data);
+    ensureInstanceFamilies({ persist: false });
     return;
   }
 
   if (window.AppStorage && typeof window.AppStorage.loadAllData === "function") {
     const data = window.AppStorage.loadAllData();
     applyStateSnapshot(data);
+    ensureInstanceFamilies({ persist: false });
     return;
   }
 
@@ -1507,14 +1605,61 @@ function getFamilyByProductName(name) {
   return fromProducts ? fromProducts.block || "" : "";
 }
 
-function getFamilyForInstance(inst) {
+function resolveInstanceFamily(inst) {
   if (!inst) return "";
-  let prod = null;
+  if (inst.block) return inst.block;
+
+  // 1) Por id de producto
   if (inst.productId) {
-    prod = findProductById(inst.productId);
+    const prod = findProductById(inst.productId);
+    if (prod && prod.block) return prod.block;
   }
-  if (prod) return prod.block || "";
-  return getFamilyByProductName(inst.productName);
+
+  const name = (inst.productName || "").trim().toLowerCase();
+  if (!name) return "";
+
+  // 2) Coincidencia exacta por nombre
+  const all = unifiedProducts && unifiedProducts.length ? unifiedProducts : recomputeUnifiedFromDerived();
+  const exact = all.find(
+    (p) => (p.name || "").trim().toLowerCase() === name
+  );
+  if (exact && exact.block) return exact.block;
+
+  // 3) Coincidencia parcial (incluye)
+  const partial = all.find((p) => {
+    const pname = (p.name || "").trim().toLowerCase();
+    return pname && (pname.includes(name) || name.includes(pname));
+  });
+  if (partial && partial.block) return partial.block;
+
+  return "";
+}
+
+function getFamilyForInstance(inst) {
+  return resolveInstanceFamily(inst);
+}
+
+function ensureInstanceFamilies({ persist = false } = {}) {
+  if (!Array.isArray(productInstances) || productInstances.length === 0) return;
+  const updated = [];
+  let changed = false;
+  productInstances.forEach((inst) => {
+    const block = resolveInstanceFamily(inst) || inst.block || "";
+    if (block && inst.block !== block) {
+      changed = true;
+      updated.push({ ...inst, block });
+    } else {
+      updated.push(inst);
+    }
+  });
+  if (changed) {
+    productInstances = updated;
+    if (persist) {
+      try {
+        saveProductInstances();
+      } catch {}
+    }
+  }
 }
 
 function createTableInput(field, value = "", type = "text") {
@@ -1833,6 +1978,7 @@ function getSelectionMainStoreName(product) {
 
 function openSelectionPopupForProduct(productId) {
   if (!selectionPopupOverlay || !selectionPopup || !selectionPopupList) return;
+  lastSelectionTrigger = document.activeElement;
 
   const product = findProductById(productId);
   if (!product) return;
@@ -2250,6 +2396,11 @@ function closeSelectionPopup() {
     selectionPopup.classList.remove("dragging");
     selectionPopup.style.transition = "";
   }
+   if (lastSelectionTrigger && typeof lastSelectionTrigger.focus === "function") {
+     try {
+       lastSelectionTrigger.focus();
+     } catch {}
+   }
 }
 
 function handleSelectionPopupKeydown(e) {
@@ -3496,6 +3647,7 @@ function handleSaveGrid() {
   renderShoppingList();
   // Sal de modo edición aunque haya store activo
   setAlmacenMode(false);
+  showToast("Inventario guardado");
 }
 
 function filterGridRows() {
@@ -4194,6 +4346,7 @@ function handleSaveExtra() {
   renderExtraQuickTable();
   renderShoppingList();
   setOtrosMode(false);
+  showToast("Otros productos guardados");
 }
 
 function filterExtraEditRows() {
@@ -4388,6 +4541,13 @@ function persistInstances(list, options = {}) {
       lower &&
       allProducts.find((p) => (p.name || "").trim().toLowerCase() === lower);
     const productId = match ? match.id : inst.productId || "";
+    const productById = productId ? findProductById(productId) : null;
+    const resolvedBlock = resolveInstanceFamily({
+      ...inst,
+      productId,
+      productName,
+      block: inst.block || (match && match.block) || (productById && productById.block) || "",
+    });
     const existing = productInstances.find((i) => i.id === id) || {};
     const createdAt = existing.createdAt || inst.createdAt || now;
     updates.set(id, {
@@ -4395,6 +4555,7 @@ function persistInstances(list, options = {}) {
       id,
       productId,
       productName,
+      block: resolvedBlock,
       storeIds: Array.isArray(inst.storeIds) ? inst.storeIds.filter(Boolean) : [],
       createdAt,
       updatedAt: now,
@@ -4578,6 +4739,7 @@ function handleAddInstanceRow() {
 function handleSaveInstances() {
   if (window.InstancesView && typeof window.InstancesView.save === "function") {
     window.InstancesView.save(instancesViewContext);
+    showToast("Selección de productos guardada");
   }
 }
 

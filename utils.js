@@ -81,6 +81,14 @@
     return {};
   }
 
+  function debounce(fn, wait = 120) {
+    let t = null;
+    return (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), wait);
+    };
+  }
+
   window.AppUtils = {
     nowIsoString,
     safeLoadList,
@@ -89,5 +97,6 @@
     createTableTextarea,
     setSelectOptions,
     ensureObject,
+    debounce,
   };
 })();

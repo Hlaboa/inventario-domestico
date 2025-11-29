@@ -20,6 +20,44 @@
       getProducerName = () => "",
       getStoreNames = () => "",
     } = context.data || {};
+    const producersList = (context.data && context.data.producers) || [];
+    const storesList = (context.data && context.data.stores) || [];
+    const allProducts =
+      (typeof context.getAllProducts === "function" && context.getAllProducts()) ||
+      context.data?.allProducts ||
+      [];
+
+    const producerNameFor = (id) => {
+      if (typeof context.getProducerName === "function") {
+        const name = context.getProducerName(id);
+        if (name) return name;
+      }
+      if (typeof getProducerName === "function") {
+        const name = getProducerName(id);
+        if (name) return name;
+      }
+      const p = producersList.find((x) => x.id === id);
+      return p ? p.name || "" : "";
+    };
+
+    const storeNamesFor = (ids) => {
+      if (typeof context.getStoreNames === "function") {
+        const s = context.getStoreNames(ids);
+        if (s) return s;
+      }
+      if (typeof getStoreNames === "function") {
+        const s = getStoreNames(ids);
+        if (s) return s;
+      }
+      if (!Array.isArray(ids)) return "";
+      const names = ids
+        .map((id) => {
+          const store = storesList.find((s) => s.id === id);
+          return store ? store.name || "" : "";
+        })
+        .filter(Boolean);
+      return names.join(", ");
+    };
 
     const search = (refs.searchInput?.value || "").toLowerCase();
     const filterFamily = refs.familyFilter?.value || "";
@@ -28,6 +66,27 @@
 
     tableBody.innerHTML = "";
     let items = instances.slice();
+
+    // Enriquecer con familia calculada (y actualizar instancia en memoria)
+    items = items.map((inst) => {
+      const family =
+        getFamilyForInstance(inst) ||
+        inst.block ||
+        (() => {
+          const lower = (inst.productName || "").trim().toLowerCase();
+          if (!lower) return "";
+          const match =
+            allProducts.find((p) => p.id && p.id === inst.productId) ||
+            allProducts.find((p) => (p.name || "").trim().toLowerCase() === lower) ||
+            allProducts.find((p) => {
+              const n = (p.name || "").trim().toLowerCase();
+              return n && (n.includes(lower) || lower.includes(n));
+            });
+          return match ? match.block || "" : "";
+        })();
+      if (family && !inst.block) inst.block = family;
+      return { ...inst, block: family };
+    });
 
     items = items.filter((inst) => {
       const family = getFamilyForInstance(inst);
@@ -45,9 +104,9 @@
 
       if (search) {
         const prodName = inst.productName || "";
-        const producerName = getProducerName(inst.producerId);
+        const producerName = producerNameFor(inst.producerId);
         const brand = inst.brand || "";
-        const stores = getStoreNames(inst.storeIds);
+        const stores = storeNamesFor(inst.storeIds);
         const notes = inst.notes || "";
         const haystack = `${prodName} ${producerName} ${brand} ${stores} ${notes}`.toLowerCase();
         if (!haystack.includes(search)) return false;
@@ -98,7 +157,8 @@
     };
 
     items.forEach((inst) => {
-      const stripeKey = getFamilyForInstance(inst) || "__none__";
+      const family = inst.block || getFamilyForInstance(inst) || "";
+      const stripeKey = family || "__none__";
       const stripe = stripeMap[stripeKey] || 0;
 
       const inputName = makeInput("productName", inst.productName);
@@ -118,7 +178,7 @@
 
       const familyCell = document.createElement("td");
       familyCell.className = "instances-family-cell";
-      familyCell.textContent = getFamilyForInstance(inst) || "—";
+      familyCell.textContent = family || "—";
 
       const selProducer = document.createElement("select");
       selProducer.className = "table-input";
@@ -173,7 +233,7 @@
             dataset: { id: inst.id },
             classes: [`family-stripe-${stripe}`],
             text: {
-              "[data-field='family']": getFamilyForInstance(inst) || "—",
+              "[data-field='family']": family || "—",
             },
             actions: {
               "[data-role='delete']": { action: "delete-instance", id: inst.id },
@@ -418,7 +478,10 @@
 
   function bindFilters(context) {
     const refs = context.refs || {};
-    const handle = () => render(context);
+    const handle =
+      window.AppUtils && typeof window.AppUtils.debounce === "function"
+        ? window.AppUtils.debounce(() => render(context), 120)
+        : () => render(context);
     refs.searchInput?.addEventListener("input", handle);
     refs.familyFilter?.addEventListener("change", handle);
     refs.producerFilter?.addEventListener("change", handle);
