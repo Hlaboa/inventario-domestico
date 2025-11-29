@@ -89,6 +89,150 @@
     };
   }
 
+  function commitDraftProducts({
+    tableBody,
+    drafts = [],
+    getPantryProducts = () => [],
+    getOtherProducts = () => [],
+    persistUnified = () => {},
+    nowIsoString: nowFn = nowIsoString,
+    allowedIds = null,
+  } = {}) {
+    if (!tableBody || drafts.length === 0) {
+      return { drafts, unified: null };
+    }
+    const rows = Array.from(tableBody.querySelectorAll(".product-draft-row"));
+    if (rows.length === 0) return { drafts, unified: null };
+
+    let unified = [
+      ...getPantryProducts().map((p) => ({ ...p, scope: "almacen" })),
+      ...getOtherProducts().map((p) => ({ ...p, scope: "otros" })),
+    ];
+    let updatedDrafts = drafts.slice();
+    let added = false;
+
+    rows.forEach((tr) => {
+      const draftId = tr.dataset.draftId;
+      if (allowedIds && allowedIds.length && !allowedIds.includes(draftId)) {
+        return;
+      }
+      const getField = (field) => {
+        const el = tr.querySelector(`[data-field="${field}"]`);
+        if (!el) return "";
+        if (el.type === "checkbox") return el.checked;
+        return el.value.trim();
+      };
+      const name = getField("name");
+      if (!name) return;
+      const block = getField("block");
+      const type = getField("type");
+      const shelf = getField("shelf");
+      const quantity = getField("quantity");
+      const have = !!getField("have");
+      const acquisitionDate = getField("acquisitionDate");
+      const expiryText = getField("expiryText");
+      const notes = (tr.querySelector('textarea[data-field="notes"]') || {}).value;
+      const now = nowFn();
+      const newProd = {
+        id:
+          (crypto.randomUUID ? crypto.randomUUID() : "prod-" + Date.now()) +
+          "-" +
+          Math.random().toString(36).slice(2),
+        name,
+        block,
+        type,
+        shelf,
+        quantity,
+        have,
+        acquisitionDate,
+        expiryText,
+        notes,
+        scope: "almacen",
+        selectionId: "",
+        createdAt: now,
+        updatedAt: now,
+      };
+      unified = [newProd, ...unified];
+      updatedDrafts = updatedDrafts.filter((d) => d.id !== draftId);
+      added = true;
+    });
+
+    if (added) {
+      persistUnified(unified);
+    }
+
+    return { drafts: updatedDrafts, unified };
+  }
+
+  function commitDraftExtras({
+    tableBody,
+    drafts = [],
+    getPantryProducts = () => [],
+    getOtherProducts = () => [],
+    persistUnified = () => {},
+    nowIsoString: nowFn = nowIsoString,
+    allowedIds = null,
+  } = {}) {
+    if (!tableBody || drafts.length === 0) {
+      return { drafts, unified: null };
+    }
+    const rows = Array.from(tableBody.querySelectorAll(".extra-draft-row"));
+    if (rows.length === 0) return { drafts, unified: null };
+
+    let unified = [
+      ...getPantryProducts().map((p) => ({ ...p, scope: "almacen" })),
+      ...getOtherProducts().map((p) => ({ ...p, scope: "otros" })),
+    ];
+    let updatedDrafts = drafts.slice();
+    let added = false;
+
+    rows.forEach((tr) => {
+      const draftId = tr.dataset.draftId;
+      if (allowedIds && allowedIds.length && !allowedIds.includes(draftId)) {
+        return;
+      }
+      const getField = (field) => {
+        const el = tr.querySelector(`[data-field="${field}"]`);
+        if (!el) return "";
+        if (el.type === "checkbox") return el.checked;
+        return el.value.trim();
+      };
+      const name = getField("name");
+      if (!name) return;
+      const block = getField("block");
+      const type = getField("type");
+      const quantity = getField("quantity");
+      const buy = !!getField("buy");
+      const notes = (tr.querySelector('textarea[data-field="notes"]') || {}).value;
+      const now = nowFn();
+      const newExtra = {
+        id:
+          (crypto.randomUUID ? crypto.randomUUID() : "extra-" + Date.now()) +
+          "-" +
+          Math.random().toString(36).slice(2),
+        name,
+        block,
+        type,
+        quantity,
+        notes,
+        buy,
+        scope: "otros",
+        selectionId: "",
+        createdAt: now,
+        updatedAt: now,
+      };
+      unified = [newExtra, ...unified];
+      updatedDrafts = updatedDrafts.filter((d) => d.id !== draftId);
+      added = true;
+    });
+
+    if (added) {
+      persistUnified(unified);
+    }
+
+    return { drafts: updatedDrafts, unified };
+  }
+
   window.AppUtils = {
     nowIsoString,
     safeLoadList,
@@ -98,5 +242,7 @@
     setSelectOptions,
     ensureObject,
     debounce,
+    commitDraftProducts,
+    commitDraftExtras,
   };
 })();

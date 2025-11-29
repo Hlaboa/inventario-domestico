@@ -243,31 +243,7 @@
     const filterStore = refs.storeFilter?.value || "";
     const filterBuy = refs.buyFilter?.value || "all";
 
-    const filtered = extras
-      .filter((p) => {
-        if (filterFamily && (p.block || "") !== filterFamily) return false;
-        if (filterType && (p.type || "") !== filterType) return false;
-        if (filterStore && !matchesStore(context, p, filterStore)) return false;
-        if (filterBuy !== "all") {
-          const buyVal = filterBuy === "yes";
-          if (!!p.buy !== buyVal) return false;
-        }
-        if (search) {
-          const inst = context.getSelectionInstanceForProduct
-            ? context.getSelectionInstanceForProduct(p)
-            : null;
-          const stores =
-            inst && context.getStoreNames
-              ? context.getStoreNames(inst.storeIds)
-              : "";
-          const haystack = `${p.name || ""} ${p.block || ""} ${p.type || ""} ${
-            p.notes || ""
-          } ${stores || ""}`.toLowerCase();
-          if (!haystack.includes(search)) return false;
-        }
-        return true;
-      })
-      .sort(defaultSort);
+    const filtered = extras.slice().sort(defaultSort);
 
     const stripeMap = buildStripeMap(context, filtered);
     const draftsCount = renderDrafts(context, tableBody);
@@ -307,10 +283,18 @@
         const stripe =
           stripeMap[(p.block || "").trim() || "__none__"] || 0;
         const row = buildRow(p, stripe, context);
-        if (row) frag.appendChild(row);
+        if (row) {
+          row.dataset.id = p.id;
+          row.dataset.block = p.block || "";
+          row.dataset.type = p.type || "";
+          row.dataset.buy = p.buy ? "1" : "0";
+          frag.appendChild(row);
+        }
       });
       tableBody.appendChild(frag);
     }
+
+    filterRows(context);
   }
 
   function handleClick(e) {

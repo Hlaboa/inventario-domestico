@@ -3,8 +3,8 @@
    * Controlador para la vista de instancias (selección de productos).
    * Mantiene sincronizados los datos de contexto con el AppStore.
    */
-  function create({ store, view, context }) {
-    if (!store || !view || typeof view.render !== "function") {
+  function create({ store, view, feature, context }) {
+    if (!store) {
       return { dispose() {} };
     }
 
@@ -17,7 +17,13 @@
         ctx.data.producers = state.producers || ctx.data.producers || [];
         ctx.data.stores = state.suppliers || ctx.data.stores || [];
       }
-      view.render(ctx);
+      if (feature && typeof feature.render === "function") {
+        feature.render();
+        return;
+      }
+      if (view && typeof view.render === "function") {
+        view.render(ctx);
+      }
     };
 
     const unsubscribe =

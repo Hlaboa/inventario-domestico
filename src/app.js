@@ -21,8 +21,18 @@ let classifications = []; // combinaciones familia/tipo (cache)
 let productDrafts = [];
 let extraDrafts = [];
 const stateAdapter = window.StateAdapter || null;
+const appUtils = window.AppUtils || {};
+const debounce =
+  (appUtils && typeof appUtils.debounce === "function"
+    ? appUtils.debounce
+    : (fn, wait = 80) => {
+        let t = null;
+        return (...args) => {
+          clearTimeout(t);
+          t = setTimeout(() => fn(...args), wait);
+        };
+      });
 let isSyncingFromStore = false;
-let isPersistingUnified = false;
 
 function getStateSnapshot() {
   if (stateAdapter && typeof stateAdapter.getState === "function") {
@@ -47,26 +57,36 @@ function getStateSnapshot() {
 
 function getSuppliersList() {
   const state = getStateSnapshot();
-  return Array.isArray(state.suppliers) && state.suppliers.length ? state.suppliers : suppliers;
+  const list = Array.isArray(state.suppliers) && state.suppliers.length ? state.suppliers : suppliers;
+  suppliers = Array.isArray(list) ? list : [];
+  return suppliers;
 }
 
 function getProducersList() {
   const state = getStateSnapshot();
-  return Array.isArray(state.producers) && state.producers.length ? state.producers : producers;
+  const list = Array.isArray(state.producers) && state.producers.length ? state.producers : producers;
+  producers = Array.isArray(list) ? list : [];
+  return producers;
 }
 
 function getClassificationsList() {
   const state = getStateSnapshot();
-  return Array.isArray(state.classifications) && state.classifications.length
-    ? state.classifications
-    : classifications;
+  const list =
+    Array.isArray(state.classifications) && state.classifications.length
+      ? state.classifications
+      : classifications;
+  classifications = Array.isArray(list) ? list : [];
+  return classifications;
 }
 
 function getInstancesList() {
   const state = getStateSnapshot();
-  return Array.isArray(state.productInstances) && state.productInstances.length
-    ? state.productInstances
-    : productInstances;
+  const list =
+    Array.isArray(state.productInstances) && state.productInstances.length
+      ? state.productInstances
+      : productInstances;
+  productInstances = Array.isArray(list) ? list : [];
+  return productInstances;
 }
 
 function setInstancesList(list) {
@@ -95,29 +115,125 @@ function setInstancesList(list) {
     window.AppStorage.saveProductInstances(productInstances);
     return productInstances;
   }
-  saveList(STORAGE_KEY_INSTANCES, productInstances);
+  if (typeof appUtils.saveList === "function") {
+    appUtils.saveList(STORAGE_KEY_INSTANCES, productInstances);
+    return productInstances;
+  }
+  try {
+    localStorage.setItem(STORAGE_KEY_INSTANCES, JSON.stringify(productInstances));
+  } catch {}
   return productInstances;
 }
 
-function getStateSnapshot() {
-  if (stateAdapter && typeof stateAdapter.getState === "function") {
-    return stateAdapter.getState() || {};
+function setSuppliersList(list) {
+  const next = Array.isArray(list) ? list : [];
+  suppliers = next;
+  if (isSyncingFromStore) return suppliers;
+  if (stateAdapter && typeof stateAdapter.setEntity === "function") {
+    stateAdapter.setEntity("suppliers", next);
+    syncFromAppStore();
+    return getSuppliersList();
   }
-  if (window.AppStore && typeof window.AppStore.getState === "function") {
-    return window.AppStore.getState() || {};
+  if (
+    window.AppStore &&
+    window.AppStore.actions &&
+    typeof window.AppStore.actions.setSuppliers === "function"
+  ) {
+    window.AppStore.actions.setSuppliers(next);
+    syncFromAppStore();
+    return getSuppliersList();
   }
-  if (window.AppState && typeof window.AppState.getState === "function") {
-    return window.AppState.getState() || {};
+  if (window.DataService && typeof window.DataService.setSuppliers === "function") {
+    suppliers = window.DataService.setSuppliers(next);
+    return suppliers;
   }
-  return {
-    products,
-    extraProducts,
-    unifiedProducts,
-    suppliers,
-    producers,
-    productInstances,
-    classifications,
-  };
+  if (window.AppStorage && typeof window.AppStorage.saveSuppliers === "function") {
+    window.AppStorage.saveSuppliers(next);
+    return suppliers;
+  }
+  if (typeof appUtils.saveList === "function") {
+    appUtils.saveList(STORAGE_KEY_SUPPLIERS, suppliers);
+    return suppliers;
+  }
+  try {
+    localStorage.setItem(STORAGE_KEY_SUPPLIERS, JSON.stringify(suppliers));
+  } catch {}
+  return suppliers;
+}
+
+function setProducersList(list) {
+  const next = Array.isArray(list) ? list : [];
+  producers = next;
+  if (isSyncingFromStore) return producers;
+  if (stateAdapter && typeof stateAdapter.setEntity === "function") {
+    stateAdapter.setEntity("producers", next);
+    syncFromAppStore();
+    return getProducersList();
+  }
+  if (
+    window.AppStore &&
+    window.AppStore.actions &&
+    typeof window.AppStore.actions.setProducers === "function"
+  ) {
+    window.AppStore.actions.setProducers(next);
+    syncFromAppStore();
+    return getProducersList();
+  }
+  if (window.DataService && typeof window.DataService.setProducers === "function") {
+    producers = window.DataService.setProducers(next);
+    return producers;
+  }
+  if (window.AppStorage && typeof window.AppStorage.saveProducers === "function") {
+    window.AppStorage.saveProducers(next);
+    return producers;
+  }
+  if (typeof appUtils.saveList === "function") {
+    appUtils.saveList(STORAGE_KEY_PRODUCERS, producers);
+    return producers;
+  }
+  try {
+    localStorage.setItem(STORAGE_KEY_PRODUCERS, JSON.stringify(producers));
+  } catch {}
+  return producers;
+}
+
+function setClassificationsList(list) {
+  const next = Array.isArray(list) ? list : [];
+  classifications = next;
+  if (isSyncingFromStore) return classifications;
+  if (stateAdapter && typeof stateAdapter.setEntity === "function") {
+    stateAdapter.setEntity("classifications", next);
+    syncFromAppStore();
+    return getClassificationsList();
+  }
+  if (
+    window.AppStore &&
+    window.AppStore.actions &&
+    typeof window.AppStore.actions.setClassifications === "function"
+  ) {
+    window.AppStore.actions.setClassifications(next);
+    syncFromAppStore();
+    return getClassificationsList();
+  }
+  if (
+    window.DataService &&
+    typeof window.DataService.setClassifications === "function"
+  ) {
+    classifications = window.DataService.setClassifications(next);
+    return classifications;
+  }
+  if (window.AppStorage && typeof window.AppStorage.saveClassifications === "function") {
+    window.AppStorage.saveClassifications(next);
+    return classifications;
+  }
+  if (typeof appUtils.saveList === "function") {
+    appUtils.saveList(STORAGE_KEY_CLASSIFICATIONS, classifications);
+    return classifications;
+  }
+  try {
+    localStorage.setItem(STORAGE_KEY_CLASSIFICATIONS, JSON.stringify(classifications));
+  } catch {}
+  return classifications;
 }
 
 function refreshProductsFromUnified() {
@@ -126,9 +242,9 @@ function refreshProductsFromUnified() {
     (Array.isArray(state.unifiedProducts) && state.unifiedProducts.length
       ? state.unifiedProducts
       : unifiedProducts) || [];
-  unifiedProducts = unified;
-  products = unified.filter((p) => p.scope === "almacen");
-  extraProducts = unified.filter((p) => p.scope === "otros");
+  unifiedProducts = Array.isArray(unified) ? unified.filter(Boolean) : [];
+  products = unifiedProducts.filter((p) => p.scope === "almacen");
+  extraProducts = unifiedProducts.filter((p) => p.scope === "otros");
 }
 
 function getPantryProducts() {
@@ -142,9 +258,11 @@ function getOtherProducts() {
 }
 
 function recomputeUnifiedFromDerived() {
+  const baseProducts = getPantryProducts();
+  const baseExtras = getOtherProducts();
   return [
-    ...products.map((p) => ({ ...p, scope: "almacen" })),
-    ...extraProducts.map((p) => ({ ...p, scope: "otros" })),
+    ...baseProducts.map((p) => ({ ...p, scope: "almacen" })),
+    ...baseExtras.map((p) => ({ ...p, scope: "otros" })),
   ];
 }
 
@@ -255,40 +373,7 @@ function syncFromAppStore() {
 }
 
 function persistUnified(list) {
-  unifiedProducts = Array.isArray(list) ? list : [];
-  refreshProductsFromUnified();
-  if (isSyncingFromStore || isPersistingUnified) return;
-  isPersistingUnified = true;
-  if (stateAdapter && typeof stateAdapter.setEntity === "function") {
-    stateAdapter.setEntity("unifiedProducts", unifiedProducts);
-    isPersistingUnified = false;
-    return;
-  }
-  if (
-    window.AppStore &&
-    window.AppStore.actions &&
-    typeof window.AppStore.actions.setUnifiedProducts === "function"
-  ) {
-    window.AppStore.actions.setUnifiedProducts(unifiedProducts);
-    isPersistingUnified = false;
-    return;
-  }
-  if (window.DataService && typeof window.DataService.setUnifiedProducts === "function") {
-    try {
-      window.DataService.setUnifiedProducts(unifiedProducts);
-    } catch {}
-    isPersistingUnified = false;
-    return;
-  }
-  if (window.AppStorage && typeof window.AppStorage.saveUnifiedProducts === "function") {
-    window.AppStorage.saveUnifiedProducts(unifiedProducts);
-    isPersistingUnified = false;
-    return;
-  }
-  try {
-    localStorage.setItem("productosCocinaUnificados", JSON.stringify(unifiedProducts));
-  } catch {}
-  isPersistingUnified = false;
+  setUnifiedList(Array.isArray(list) ? list : []);
 }
 
 // ==============================
@@ -405,22 +490,23 @@ let instancesController;
 let classificationController;
 let producersController;
 let storesController;
+const getExtrasActions = () =>
+  window.ExtrasFeature && typeof window.ExtrasFeature.getActions === "function"
+    ? window.ExtrasFeature.getActions()
+    : null;
 // Snapshot helper para export/import en modo store o standalone
 function getLatestStateSnapshot() {
-  if (window.AppStore && typeof window.AppStore.getState === "function") {
-    return window.AppStore.getState() || {};
-  }
-  if (window.AppState && typeof window.AppState.getState === "function") {
-    return window.AppState.getState() || {};
-  }
+  const snapshot = getStateSnapshot();
+  const unifiedList = getUnifiedList();
   return {
-    products: products || [],
-    extraProducts: extraProducts || [],
-    unifiedProducts: unifiedProducts || recomputeUnifiedFromDerived(),
-    suppliers: suppliers || [],
-    producers: producers || [],
-    classifications: classifications || [],
-    productInstances: productInstances || [],
+    ...snapshot,
+    products: getPantryProducts(),
+    extraProducts: getOtherProducts(),
+    unifiedProducts: unifiedList.length ? unifiedList : recomputeUnifiedFromDerived(),
+    suppliers: getSuppliersList(),
+    producers: getProducersList(),
+    classifications: getClassificationsList(),
+    productInstances: getInstancesList(),
   };
 }
 
@@ -429,6 +515,13 @@ function initNavAccessibility() {
   if (tabsMain) {
     tabsMain.setAttribute("role", "tablist");
     tabsMain.querySelectorAll(".tab-button").forEach((btn) => {
+      btn.setAttribute("role", "tab");
+    });
+  }
+  const proveedoresTabs = document.querySelector(".tabs-proveedores");
+  if (proveedoresTabs) {
+    proveedoresTabs.setAttribute("role", "tablist");
+    proveedoresTabs.querySelectorAll("button").forEach((btn) => {
       btn.setAttribute("role", "tab");
     });
   }
@@ -485,6 +578,14 @@ let inlineProducerSelect;
 let inlineBrandInput;
 let inlineStoresSelect;
 
+// Memos para evitar recalcular opciones cuando no cambian
+let memoShelves = [];
+let memoBlocks = [];
+let memoTypes = [];
+let memoStores = [];
+let memoProducerLocations = [];
+let memoStoreLocations = [];
+
 let filtersDefaultsApplied = false;
 let selectionDragCleanup = null;
 let selectionPopupInitialized = false;
@@ -501,6 +602,14 @@ function showToast(message, timeout = 1800) {
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), timeout + 400);
 }
+
+const renderProductsDebounced = debounce(() => {
+  if (window.InventoryFeature && typeof window.InventoryFeature.render === "function") {
+    window.InventoryFeature.render();
+  } else {
+    renderProducts();
+  }
+}, 80);
 
 function getInventoryContext() {
   return {
@@ -648,6 +757,17 @@ document.addEventListener("DOMContentLoaded", () => {
     selectionPopupBody,
   } = { ...refs });
 
+  if (shoppingSummary && !shoppingSummary.getAttribute("aria-live")) {
+    shoppingSummary.setAttribute("aria-live", "polite");
+    shoppingSummary.setAttribute("role", "status");
+  }
+  if (summaryInfo && !summaryInfo.getAttribute("aria-live")) {
+    summaryInfo.setAttribute("aria-live", "polite");
+    summaryInfo.setAttribute("role", "status");
+  }
+
+  const renderInstancesDebounced = debounce(renderInstancesTable, 80);
+
   ensureSelectionPopupInit();
 
   if (window.ProductAutocomplete && typeof window.ProductAutocomplete.init === "function") {
@@ -665,8 +785,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     window.AppBootstrap.initFilters(refs, {
-      renderInstancesTable,
-      handleSaveInstances,
+      renderInstancesTable: renderInstancesDebounced,
       handleAddQuickProduct,
       handleAddQuickExtra,
       handleShoppingListClick,
@@ -721,8 +840,16 @@ document.addEventListener("DOMContentLoaded", () => {
       renderExtraQuickTable();
       renderExtraEditTable();
     }
-    renderProducersTable();
-    renderStoresTable();
+    if (window.ProducersFeature && typeof window.ProducersFeature.render === "function") {
+      window.ProducersFeature.render();
+    } else if (window.ProducersView && typeof window.ProducersView.render === "function") {
+      window.ProducersView.render(producersViewContext);
+    }
+    if (window.StoresFeature && typeof window.StoresFeature.render === "function") {
+      window.StoresFeature.render();
+    } else if (window.StoresView && typeof window.StoresView.render === "function") {
+      window.StoresView.render(storesViewContext);
+    }
     renderClassificationTable();
     if (instancesController) {
       instancesController.render();
@@ -802,16 +929,31 @@ document.addEventListener("DOMContentLoaded", () => {
     },
     getSelectionInstanceForProduct,
     getStoreNames,
-    onToggleBuy: (id, checked) => {
-      const p = extraProducts.find((x) => x.id === id);
-      if (!p) return;
-      p.buy = checked;
-      saveExtraProducts();
+    persistUnified,
+    getPantryProducts,
+    onChange: () => {
+      renderProducts();
+      renderExtraQuickTable();
+      renderExtraEditTable();
       renderShoppingList();
+      renderShelfOptions();
+      renderBlockOptions();
+      renderTypeOptions();
+      renderProductsDatalist();
     },
-    onMoveToAlmacen: (id) => moveExtraToAlmacen(id),
     onSelectSelection: (id) => openSelectionPopupForProduct(id),
-    onDelete: (id) => removeExtraById(id),
+    onMoveToAlmacen: (id) => {
+      const acts = getExtrasActions();
+      if (acts && typeof acts.moveToAlmacen === "function") {
+        acts.moveToAlmacen(id);
+      }
+    },
+    onDelete: (id) => {
+      const acts = getExtrasActions();
+      if (acts && typeof acts.delete === "function") {
+        acts.delete(id);
+      }
+    },
     onCancelDraft: (id) => {
       if (!id) return;
       extraDrafts = extraDrafts.filter((d) => d.id !== id);
@@ -866,7 +1008,6 @@ document.addEventListener("DOMContentLoaded", () => {
         ...nextList.map((p) => ({ ...p, scope: "otros" })),
       ];
       setUnifiedList(unified);
-      saveExtraProducts();
     },
     onAfterSave: () => {
       renderBlockOptions();
@@ -878,9 +1019,19 @@ document.addEventListener("DOMContentLoaded", () => {
       setOtrosMode(false);
       showToast("Otros productos guardados");
     },
-    onMoveToAlmacen: (id) => moveExtraToAlmacen(id),
     onSelectSelection: (id) => openSelectionPopupForProduct(id),
-    onDelete: (id) => removeExtraById(id),
+    onMoveToAlmacen: (id) => {
+      const acts = getExtrasActions();
+      if (acts && typeof acts.moveToAlmacen === "function") {
+        acts.moveToAlmacen(id);
+      }
+    },
+    onDelete: (id) => {
+      const acts = getExtrasActions();
+      if (acts && typeof acts.delete === "function") {
+        acts.delete(id);
+      }
+    },
     nowIsoString,
   };
 
@@ -962,7 +1113,6 @@ document.addEventListener("DOMContentLoaded", () => {
     getClassifications: () => getClassificationsList(),
     persist: (list) => {
       setClassificationsList(Array.isArray(list) ? list : []);
-      saveClassifications();
     },
     onAfterSave: handleClassificationDependencies,
     nowIsoString,
@@ -984,7 +1134,6 @@ document.addEventListener("DOMContentLoaded", () => {
     getProducers: () => getProducersList(),
     persist: (list) => {
       setProducersList(Array.isArray(list) ? list : []);
-      saveProducers();
     },
     onAfterSave: handleProducersDependencies,
     nowIsoString,
@@ -992,9 +1141,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (window.ProducersView && typeof window.ProducersView.init === "function") {
     window.ProducersView.init(producersViewContext);
-  } else if (window.ProducersFeature && typeof window.ProducersFeature.init === "function") {
-    window.ProducersFeature.init({ context: producersViewContext });
-    window.ProducersFeature.render();
+  }
+  if (window.ProducersFeature && typeof window.ProducersFeature.init === "function") {
+    window.ProducersFeature.init({
+      context: producersViewContext,
+      refs: producersViewContext.refs,
+      actions: {
+        save: () => window.ProducersView && window.ProducersView.save && window.ProducersView.save(producersViewContext),
+      },
+    });
   }
 
   storesViewContext = {
@@ -1010,7 +1165,6 @@ document.addEventListener("DOMContentLoaded", () => {
     getStores: () => getSuppliersList(),
     persist: (list) => {
       setSuppliersList(Array.isArray(list) ? list : []);
-      saveSuppliers();
     },
     onAfterSave: handleStoresDependencies,
     nowIsoString,
@@ -1018,9 +1172,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (window.StoresView && typeof window.StoresView.init === "function") {
     window.StoresView.init(storesViewContext);
-  } else if (window.StoresFeature && typeof window.StoresFeature.init === "function") {
-    window.StoresFeature.init({ context: storesViewContext });
-    window.StoresFeature.render();
+  }
+  if (window.StoresFeature && typeof window.StoresFeature.init === "function") {
+    window.StoresFeature.init({
+      context: storesViewContext,
+      refs: storesViewContext.refs,
+      actions: {
+        save: () => window.StoresView && window.StoresView.save && window.StoresView.save(storesViewContext),
+      },
+    });
   }
 
   instancesViewContext = {
@@ -1141,9 +1301,7 @@ document.addEventListener("DOMContentLoaded", () => {
           },
         })
       : null;
-  if (extraController && typeof extraController.render === "function") {
-    extraController.render();
-  } else if (window.ExtrasFeature && typeof window.ExtrasFeature.init === "function") {
+  if (window.ExtrasFeature && typeof window.ExtrasFeature.init === "function") {
     window.ExtrasFeature.init({
       refs: { tableBody: extraListTableBody },
       getExtras: () => getOtherProducts(),
@@ -1161,18 +1319,17 @@ document.addEventListener("DOMContentLoaded", () => {
       },
       getSelectionInstanceForProduct,
       getStoreNames,
+      persistUnified,
+      getPantryProducts,
+      onChange: () => {
+        renderExtraQuickTable();
+        renderExtraEditTable();
+        renderShoppingList();
+        renderProducts();
+        renderProductsDatalist();
+      },
       actions: {
-        toggleBuy: (id, checked) => {
-          const list = getOtherProducts().map((p) =>
-            p.id === id ? { ...p, buy: checked } : p
-          );
-          updateUnifiedWithExtras(list);
-          saveExtraProducts();
-          renderShoppingList();
-        },
-        moveToAlmacen: (id) => moveExtraToAlmacen(id),
         selectSelection: (id) => openSelectionPopupForProduct(id),
-        delete: (id) => removeExtraById(id),
         cancelDraft: (id) => {
           if (!id) return;
           extraDrafts = extraDrafts.filter((d) => d.id !== id);
@@ -1181,6 +1338,10 @@ document.addEventListener("DOMContentLoaded", () => {
       },
       getContext: () => extrasViewContext,
     });
+  }
+  if (extraController && typeof extraController.render === "function") {
+    extraController.render();
+  } else if (window.ExtrasFeature && typeof window.ExtrasFeature.render === "function") {
     window.ExtrasFeature.render();
   }
 
@@ -1189,19 +1350,25 @@ document.addEventListener("DOMContentLoaded", () => {
       ? window.InstancesController.create({
           store: window.AppStore || window.AppState,
           view: window.InstancesView,
+          feature: window.InstancesFeature,
           context: instancesViewContext,
         })
       : null;
-  if (instancesController && typeof instancesController.render === "function") {
-    instancesController.render();
-  } else if (window.InstancesFeature && typeof window.InstancesFeature.init === "function") {
+  if (window.InstancesFeature && typeof window.InstancesFeature.init === "function") {
     window.InstancesFeature.init({
       refs: {
         tableBody: instancesTableBody,
         addButton: addInstanceButton,
         saveButton: saveInstancesButton,
       },
-      getContext: () => instancesViewContext,
+      getContext: () => {
+        if (instancesViewContext && instancesViewContext.data) {
+          instancesViewContext.data.instances = getInstancesList();
+          instancesViewContext.data.producers = getProducersList();
+          instancesViewContext.data.stores = getSuppliersList();
+        }
+        return instancesViewContext;
+      },
       getInstances: () => getInstancesList(),
       actions: {
         delete: (id) => removeInstanceById(id),
@@ -1210,12 +1377,16 @@ document.addEventListener("DOMContentLoaded", () => {
             inst.id === id ? { ...inst, [field]: value, updatedAt: nowIsoString() } : inst
           );
           setInstancesList(list);
-          saveProductInstances();
         },
-        add: () => handleAddInstance && handleAddInstance(),
-        save: () => handleSaveInstances && handleSaveInstances(),
+        add: () => handleAddInstanceRow(),
+        save: () => handleSaveInstances(),
       },
     });
+  }
+
+  if (instancesController && typeof instancesController.render === "function") {
+    instancesController.render();
+  } else if (window.InstancesFeature && typeof window.InstancesFeature.render === "function") {
     window.InstancesFeature.render();
   }
 
@@ -1236,7 +1407,11 @@ document.addEventListener("DOMContentLoaded", () => {
       ? window.ProducersController.create({
           store: window.AppStore || window.AppState,
           onRender: () => {
-            renderProducersTable();
+            if (window.ProducersFeature && typeof window.ProducersFeature.render === "function") {
+              window.ProducersFeature.render();
+            } else if (window.ProducersView && typeof window.ProducersView.render === "function") {
+              window.ProducersView.render(producersViewContext);
+            }
             updateProducerFilterOptions();
           },
         })
@@ -1247,7 +1422,11 @@ document.addEventListener("DOMContentLoaded", () => {
       ? window.StoresController.create({
           store: window.AppStore || window.AppState,
           onRender: () => {
-            renderStoresTable();
+            if (window.StoresFeature && typeof window.StoresFeature.render === "function") {
+              window.StoresFeature.render();
+            } else if (window.StoresView && typeof window.StoresView.render === "function") {
+              window.StoresView.render(storesViewContext);
+            }
             updateStoreFilterOptions();
             renderStoreOptions();
             renderShoppingList();
@@ -1368,8 +1547,20 @@ function setProveedoresTab(tab) {
   storesPanel.classList.toggle("active", isStores);
   instancesPanel.classList.toggle("active", isInstances);
 
-  if (isProd) renderProducersTable();
-  if (isStores) renderStoresTable();
+  if (isProd) {
+    if (window.ProducersFeature && typeof window.ProducersFeature.render === "function") {
+      window.ProducersFeature.render();
+    } else if (window.ProducersView && typeof window.ProducersView.render === "function") {
+      window.ProducersView.render(producersViewContext);
+    }
+  }
+  if (isStores) {
+    if (window.StoresFeature && typeof window.StoresFeature.render === "function") {
+      window.StoresFeature.render();
+    } else if (window.StoresView && typeof window.StoresView.render === "function") {
+      window.StoresView.render(storesViewContext);
+    }
+  }
   if (isInstances && !isStoreActive()) renderInstancesTable();
 }
 
@@ -1384,117 +1575,63 @@ function handleToggleShoppingPanel() {
 }
 
 function saveProducts() {
+  const list = getPantryProducts();
+  if (stateAdapter && typeof stateAdapter.setEntity === "function") {
+    stateAdapter.setEntity("products", list);
+    syncFromAppStore();
+    return;
+  }
   if (
     window.AppStore &&
     window.AppStore.actions &&
     typeof window.AppStore.actions.setProducts === "function"
   ) {
-    window.AppStore.actions.setProducts(products);
+    window.AppStore.actions.setProducts(list);
     syncFromAppStore();
+    return;
+  }
+  if (window.DataService && typeof window.DataService.setProducts === "function") {
+    window.DataService.setProducts(list);
     return;
   }
   persistUnified(recomputeUnifiedFromDerived());
 }
 function saveExtraProducts() {
+  const list = getOtherProducts();
+  if (stateAdapter && typeof stateAdapter.setEntity === "function") {
+    stateAdapter.setEntity("extraProducts", list);
+    syncFromAppStore();
+    return;
+  }
   if (
     window.AppStore &&
     window.AppStore.actions &&
     typeof window.AppStore.actions.setExtraProducts === "function"
   ) {
-    window.AppStore.actions.setExtraProducts(extraProducts);
+    window.AppStore.actions.setExtraProducts(list);
     syncFromAppStore();
+    return;
+  }
+  if (
+    window.DataService &&
+    typeof window.DataService.setExtraProducts === "function"
+  ) {
+    window.DataService.setExtraProducts(list);
     return;
   }
   persistUnified(recomputeUnifiedFromDerived());
 }
 function saveSuppliers() {
-  const list = getSuppliersList();
-  if (
-    window.AppStore &&
-    window.AppStore.actions &&
-    typeof window.AppStore.actions.setSuppliers === "function"
-  ) {
-    window.AppStore.actions.setSuppliers(list);
-    syncFromAppStore();
-    return;
-  }
-  if (window.DataService && typeof window.DataService.setSuppliers === "function") {
-    suppliers = window.DataService.setSuppliers(list);
-    return;
-  }
-  if (window.AppStorage && typeof window.AppStorage.saveSuppliers === "function") {
-    window.AppStorage.saveSuppliers(list);
-    return;
-  }
-  saveList(STORAGE_KEY_SUPPLIERS, list);
+  setSuppliersList(getSuppliersList());
 }
 function saveProducers() {
-  const list = getProducersList();
-  if (
-    window.AppStore &&
-    window.AppStore.actions &&
-    typeof window.AppStore.actions.setProducers === "function"
-  ) {
-    window.AppStore.actions.setProducers(list);
-    syncFromAppStore();
-    return;
-  }
-  if (window.DataService && typeof window.DataService.setProducers === "function") {
-    producers = window.DataService.setProducers(list);
-    return;
-  }
-  if (window.AppStorage && typeof window.AppStorage.saveProducers === "function") {
-    window.AppStorage.saveProducers(list);
-    return;
-  }
-  saveList(STORAGE_KEY_PRODUCERS, list);
+  setProducersList(getProducersList());
 }
 function saveProductInstances() {
-  if (
-    window.AppStore &&
-    window.AppStore.actions &&
-    typeof window.AppStore.actions.setProductInstances === "function"
-  ) {
-    window.AppStore.actions.setProductInstances(productInstances);
-    syncFromAppStore();
-    return;
-  }
-  if (
-    window.DataService &&
-    typeof window.DataService.setProductInstances === "function"
-  ) {
-    productInstances = window.DataService.setProductInstances(productInstances);
-    return;
-  }
-  if (window.AppStorage && typeof window.AppStorage.saveProductInstances === "function") {
-    window.AppStorage.saveProductInstances(productInstances);
-    return;
-  }
-  saveList(STORAGE_KEY_INSTANCES, productInstances);
+  setInstancesList(getInstancesList());
 }
 function saveClassifications() {
-  const list = getClassificationsList();
-  if (
-    window.AppStore &&
-    window.AppStore.actions &&
-    typeof window.AppStore.actions.setClassifications === "function"
-  ) {
-    window.AppStore.actions.setClassifications(list);
-    syncFromAppStore();
-    return;
-  }
-  if (
-    window.DataService &&
-    typeof window.DataService.setClassifications === "function"
-  ) {
-    classifications = window.DataService.setClassifications(list);
-    return;
-  }
-  if (window.AppStorage && typeof window.AppStorage.saveClassifications === "function") {
-    window.AppStorage.saveClassifications(list);
-    return;
-  }
-  saveList(STORAGE_KEY_CLASSIFICATIONS, list);
+  setClassificationsList(getClassificationsList());
 }
 
 function loadAllData() {
@@ -1506,13 +1643,6 @@ function loadAllData() {
       typeof window.DataService.hydrateFromStorage === "function" &&
       window.DataService.hydrateFromStorage(),
     () => window.AppStorage && typeof window.AppStorage.loadAllData === "function" && window.AppStorage.loadAllData(),
-    () => ({
-      unifiedProducts: safeLoadList("productosCocinaUnificados"),
-      suppliers: safeLoadList(STORAGE_KEY_SUPPLIERS),
-      producers: safeLoadList(STORAGE_KEY_PRODUCERS),
-      classifications: safeLoadList(STORAGE_KEY_CLASSIFICATIONS),
-      productInstances: safeLoadList(STORAGE_KEY_INSTANCES),
-    }),
   ];
 
   for (const load of loaders) {
@@ -1528,24 +1658,6 @@ function loadAllData() {
       return;
     }
   }
-
-  // Fallback legacy keys (antes: inventarioCocinaAlmacen / otrosProductosCompra)
-  const legacyProducts = safeLoadList("inventarioCocinaAlmacen");
-  const legacyExtras = safeLoadList("otrosProductosCompra");
-  if (legacyProducts.length || legacyExtras.length) {
-    const unified = [
-      ...legacyProducts.map((p) => ({ ...p, scope: "almacen" })),
-      ...legacyExtras.map((p) => ({ ...p, scope: "otros" })),
-    ];
-    applyStateSnapshot({ unifiedProducts: unified });
-    ensureInstanceFamilies({ persist: false });
-    return;
-  }
-
-  // Si llegamos aquí, no se encontró nada; logueamos claves para diagnosticar
-  try {
-    console.warn("[loadAllData] No data found; localStorage keys:", Object.keys(localStorage));
-  } catch {}
 
   unifiedProducts = [];
   refreshProductsFromUnified();
@@ -1575,31 +1687,6 @@ function nowIsoString() {
   return new Date().toISOString();
 }
 
-function safeLoadList(storageKey, normalizeItem) {
-  if (window.AppUtils && typeof window.AppUtils.safeLoadList === "function") {
-    return window.AppUtils.safeLoadList(storageKey, normalizeItem);
-  }
-  try {
-    const raw = localStorage.getItem(storageKey);
-    const parsed = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(parsed)) return [];
-    if (typeof normalizeItem === "function") {
-      return parsed.map((item) => normalizeItem(item));
-    }
-    return parsed;
-  } catch {
-    return [];
-  }
-}
-
-function saveList(storageKey, list) {
-  if (window.AppUtils && typeof window.AppUtils.saveList === "function") {
-    return window.AppUtils.saveList(storageKey, list);
-  }
-  const data = Array.isArray(list) ? list : [];
-  localStorage.setItem(storageKey, JSON.stringify(data));
-}
-
 // Orden: FAMILIA -> TIPO -> PRODUCTO
 function compareShelfBlockTypeName(a, b) {
   const blockA = a.block || "";
@@ -1619,15 +1706,17 @@ function compareShelfBlockTypeName(a, b) {
 
 function findProductById(id) {
   if (!id) return null;
-  let p = products.find((x) => x.id === id);
-  if (p) return p;
-  p = extraProducts.find((x) => x.id === id);
-  return p || null;
+  const pantry = getPantryProducts().find((x) => x.id === id);
+  if (pantry) return pantry;
+  const extra = getOtherProducts().find((x) => x.id === id);
+  return extra || null;
 }
 
 function getAllProductsForAssociationList() {
+  const pantry = getPantryProducts();
+  const extras = getOtherProducts();
   const list = [];
-  for (const p of products) {
+  for (const p of pantry) {
     if (!p.name) continue;
     list.push({
       id: p.id,
@@ -1637,7 +1726,7 @@ function getAllProductsForAssociationList() {
       type: p.type || "",
     });
   }
-  for (const p of extraProducts) {
+  for (const p of extras) {
     if (!p.name) continue;
     list.push({
       id: p.id,
@@ -1810,8 +1899,8 @@ function getFamilyByProductName(name) {
   const lower = (name || "").trim().toLowerCase();
   if (!lower) return "";
   const fromProducts =
-    products.find((p) => (p.name || "").toLowerCase() === lower) ||
-    extraProducts.find((p) => (p.name || "").toLowerCase() === lower);
+    getPantryProducts().find((p) => (p.name || "").toLowerCase() === lower) ||
+    getOtherProducts().find((p) => (p.name || "").toLowerCase() === lower);
   return fromProducts ? fromProducts.block || "" : "";
 }
 
@@ -1829,14 +1918,15 @@ function resolveInstanceFamily(inst) {
   if (!name) return "";
 
   // 2) Coincidencia exacta por nombre
-  const all = unifiedProducts && unifiedProducts.length ? unifiedProducts : recomputeUnifiedFromDerived();
-  const exact = all.find(
+  const all = getUnifiedList();
+  const list = all.length ? all : recomputeUnifiedFromDerived();
+  const exact = list.find(
     (p) => (p.name || "").trim().toLowerCase() === name
   );
   if (exact && exact.block) return exact.block;
 
   // 3) Coincidencia parcial (incluye)
-  const partial = all.find((p) => {
+  const partial = list.find((p) => {
     const pname = (p.name || "").trim().toLowerCase();
     return pname && (pname.includes(name) || name.includes(pname));
   });
@@ -1850,10 +1940,11 @@ function getFamilyForInstance(inst) {
 }
 
 function ensureInstanceFamilies({ persist = false } = {}) {
-  if (!Array.isArray(productInstances) || productInstances.length === 0) return;
+  const instances = getInstancesList();
+  if (!Array.isArray(instances) || instances.length === 0) return;
   const updated = [];
   let changed = false;
-  productInstances.forEach((inst) => {
+  instances.forEach((inst) => {
     const block = resolveInstanceFamily(inst) || inst.block || "";
     if (block && inst.block !== block) {
       changed = true;
@@ -1863,14 +1954,11 @@ function ensureInstanceFamilies({ persist = false } = {}) {
     }
   });
   if (changed) {
-    productInstances = updated;
-    if (!isSyncingFromStore) {
-      setInstancesList(productInstances);
-      if (persist) {
-        try {
-          saveProductInstances();
-        } catch {}
-      }
+    setInstancesList(updated);
+    if (persist && !isSyncingFromStore) {
+      try {
+        saveProductInstances();
+      } catch {}
     }
   }
 }
@@ -1913,6 +2001,13 @@ function ensureSelectionPopupInit() {
       document.addEventListener("keydown", handleSelectionPopupKeydown);
     },
   });
+  if (selectionPopup) {
+    selectionPopup.setAttribute("role", "dialog");
+    selectionPopup.setAttribute("aria-modal", "true");
+  }
+  if (selectionPopupOverlay) {
+    selectionPopupOverlay.setAttribute("role", "presentation");
+  }
   selectionPopupInitialized = true;
 }
 
@@ -1944,7 +2039,8 @@ function createTableTextarea(field, value = "") {
 
 function getSelectionInstanceForProduct(product) {
   if (!product || !product.selectionId) return null;
-  return productInstances.find((inst) => inst.id === product.selectionId) || null;
+  const instances = getInstancesList();
+  return instances.find((inst) => inst.id === product.selectionId) || null;
 }
 
 function getSelectionLabelForProduct(product) {
@@ -1973,7 +2069,8 @@ function productMatchesStore(product, storeId) {
   }
   // Buscar en cualquier instancia asociada al producto
   const nameLower = (product.name || "").trim().toLowerCase();
-  return productInstances.some((pi) => {
+  const instances = getInstancesList();
+  return instances.some((pi) => {
     const sameId = pi.productId && pi.productId === product.id;
     const sameName =
       nameLower && (pi.productName || "").trim().toLowerCase() === nameLower;
@@ -2016,8 +2113,7 @@ function createEmptySelectionInstance(product, producerId, brand, storeIds) {
     createdAt: now,
     updatedAt: now,
   };
-  productInstances.push(inst);
-  saveProductInstances();
+  setInstancesList([...getInstancesList(), inst]);
   return inst;
 }
 
@@ -2037,9 +2133,13 @@ function addQuickProducer(data, selectEl) {
     createdAt: now,
     updatedAt: now,
   };
-  producers.push(producer);
-  saveProducers();
-  renderProducersTable();
+  setProducersList([...getProducersList(), producer]);
+  memoProducerLocations = []; // forzar recálculo de filtros de localización
+  if (window.ProducersFeature && typeof window.ProducersFeature.render === "function") {
+    window.ProducersFeature.render();
+  } else if (window.ProducersView && typeof window.ProducersView.render === "function") {
+    window.ProducersView.render(producersViewContext);
+  }
   updateProducerFilterOptions();
   if (!isStoreActive()) renderInstancesTable();
   if (selectEl) {
@@ -2072,9 +2172,14 @@ function addQuickStore(data, selectEl, chipsContainer) {
     createdAt: now,
     updatedAt: now,
   };
-  suppliers.push(store);
-  saveSuppliers();
-  renderStoresTable();
+  setSuppliersList([...getSuppliersList(), store]);
+  if (window.StoresFeature && typeof window.StoresFeature.render === "function") {
+    window.StoresFeature.render();
+  } else if (window.StoresView && typeof window.StoresView.render === "function") {
+    window.StoresView.render(storesViewContext);
+  }
+  memoStores = []; // invalidar memo para recalcular en el próximo render
+  memoStoreLocations = []; // invalidar memo de ubicaciones
   renderStoreOptions();
   updateStoreFilterOptions();
   if (!isStoreActive()) renderInstancesTable();
@@ -2139,29 +2244,20 @@ function buildFamilyStripeMap(items) {
 }
 
 function cleanupSelectionsWithInstances() {
-  const validIds = new Set(productInstances.map((i) => i.id));
+  const validIds = new Set(getInstancesList().map((i) => i.id));
   let changed = false;
   const now = nowIsoString();
 
-  products.forEach((p) => {
+  const updatedUnified = getUnifiedList().map((p) => {
     if (p.selectionId && !validIds.has(p.selectionId)) {
-      p.selectionId = "";
-      p.updatedAt = now;
       changed = true;
+      return { ...p, selectionId: "", updatedAt: now };
     }
-  });
-
-  extraProducts.forEach((p) => {
-    if (p.selectionId && !validIds.has(p.selectionId)) {
-      p.selectionId = "";
-      p.updatedAt = now;
-      changed = true;
-    }
+    return p;
   });
 
   if (changed) {
-    saveProducts();
-    saveExtraProducts();
+    persistUnified(updatedUnified);
   }
 }
 
@@ -2281,7 +2377,7 @@ function openSelectionPopupForProduct(productId) {
   selectionPopupList.appendChild(liNone);
 
   const nameLower = (product.name || "").trim().toLowerCase();
-  const instances = productInstances.filter((inst) => {
+  const instances = getInstancesList().filter((inst) => {
     if (inst.productId === productId) return true;
     const instName = (inst.productName || "").trim().toLowerCase();
     return nameLower && instName && instName === nameLower;
@@ -2413,7 +2509,7 @@ function openSelectionPopupForProduct(productId) {
     optNone.value = "";
     optNone.textContent = "Sin productor";
     producerSel.appendChild(optNone);
-    producers
+    getProducersList()
       .slice()
       .sort((a, b) =>
         (a.name || "").localeCompare(b.name || "", "es", {
@@ -2447,7 +2543,7 @@ function openSelectionPopupForProduct(productId) {
     storesSel.multiple = true;
     storesSel.size = 6;
     storesSel.className = "inline-stores-select";
-    suppliers
+    getSuppliersList()
       .slice()
       .sort((a, b) =>
         (a.name || "").localeCompare(b.name || "", "es", {
@@ -2666,31 +2762,55 @@ function closeSelectionPopup() {
 }
 
 function handleSelectionPopupKeydown(e) {
-  if (e.key !== "Escape") return;
-  if (selectionPopupOverlay && selectionPopupOverlay.classList.contains("visible")) {
+  const isVisible = selectionPopupOverlay && selectionPopupOverlay.classList.contains("visible");
+  if (!isVisible) return;
+
+  if (e.key === "Escape") {
     e.preventDefault();
     closeSelectionPopup();
+    return;
+  }
+
+  if (e.key === "Tab") {
+    const focusableSelectors = [
+      "button",
+      "input",
+      "select",
+      "textarea",
+      "[href]",
+      "[tabindex]:not([tabindex='-1'])",
+    ];
+    const focusables = selectionPopup
+      ? Array.from(selectionPopup.querySelectorAll(focusableSelectors.join(","))).filter(
+          (el) => !el.disabled && el.offsetParent !== null
+        )
+      : [];
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey && active === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    }
   }
 }
 
 function applySelectionToProduct(productId, selectionId) {
-  refreshProductsFromUnified();
   const now = nowIsoString();
   let found = false;
 
-  unifiedProducts = (unifiedProducts || []).map((p) => {
-    if (p.id === productId) {
-      found = true;
-      return { ...p, selectionId, updatedAt: now };
-    }
-    return p;
+  const updatedUnified = getUnifiedList().map((p) => {
+    if (p.id !== productId) return p;
+    found = true;
+    return { ...p, selectionId, updatedAt: now };
   });
-  refreshProductsFromUnified();
 
   if (found) {
-    persistUnified(unifiedProducts);
-    saveProducts();
-    saveExtraProducts();
+    persistUnified(updatedUnified);
     renderProducts();
     renderGridRows();
     renderExtraQuickTable();
@@ -2796,10 +2916,11 @@ function getProductAutocompleteSuggestions(query) {
 }
 
 function renderShelfOptions() {
-  refreshProductsFromUnified();
   const shelves = Array.from(
-    new Set(products.map((p) => (p.shelf || "").trim()).filter(Boolean))
+    new Set(getPantryProducts().map((p) => (p.shelf || "").trim()).filter(Boolean))
   ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+  if (memoShelves.join("|||") === shelves.join("|||")) return;
+  memoShelves = shelves.slice();
 
   const selects = [filterShelfSelect, editFilterShelfSelect];
   selects.forEach((sel) => {
@@ -2825,6 +2946,8 @@ function renderShelfOptions() {
 function renderBlockOptions() {
   refreshProductsFromUnified();
   const blocks = getClassificationFamilies();
+  if (memoBlocks.join("|||") === blocks.join("|||")) return;
+  memoBlocks = blocks.slice();
 
   const selects = [
     filterBlockSelect,
@@ -2853,8 +2976,9 @@ function renderBlockOptions() {
 }
 
 function renderTypeOptions() {
-  refreshProductsFromUnified();
   const types = getClassificationTypes();
+  if (memoTypes.join("|||") === types.join("|||")) return;
+  memoTypes = types.slice();
 
   const selects = [
     filterTypeSelect,
@@ -2883,11 +3007,14 @@ function renderTypeOptions() {
 }
 
 function renderStoreOptions() {
-  const storeList = suppliers
+  const storeList = getSuppliersList()
     .slice()
     .sort((a, b) =>
       (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" })
     );
+  const memoKey = storeList.map((s) => `${s.id}::${s.name || ""}`).join("|||");
+  if (memoStores.join("|||") === memoKey && memoStores.length) return;
+  memoStores = memoKey ? memoKey.split("|||") : [];
 
   const selects = [
     filterStoreSelect,
@@ -2917,20 +3044,22 @@ function renderStoreOptions() {
 }
 
 function updateProducerFilterOptions() {
+  const state = getStateSnapshot();
+  const producersList = getProducersList();
   const locations =
     (window.DataService &&
       window.DataService.selectors &&
       typeof window.DataService.selectors.producerLocations === "function" &&
-      window.DataService.selectors.producerLocations({
-        producers,
-      })) ||
+      window.DataService.selectors.producerLocations(state)) ||
     Array.from(
       new Set(
-        producers
+        producersList
           .map((p) => (p.location || "").trim())
           .filter((l) => l.length > 0)
       )
     ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+  if (memoProducerLocations.join("|||") === locations.join("|||")) return;
+  memoProducerLocations = locations.slice();
 
   if (producersLocationFilterSelect) {
     const current = producersLocationFilterSelect.value;
@@ -2957,7 +3086,7 @@ function updateProducerFilterOptions() {
     optAll.value = "";
     optAll.textContent = "Todos";
     instancesProducerFilterSelect.appendChild(optAll);
-    producers
+    producersList
       .slice()
       .sort((a, b) =>
         (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" })
@@ -2968,27 +3097,29 @@ function updateProducerFilterOptions() {
         o.textContent = p.name || "(sin nombre)";
         instancesProducerFilterSelect.appendChild(o);
       });
-    if (current && producers.some((p) => p.id === current)) {
+    if (current && producersList.some((p) => p.id === current)) {
       instancesProducerFilterSelect.value = current;
     }
   }
 }
 
 function updateStoreFilterOptions() {
+  const state = getStateSnapshot();
+  const stores = getSuppliersList();
   const locations =
     (window.DataService &&
       window.DataService.selectors &&
       typeof window.DataService.selectors.storeLocations === "function" &&
-      window.DataService.selectors.storeLocations({
-        suppliers,
-      })) ||
+      window.DataService.selectors.storeLocations(state)) ||
     Array.from(
       new Set(
-        suppliers
+        stores
           .map((s) => (s.location || "").trim())
           .filter((l) => l.length > 0)
       )
     ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+  if (memoStoreLocations.join("|||") === locations.join("|||")) return;
+  memoStoreLocations = locations.slice();
 
   if (storesLocationFilterSelect) {
     const current = storesLocationFilterSelect.value;
@@ -3014,7 +3145,7 @@ function updateInstanceFilterOptions() {
   const current = instancesFamilyFilterSelect.value || "";
   const families = Array.from(
     new Set(
-      [...products, ...extraProducts]
+      [...getPantryProducts(), ...getOtherProducts()]
         .map((p) => (p.block || "").trim())
         .filter((b) => b.length > 0)
     )
@@ -3204,123 +3335,47 @@ function highlightTopRow(tbody) {
   }
 }
 
-function commitDraftProducts() {
-  if (!productTableBody || productDrafts.length === 0) return;
-  const rows = Array.from(
-    productTableBody.querySelectorAll(".product-draft-row")
-  );
-  let added = false;
-  rows.forEach((tr) => {
-    const id = tr.dataset.draftId;
-    const getField = (field) => {
-      const el = tr.querySelector(`[data-field="${field}"]`);
-      if (!el) return "";
-      if (el.type === "checkbox") return el.checked;
-      return el.value.trim();
-    };
-    const name = getField("name");
-    if (!name) return;
-    const block = getField("block");
-    const type = getField("type");
-    const shelf = getField("shelf");
-    const quantity = getField("quantity");
-    const have = !!getField("have");
-    const acquisitionDate = getField("acquisitionDate");
-    const expiryText = getField("expiryText");
-    const notes = (tr.querySelector('textarea[data-field="notes"]') || {})
-      .value;
-    const now = nowIsoString();
-    const newProd = {
-      id:
-        (crypto.randomUUID ? crypto.randomUUID() : "prod-" + Date.now()) +
-        "-" +
-        Math.random().toString(36).slice(2),
-      name,
-      block,
-      type,
-      shelf,
-      quantity,
-      have,
-      acquisitionDate,
-      expiryText,
-      notes,
-      scope: "almacen",
-      selectionId: "",
-      createdAt: now,
-      updatedAt: now,
-    };
-    unifiedProducts.unshift(newProd);
-    refreshProductsFromUnified();
-    productDrafts = productDrafts.filter((d) => d.id !== id);
-    added = true;
+function commitDraftProducts(ids) {
+  if (!window.AppUtils || typeof window.AppUtils.commitDraftProducts !== "function") return;
+  const res = window.AppUtils.commitDraftProducts({
+    tableBody: productTableBody,
+    drafts: productDrafts,
+    getPantryProducts,
+    getOtherProducts,
+    persistUnified,
+    allowedIds: Array.isArray(ids) ? ids : null,
+    nowIsoString,
   });
-  if (added) {
-    persistUnified(unifiedProducts);
-    saveProducts();
-    renderProducts();
-    if (!isStoreActive()) renderGridRows();
-    renderShelfOptions();
-    renderBlockOptions();
-    renderTypeOptions();
-    renderProductsDatalist();
-    renderShoppingList();
-  }
+  if (!res || !res.unified) return;
+  productDrafts = res.drafts || [];
+  renderProducts();
+  if (!isStoreActive()) renderGridRows();
+  renderShelfOptions();
+  renderBlockOptions();
+  renderTypeOptions();
+  renderProductsDatalist();
+  renderShoppingList();
 }
 
-function commitDraftExtras() {
-  if (!extraListTableBody || extraDrafts.length === 0) return;
-  const rows = Array.from(
-    extraListTableBody.querySelectorAll(".extra-draft-row")
-  );
-  let added = false;
-  rows.forEach((tr) => {
-    const id = tr.dataset.draftId;
-    const getField = (field) => {
-      const el = tr.querySelector(`[data-field="${field}"]`);
-      if (!el) return "";
-      if (el.type === "checkbox") return el.checked;
-      return el.value.trim();
-    };
-    const name = getField("name");
-    if (!name) return;
-    const block = getField("block");
-    const type = getField("type");
-    const quantity = getField("quantity");
-    const buy = !!getField("buy");
-    const notes = (tr.querySelector('textarea[data-field="notes"]') || {})
-      .value;
-    const now = nowIsoString();
-    const newExtra = {
-      id:
-        (crypto.randomUUID ? crypto.randomUUID() : "extra-" + Date.now()) +
-        "-" +
-        Math.random().toString(36).slice(2),
-      name,
-      block,
-      type,
-      quantity,
-      notes,
-      buy,
-      scope: "otros",
-      selectionId: "",
-      createdAt: now,
-      updatedAt: now,
-    };
-    unifiedProducts.unshift(newExtra);
-    refreshProductsFromUnified();
-    extraDrafts = extraDrafts.filter((d) => d.id !== id);
-    added = true;
+function commitDraftExtras(ids) {
+  if (!window.AppUtils || typeof window.AppUtils.commitDraftExtras !== "function") return;
+  const res = window.AppUtils.commitDraftExtras({
+    tableBody: extraListTableBody,
+    drafts: extraDrafts,
+    getPantryProducts,
+    getOtherProducts,
+    persistUnified,
+    allowedIds: Array.isArray(ids) ? ids : null,
+    nowIsoString,
   });
-  if (added) {
-    persistUnified(unifiedProducts);
-    saveExtraProducts();
-    renderExtraQuickTable();
-    if (!isStoreActive()) renderExtraEditTable();
-    renderBlockOptions();
-    renderTypeOptions();
-    renderProductsDatalist();
-    renderShoppingList();
-  }
+  if (!res || !res.unified) return;
+  extraDrafts = res.drafts || [];
+  renderExtraQuickTable();
+  if (!isStoreActive()) renderExtraEditTable();
+  renderBlockOptions();
+  renderTypeOptions();
+  renderProductsDatalist();
+  renderShoppingList();
 }
 
 // ==============================
@@ -3347,49 +3402,13 @@ function handleSaveGrid() {
 // ==============================
 
 function renderExtraQuickTable() {
+  if (window.ExtrasFeature && typeof window.ExtrasFeature.render === "function") {
+    window.ExtrasFeature.render();
+    return;
+  }
   if (window.ExtrasView && typeof window.ExtrasView.render === "function") {
     window.ExtrasView.render(extrasViewContext);
   }
-}
-
-function moveExtraToAlmacen(id) {
-  const item =
-    unifiedProducts.find((p) => p.id === id) ||
-    extraProducts.find((p) => p.id === id);
-  if (!item) return;
-  const ok = confirm("¿Mover este producto a 'Almacén'? Se mantendrá la información.");
-  if (!ok) return;
-  const now = nowIsoString();
-  const updated = unifiedProducts.map((p) =>
-    p.id === id
-      ? { ...p, scope: "almacen", updatedAt: now, have: !!p.have, buy: !!p.buy }
-      : p
-  );
-  persistUnified(updated);
-  saveProducts();
-
-  renderProducts();
-  if (!isStoreActive()) {
-    renderExtraQuickTable();
-    renderExtraEditTable();
-  }
-  renderShelfOptions();
-  renderBlockOptions();
-  renderTypeOptions();
-  renderProductsDatalist();
-  renderShoppingList();
-}
-
-function removeExtraById(id) {
-  if (!id) return;
-  const unified = getUnifiedList();
-  const filtered = unified.filter((p) => p.id !== id);
-  if (filtered.length === unified.length) return;
-  setUnifiedList(filtered);
-  saveExtraProducts();
-  renderExtraEditTable();
-  renderExtraQuickTable();
-  renderShoppingList();
 }
 
 function removeProductById(id) {
@@ -3398,7 +3417,6 @@ function removeProductById(id) {
   const filtered = unified.filter((p) => p.id !== id);
   if (filtered.length === unified.length) return;
   setUnifiedList(filtered);
-  saveProducts();
   renderGridRows();
   renderProducts();
   renderExtraQuickTable();
@@ -3413,60 +3431,6 @@ function removeProductById(id) {
 function renderExtraEditTable() {
   if (window.ExtraEditView && typeof window.ExtraEditView.render === "function") {
     window.ExtraEditView.render(extraEditViewContext);
-  }
-}
-
-function handleSaveExtra() {
-  if (window.ExtraEditView && typeof window.ExtraEditView.save === "function") {
-    window.ExtraEditView.save(extraEditViewContext);
-  }
-}
-
-// ==============================
-//  PRODUCTORES
-// ==============================
-
-function renderProducersTable() {
-  if (
-    window.ProducersView &&
-    typeof window.ProducersView.render === "function"
-  ) {
-    window.ProducersView.render(producersViewContext);
-  }
-}
-
-function handleAddProducerRow() {
-  if (window.ProducersView && typeof window.ProducersView.addRow === "function") {
-    window.ProducersView.addRow(producersViewContext);
-  }
-}
-
-function handleProducersTableClick(e) {
-  // Gestionado por ProducersView
-}
-
-function handleSaveProducers() {
-  if (window.ProducersView && typeof window.ProducersView.save === "function") {
-    window.ProducersView.save(producersViewContext);
-  }
-}
-
-function filterProducersRows() {
-  if (
-    window.ProducersView &&
-    typeof window.ProducersView.filterRows === "function"
-  ) {
-    window.ProducersView.filterRows(producersViewContext);
-  }
-}
-
-// ==============================
-//  TIENDAS
-// ==============================
-
-function renderStoresTable() {
-  if (window.StoresView && typeof window.StoresView.render === "function") {
-    window.StoresView.render(storesViewContext);
   }
 }
 
@@ -3537,14 +3501,16 @@ function handleStoresDependencies() {
 }
 
 function persistInstances(list, options = {}) {
-  if (!Array.isArray(list)) return productInstances;
+  const current = getInstancesList();
+  if (!Array.isArray(list)) return current;
   const allowClear = options.allowClear === true;
-  if (!allowClear && list.length === 0 && productInstances.length > 0) {
-    return productInstances;
+  if (!allowClear && list.length === 0 && current.length > 0) {
+    return current;
   }
   const now = nowIsoString();
   const allProducts = getAllProductsForAssociationList();
   const updates = new Map();
+  const existingInstances = getInstancesList();
 
   (list || []).forEach((inst) => {
     const id =
@@ -3565,7 +3531,7 @@ function persistInstances(list, options = {}) {
       productName,
       block: inst.block || (match && match.block) || (productById && productById.block) || "",
     });
-    const existing = productInstances.find((i) => i.id === id) || {};
+    const existing = existingInstances.find((i) => i.id === id) || {};
     const createdAt = existing.createdAt || inst.createdAt || now;
     updates.set(id, {
       ...inst,
@@ -3580,9 +3546,8 @@ function persistInstances(list, options = {}) {
   });
 
   const next = Array.from(updates.values());
-  productInstances = consolidateInstances(next, now);
-  setInstancesList(productInstances);
-  saveProductInstances();
+  const consolidated = consolidateInstances(next, now);
+  setInstancesList(consolidated);
   cleanupSelectionsWithInstances();
 }
 
@@ -3591,7 +3556,6 @@ function removeInstanceById(id) {
   const filtered = list.filter((i) => i.id !== id);
   if (filtered.length === list.length) return;
   setInstancesList(filtered);
-  saveProductInstances();
   cleanupSelectionsWithInstances();
   renderInstancesTable();
   renderProducts();
@@ -3618,7 +3582,9 @@ function handleGlobalSaveShortcut(e) {
     return;
   }
   if (otrosEditPanel && otrosEditPanel.classList.contains("active")) {
-    handleSaveExtra();
+    if (window.ExtraEditView && typeof window.ExtraEditView.save === "function") {
+      window.ExtraEditView.save(extraEditViewContext);
+    }
     return;
   }
   if (instancesPanel && instancesPanel.classList.contains("active")) {
@@ -3738,12 +3704,6 @@ function setColumnWidth(table, colIndex, widthPx) {
   });
 }
 
-function filterStoresRows() {
-  if (window.StoresView && typeof window.StoresView.filterRows === "function") {
-    window.StoresView.filterRows(storesViewContext);
-  }
-}
-
 // ==============================
 //  SELECCIÓN DE PRODUCTOS (INSTANCIAS)
 // ==============================
@@ -3751,6 +3711,10 @@ function filterStoresRows() {
 function renderInstancesTable() {
   if (isStoreActive()) return;
   hideProductAutocomplete();
+  if (window.InstancesFeature && typeof window.InstancesFeature.render === "function") {
+    window.InstancesFeature.render();
+    return;
+  }
   if (window.InstancesView && typeof window.InstancesView.render === "function") {
     if (instancesViewContext && instancesViewContext.data) {
       instancesViewContext.data.instances = getInstancesList();
@@ -3880,7 +3844,7 @@ function openInlineProductCreator(row) {
       alert("Selecciona una familia y un tipo.");
       return;
     }
-    const exists = [...products, ...extraProducts].some(
+    const exists = getUnifiedList().some(
       (p) => (p.name || "").toLowerCase() === nameVal.toLowerCase()
     );
     if (exists) {
@@ -3903,9 +3867,13 @@ function openInlineProductCreator(row) {
       selectionId: "",
       createdAt: now,
       updatedAt: now,
+      scope: "otros",
     };
-    extraProducts.push(newProduct);
-    saveExtraProducts();
+    const unified = [
+      ...getUnifiedList(),
+      newProduct,
+    ];
+    setUnifiedList(unified);
     renderBlockOptions();
     renderTypeOptions();
     renderProductsDatalist();
@@ -4166,174 +4134,101 @@ async function handleCopyList() {
 
 function handleExportBackup() {
   const snap = getLatestStateSnapshot();
-  const data = {
-    products: snap.products || products,
-    extraProducts: snap.extraProducts || extraProducts,
-    unifiedProducts:
-      snap.unifiedProducts && snap.unifiedProducts.length
-        ? snap.unifiedProducts
-        : [
-            ...((snap.products || products || []).map((p) => ({
-              ...p,
-              scope: p.scope || "almacen",
-            })) || []),
-            ...((snap.extraProducts || extraProducts || []).map((p) => ({
-              ...p,
-              scope: p.scope || "otros",
-            })) || []),
-          ],
-    suppliers: snap.suppliers || suppliers,
-    producers: snap.producers || producers,
-    productInstances: snap.productInstances || productInstances,
-    classifications: snap.classifications || classifications,
-  };
-
-  const json = JSON.stringify(data, null, 2);
-  const blob = new Blob([json], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  const ts = new Date();
-  const yyyy = ts.getFullYear();
-  const mm = String(ts.getMonth() + 1).padStart(2, "0");
-  const dd = String(ts.getDate()).padStart(2, "0");
-  const hh = String(ts.getHours()).padStart(2, "0");
-  const mi = String(ts.getMinutes()).padStart(2, "0");
-  a.href = url;
-  a.download = `backup-almacen-${yyyy}${mm}${dd}-${hh}${mi}.json`;
-  a.click();
-
-  URL.revokeObjectURL(url);
+  const unified =
+    snap.unifiedProducts && snap.unifiedProducts.length
+      ? snap.unifiedProducts
+      : recomputeUnifiedFromDerived();
+  if (window.BackupUtils && typeof window.BackupUtils.exportBackup === "function") {
+    window.BackupUtils.exportBackup({
+      snapshot: {
+        ...snap,
+        unifiedProducts: unified,
+      },
+    });
+  }
 }
 
 function handleBackupFileChange(e) {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
 
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    try {
-      const text = ev.target.result;
-      const data = JSON.parse(text);
-
-      const snapshot = {
-        unifiedProducts: Array.isArray(data.unifiedProducts)
-          ? data.unifiedProducts
-          : [
-              ...(Array.isArray(data.products) ? data.products : []).map((p) => ({
-                ...p,
-                scope: "almacen",
-              })),
-              ...(Array.isArray(data.extraProducts) ? data.extraProducts : []).map(
-                (p) => ({ ...p, scope: "otros" })
-              ),
-            ],
-        suppliers: Array.isArray(data.suppliers) ? data.suppliers : [],
-        producers: Array.isArray(data.producers) ? data.producers : [],
-        productInstances: Array.isArray(data.productInstances)
-          ? data.productInstances
-          : [],
-        classifications: Array.isArray(data.classifications)
-          ? data.classifications
-          : [],
-      };
-
-      if (window.AppStore && typeof window.AppStore.setState === "function") {
-        window.AppStore.setState(snapshot);
-        syncFromAppStore();
-      } else {
-        unifiedProducts = snapshot.unifiedProducts;
-        suppliers = snapshot.suppliers;
-        producers = snapshot.producers;
-        productInstances = snapshot.productInstances;
-        classifications = snapshot.classifications;
-        persistUnified(unifiedProducts);
-        saveSuppliers();
-        saveProducers();
-        saveProductInstances();
-        saveClassifications();
-        refreshProductsFromUnified();
-        renderShelfOptions();
-        renderBlockOptions();
-        renderTypeOptions();
-        renderStoreOptions();
-        updateProducerFilterOptions();
-        updateStoreFilterOptions();
-        updateInstanceFilterOptions();
-        renderProductsDatalist();
-        renderProducts();
-        renderGridRows();
-        renderExtraQuickTable();
-        renderExtraEditTable();
-        renderProducersTable();
-        renderStoresTable();
-        renderClassificationTable();
-        renderInstancesTable();
-        renderShoppingList();
-      }
-
-      alert("Copia de seguridad restaurada correctamente.");
-    } catch (err) {
-      console.error(err);
-      alert(
-        "No se pudo leer el archivo de copia de seguridad. Asegúrate de que es un JSON válido."
-      );
-    } finally {
-      backupFileInput.value = "";
-    }
-  };
-  reader.readAsText(file);
+  if (window.BackupUtils && typeof window.BackupUtils.importBackup === "function") {
+    window.BackupUtils.importBackup({
+      file,
+      onSnapshot: (snapshot) => {
+        if (window.AppStore && typeof window.AppStore.setState === "function") {
+          window.AppStore.setState(snapshot);
+          syncFromAppStore();
+        } else {
+          unifiedProducts = snapshot.unifiedProducts;
+          suppliers = snapshot.suppliers;
+          producers = snapshot.producers;
+          productInstances = snapshot.productInstances;
+          classifications = snapshot.classifications;
+          persistUnified(unifiedProducts);
+          saveSuppliers();
+          saveProducers();
+          saveProductInstances();
+          saveClassifications();
+          refreshProductsFromUnified();
+          renderShelfOptions();
+          renderBlockOptions();
+          renderTypeOptions();
+          renderStoreOptions();
+          updateProducerFilterOptions();
+          updateStoreFilterOptions();
+          updateInstanceFilterOptions();
+          renderProductsDatalist();
+          renderProducts();
+          renderGridRows();
+          renderExtraQuickTable();
+          renderExtraEditTable();
+          if (window.ProducersFeature && typeof window.ProducersFeature.render === "function") {
+            window.ProducersFeature.render();
+          } else if (window.ProducersView && typeof window.ProducersView.render === "function") {
+            window.ProducersView.render(producersViewContext);
+          }
+          if (window.StoresFeature && typeof window.StoresFeature.render === "function") {
+            window.StoresFeature.render();
+          } else if (window.StoresView && typeof window.StoresView.render === "function") {
+            window.StoresView.render(storesViewContext);
+          }
+          renderClassificationTable();
+          renderInstancesTable();
+          renderShoppingList();
+        }
+      },
+    });
+  }
+  if (backupFileInput) {
+    backupFileInput.value = "";
+  }
 }
 
 function handleExportAlmacenCsv() {
-  if (typeof XLSX === "undefined") {
-    alert("La librería XLSX no está disponible.");
-    return;
+  if (window.BackupUtils && typeof window.BackupUtils.exportUnifiedCsv === "function") {
+    window.BackupUtils.exportUnifiedCsv({
+      scope: "almacen",
+      filename: "almacen.xlsx",
+      sheetName: "Almacén",
+      getSnapshot: getLatestStateSnapshot,
+      getSelectionLabel: getSelectionLabelForProduct,
+      getSelectionStores: getSelectionStoresForProduct,
+      comparer: compareShelfBlockTypeName,
+    });
   }
-  exportUnifiedCsv("almacen", "almacen.xlsx", "Almacén");
 }
 
 function handleExportOtrosCsv() {
-  if (typeof XLSX === "undefined") {
-    alert("La librería XLSX no está disponible.");
-    return;
+  if (window.BackupUtils && typeof window.BackupUtils.exportUnifiedCsv === "function") {
+    window.BackupUtils.exportUnifiedCsv({
+      scope: "otros",
+      filename: "otros_productos.xlsx",
+      sheetName: "Otros productos",
+      getSnapshot: getLatestStateSnapshot,
+      getSelectionLabel: getSelectionLabelForProduct,
+      getSelectionStores: getSelectionStoresForProduct,
+      comparer: compareShelfBlockTypeName,
+    });
   }
-  exportUnifiedCsv("otros", "otros_productos.xlsx", "Otros productos");
-}
-
-function exportUnifiedCsv(scope, filename, sheetName) {
-  const snap = getLatestStateSnapshot();
-  const list =
-    (snap && Array.isArray(snap.unifiedProducts) && snap.unifiedProducts.length
-      ? snap.unifiedProducts
-      : [
-          ...((snap && snap.products) || products || []),
-          ...(((snap && snap.extraProducts) || extraProducts || []).map((p) => ({
-            ...p,
-            scope: p.scope || "otros",
-          })) || []),
-        ]) || [];
-  const rows = list
-    .filter((p) => (scope ? p.scope === scope : true))
-    .sort(compareShelfBlockTypeName)
-    .map((p) => ({
-      Producto: p.name || "",
-      Familia: p.block || "",
-      Tipo: p.type || "",
-      Ubicación: p.shelf || "",
-      Cantidad: p.quantity || "",
-      Selección: getSelectionLabelForProduct(p),
-      Tiendas: getSelectionStoresForProduct(p),
-      Comprar: p.buy ? "Sí" : "No",
-      Tengo: p.have ? "Sí" : "No",
-      "F. adquisición": p.acquisitionDate || "",
-      Caducidad: p.expiryText || "",
-      Notas: p.notes || "",
-      Scope: p.scope || "",
-    }));
-
-  const ws = XLSX.utils.json_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, sheetName || "Productos");
-  XLSX.writeFile(wb, filename || "productos.xlsx");
 }

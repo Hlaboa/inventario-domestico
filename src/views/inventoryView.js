@@ -121,22 +121,12 @@
     items.sort(helpers.compareShelfBlockTypeName);
     const stripeMap = helpers.buildFamilyStripeMap(items);
 
-    const search = (filterSearchInput.value || "").toLowerCase();
-    const filterBlock = filterBlockSelect.value || "";
-    const filterType = filterTypeSelect.value || "";
-    const filterShelf = filterShelfSelect.value || "";
-    const filterStoreId = filterStoreSelect.value || "";
-    const status = filterStatusSelect.value || "all";
-
     const frag =
       typeof document !== "undefined" && document.createDocumentFragment
         ? document.createDocumentFragment()
         : null;
     const target = frag || productTableBody;
     const rows = [];
-    let total = 0;
-    let haveCount = 0;
-    let missingCount = 0;
 
     productDrafts.forEach((d) => {
       const tr = document.createElement("tr");
@@ -227,44 +217,12 @@
     });
 
     for (const p of items) {
-      if (filterBlock && (p.block || "") !== filterBlock) continue;
-      if (filterType && (p.type || "") !== filterType) continue;
-      if (filterShelf && (p.shelf || "") !== filterShelf) continue;
-
-      if (filterStoreId && !helpers.productMatchesStore(p, filterStoreId)) continue;
-
-      if (status === "have" && !p.have) continue;
-      if (status === "missing" && p.have) continue;
-
-      const searchHaystack =
-        (p.name || "") +
-        " " +
-        (p.block || "") +
-        " " +
-        (p.type || "") +
-        " " +
-        (p.shelf || "") +
-        " " +
-        (p.quantity || "") +
-        " " +
-        (p.notes || "") +
-        " " +
-        helpers.getSelectionLabelForProduct(p) +
-        " " +
-        helpers.getSelectionStoresForProduct(p);
-
-      if (search && !searchHaystack.toLowerCase().includes(search)) continue;
-
-      total++;
-      if (p.have) haveCount++;
-      else missingCount++;
-
       const stripe = stripeMap[(p.block || "").trim() || "__none__"] || 0;
       const tr =
         buildRowFromTemplate(p, stripe) || buildFallbackRow(p, stripe);
       if (tr) {
         target.appendChild(tr);
-        rows.push(tr);
+        rows.push({ row: tr, product: p });
       }
     }
 
@@ -281,8 +239,66 @@
       productTableBody.appendChild(frag);
     }
 
+    filterRows({ refs, state, helpers });
+  }
+
+  function filterRows({ refs, state, helpers }) {
+    const {
+      productTableBody,
+      filterSearchInput,
+      filterShelfSelect,
+      filterBlockSelect,
+      filterTypeSelect,
+      filterStoreSelect,
+      filterStatusSelect,
+      summaryInfo,
+    } = refs;
+    if (!productTableBody) return;
+    const search = (filterSearchInput.value || "").toLowerCase();
+    const filterBlock = filterBlockSelect.value || "";
+    const filterType = filterTypeSelect.value || "";
+    const filterShelf = filterShelfSelect.value || "";
+    const filterStoreId = filterStoreSelect.value || "";
+    const status = filterStatusSelect.value || "all";
+    const map = new Map((state.products || []).map((p) => [p.id, p]));
+
+    const predicate = (tr) => {
+      const id = tr.dataset.id;
+      const p = id ? map.get(id) : null;
+      if (!p) return true;
+      if (filterBlock && (p.block || "") !== filterBlock) return false;
+      if (filterType && (p.type || "") !== filterType) return false;
+      if (filterShelf && (p.shelf || "") !== filterShelf) return false;
+      if (filterStoreId && !helpers.productMatchesStore(p, filterStoreId)) return false;
+      if (status === "have" && !p.have) return false;
+      if (status === "missing" && p.have) return false;
+      if (search) {
+        const haystack = `${p.name || ""} ${p.block || ""} ${p.type || ""} ${p.shelf || ""} ${p.quantity || ""} ${p.notes || ""} ${helpers.getSelectionLabelForProduct(p)} ${helpers.getSelectionStoresForProduct(p)}`.toLowerCase();
+        if (!haystack.includes(search)) return false;
+      }
+      return true;
+    };
+
+    const rows = Array.from(productTableBody.querySelectorAll("tr"));
+    if (
+      window.AppComponents &&
+      typeof window.AppComponents.filterRowsByPredicates === "function"
+    ) {
+      window.AppComponents.filterRowsByPredicates(rows, [predicate]);
+    } else {
+      rows.forEach((tr) => {
+        tr.style.display = predicate(tr) ? "" : "none";
+      });
+    }
+
     if (summaryInfo) {
-      summaryInfo.textContent = `Total: ${total} · Tengo: ${haveCount} · Faltan: ${missingCount}`;
+      const visible = rows.filter((tr) => tr.style.display !== "none" && tr.dataset.id);
+      const haveCount = visible.filter((tr) => {
+        const p = map.get(tr.dataset.id);
+        return p && p.have;
+      }).length;
+      const total = visible.length;
+      summaryInfo.textContent = `Total: ${total} · Tengo: ${haveCount} · Faltan: ${Math.max(total - haveCount, 0)}`;
     }
   }
 
@@ -299,8 +315,8 @@
 
     const debouncedRender =
       window.AppUtils && typeof window.AppUtils.debounce === "function"
-        ? window.AppUtils.debounce(() => render({ refs, state, helpers }), 120)
-        : () => render({ refs, state, helpers });
+        ? window.AppUtils.debounce(() => filterRows({ refs, state, helpers }), 80)
+        : () => filterRows({ refs, state, helpers });
 
     filterSearchInput.addEventListener("input", debouncedRender);
     filterShelfSelect.addEventListener("change", debouncedRender);
@@ -309,6 +325,7 @@
     filterStoreSelect.addEventListener("change", debouncedRender);
     filterStatusSelect.addEventListener("change", debouncedRender);
     productTableBody.addEventListener("click", helpers.handleInventoryTableClick);
+    filterRows({ refs, state, helpers });
   }
 
   window.InventoryView = { render, bind, init: bind };

@@ -1,8 +1,11 @@
 (() => {
   let ctx = {};
+  let actions = {};
 
   function init(options = {}) {
     ctx = options;
+    const defaults = buildDefaultActions(ctx);
+    actions = { ...defaults, ...(ctx.actions || {}) };
     const refs = ctx.refs || {};
     if (refs.tableBody) {
       refs.tableBody.addEventListener("click", handleClick);
@@ -31,11 +34,11 @@
             helpers: ctx.helpers || {},
             getSelectionInstanceForProduct: ctx.getSelectionInstanceForProduct,
             getStoreNames: ctx.getStoreNames,
-            onToggleBuy: ctx.actions?.toggleBuy,
-            onMoveToAlmacen: ctx.actions?.moveToAlmacen,
-            onSelectSelection: ctx.actions?.selectSelection,
-            onDelete: ctx.actions?.delete,
-            onCancelDraft: ctx.actions?.cancelDraft,
+            onToggleBuy: actions.toggleBuy,
+            onMoveToAlmacen: actions.moveToAlmacen,
+            onSelectSelection: actions.selectSelection,
+            onDelete: actions.delete,
+            onCancelDraft: actions.cancelDraft,
           };
     window.ExtrasView.render(viewCtx);
   }
@@ -57,7 +60,7 @@
 
     if (target.matches('input[type="checkbox"][data-field="buy"]')) {
       const id = target.dataset.id;
-      ctx.actions?.toggleBuy?.(id, target.checked);
+      actions.toggleBuy?.(id, target.checked);
       return;
     }
 
@@ -66,20 +69,72 @@
     if (!id) return;
 
     if (action === "move-to-almacen") {
-      ctx.actions?.moveToAlmacen?.(id);
+      actions.moveToAlmacen?.(id);
       return;
     }
     if (action === "select-selection") {
-      ctx.actions?.selectSelection?.(id);
+      actions.selectSelection?.(id);
       return;
     }
     if (action === "delete") {
-      ctx.actions?.delete?.(id);
+      actions.delete?.(id);
       return;
     }
     if (action === "cancel-draft") {
-      ctx.actions?.cancelDraft?.(id);
+      actions.cancelDraft?.(id);
     }
+  }
+
+  function buildDefaultActions(options = {}) {
+    const persistUnified =
+      typeof options.persistUnified === "function" ? options.persistUnified : null;
+    const getExtras = typeof options.getExtras === "function" ? options.getExtras : () => [];
+    const getPantry =
+      typeof options.getPantryProducts === "function" ? options.getPantryProducts : () => [];
+    const onChange = typeof options.onChange === "function" ? options.onChange : () => {};
+    const nowIsoString =
+      typeof options.nowIsoString === "function"
+        ? options.nowIsoString
+        : () => new Date().toISOString();
+
+    const updateUnified = (updater) => {
+      if (!persistUnified) return;
+      const extras = getExtras() || [];
+      const pantry = getPantry() || [];
+      const nextExtras = updater(extras.slice());
+      const unified = [
+        ...pantry.map((p) => ({ ...p, scope: "almacen" })),
+        ...nextExtras.map((p) => ({ ...p, scope: "otros" })),
+      ];
+      persistUnified(unified);
+      onChange();
+    };
+
+    return {
+      toggleBuy: (id, checked) => {
+        updateUnified((extras) =>
+          extras.map((p) => (p.id === id ? { ...p, buy: checked } : p))
+        );
+      },
+      moveToAlmacen: (id) => {
+        updateUnified((extras) => {
+          const idx = extras.findIndex((p) => p.id === id);
+          if (idx === -1) return extras;
+          const item = extras[idx];
+          const now = nowIsoString();
+          extras.splice(idx, 1);
+          return [
+            ...extras,
+            { ...item, scope: "almacen", updatedAt: now, have: !!item.have, buy: !!item.buy },
+          ];
+        });
+      },
+      delete: (id) => {
+        updateUnified((extras) => extras.filter((p) => p.id !== id));
+      },
+      selectSelection: options.actions?.selectSelection,
+      cancelDraft: options.actions?.cancelDraft,
+    };
   }
 
   window.ExtrasFeature = {
@@ -87,5 +142,6 @@
     render,
     handleClick,
     state: getState,
+    getActions: () => actions,
   };
 })();

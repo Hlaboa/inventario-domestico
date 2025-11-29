@@ -2,8 +2,8 @@ const path = require("path");
 const fs = require("fs");
 const assert = require("assert");
 
-const modulePath = path.join(__dirname, "..", "appStore.js");
-const dataServicePath = path.join(__dirname, "..", "dataService.js");
+const modulePath = path.join(__dirname, "..", "src", "core", "appStore.js");
+const dataServicePath = path.join(__dirname, "..", "src", "core", "dataService.js");
 
 function loadStore(stubs = {}) {
   delete require.cache[modulePath];
@@ -59,6 +59,25 @@ function loadDataService(stubs = {}) {
     delete require.cache[dataServicePath];
   };
   return ds;
+}
+
+function loadStateAdapter(stubs = {}) {
+  const adapterPath = path.join(__dirname, "..", "src", "core", "stateAdapter.js");
+  delete require.cache[adapterPath];
+  const previousWindow = global.window;
+  global.window = {
+    AppStore: stubs.AppStore,
+    AppState: stubs.AppState,
+    DataService: stubs.DataService,
+    AppUtils: stubs.AppUtils || { ensureObject: (v) => (v && typeof v === "object" ? v : {}) },
+  };
+  require(adapterPath);
+  const adapter = global.window.StateAdapter;
+  adapter.__cleanup = () => {
+    global.window = previousWindow;
+    delete require.cache[adapterPath];
+  };
+  return adapter;
 }
 
 class StubElement {
@@ -249,7 +268,7 @@ register("AppStorage normaliza productos y extraProducts con scope correcto", ()
     safeLoadList: () => [],
     saveList: () => {},
   };
-  const storageModule = path.join(__dirname, "..", "storage.js");
+  const storageModule = path.join(__dirname, "..", "src", "core", "storage.js");
   delete require.cache[storageModule];
   global.window = { AppUtils, localStorage: createMemoryStorage() };
   require(storageModule);
@@ -295,7 +314,7 @@ register("DataService.persistState guarda unifiedProducts y listas separadas", (
 
   global.window = { AppState, AppStorage, localStorage };
   global.localStorage = localStorage;
-  const dsPath = path.join(__dirname, "..", "dataService.js");
+  const dsPath = path.join(__dirname, "..", "src", "core", "dataService.js");
   delete require.cache[dsPath];
   require(dsPath);
 
@@ -345,8 +364,46 @@ register("DataService.setUnifiedProducts persiste y actualiza AppState", () => {
   ds.__cleanup();
 });
 
+register("StateAdapter.setEntity delega en AppStore.actions y notifica suscriptores sin bucle", () => {
+  const calls = { action: 0, notified: 0 };
+  const storeState = { unifiedProducts: [] };
+  const AppStore = {
+    state: storeState,
+    actions: {
+      setUnifiedProducts(list) {
+        calls.action += 1;
+        AppStore.state.unifiedProducts = list;
+        AppStore.listeners.forEach((fn) => fn(AppStore.state));
+        return list;
+      },
+    },
+    listeners: new Set(),
+    getState() {
+      return this.state;
+    },
+    subscribe(fn) {
+      this.listeners.add(fn);
+      return () => this.listeners.delete(fn);
+    },
+  };
+
+  const adapter = loadStateAdapter({ AppStore });
+  const unsub = adapter.subscribe(() => {
+    calls.notified += 1;
+  });
+
+  const sample = [{ id: "u1", scope: "almacen", name: "Arroz" }];
+  const res = adapter.setEntity("unifiedProducts", sample);
+
+  assert.strictEqual(res.length, 1, "Debe devolver la lista normalizada");
+  assert.strictEqual(calls.action, 1, "Debe delegar en AppStore.actions");
+  assert.strictEqual(calls.notified, 1, "Debe notificar una sola vez");
+  unsub();
+  adapter.__cleanup();
+});
+
 register("InventoryView.render crea filas para productos", () => {
-  delete require.cache[path.join(__dirname, "..", "inventoryView.js")];
+  delete require.cache[path.join(__dirname, "..", "src", "views", "inventoryView.js")];
   const productTableBody = new StubElement("tbody");
   const refs = {
     productTableBody,
@@ -361,7 +418,7 @@ register("InventoryView.render crea filas para productos", () => {
   const stubDocument = createStubDocument();
   global.window = { document: stubDocument };
   global.document = stubDocument;
-  require(path.join(__dirname, "..", "inventoryView.js"));
+  require(path.join(__dirname, "..", "src", "views", "inventoryView.js"));
 
   const products = [{ id: "p1", name: "Arroz", block: "Granos", type: "Blanco", shelf: "A", quantity: "1", have: true }];
   const productDrafts = [{ id: "d1", name: "Draft" }];
@@ -389,7 +446,8 @@ register("InventoryView.render crea filas para productos", () => {
 });
 
 register("InstancesView.render crea filas para instancias", () => {
-  delete require.cache[path.join(__dirname, "..", "instancesView.js")];
+  const mod = path.join(__dirname, "..", "src", "views", "instancesView.js");
+  delete require.cache[mod];
   const tableBody = new StubElement("tbody");
   const refs = {
     tableBody,
@@ -401,8 +459,6 @@ register("InstancesView.render crea filas para instancias", () => {
   const stubDocument = createStubDocument();
   global.window = { document: stubDocument };
   global.document = stubDocument;
-  const mod = path.join(__dirname, "..", "instancesView.js");
-  delete require.cache[mod];
   require(mod);
 
   const inst = {
@@ -430,7 +486,8 @@ register("InstancesView.render crea filas para instancias", () => {
 });
 
 register("InstancesView respeta filtros de familia", () => {
-  delete require.cache[path.join(__dirname, "..", "instancesView.js")];
+  const mod = path.join(__dirname, "..", "src", "views", "instancesView.js");
+  delete require.cache[mod];
   const tableBody = new StubElement("tbody");
   const refs = {
     tableBody,
@@ -442,7 +499,7 @@ register("InstancesView respeta filtros de familia", () => {
   const stubDocument = createStubDocument();
   global.window = { document: stubDocument };
   global.document = stubDocument;
-  require(path.join(__dirname, "..", "instancesView.js"));
+  require(mod);
 
   const inst = { id: "i1", productName: "Arroz", producerId: "", brand: "", storeIds: [] };
   const context = {
@@ -462,13 +519,13 @@ register("InstancesView respeta filtros de familia", () => {
 });
 
 register("ClassificationView elimina fila al hacer click en borrar", () => {
-  delete require.cache[path.join(__dirname, "..", "classificationView.js")];
+  delete require.cache[path.join(__dirname, "..", "src", "views", "classificationView.js")];
   const tableBody = new StubElement("tbody");
 
   const stubDocument = createStubDocument();
   global.window = { document: stubDocument };
   global.document = stubDocument;
-  require(path.join(__dirname, "..", "classificationView.js"));
+  require(path.join(__dirname, "..", "src", "views", "classificationView.js"));
 
   const refs = { tableBody, addButton: null, saveButton: null };
   const getClassifications = () => [{ id: "c1", block: "B", type: "T", notes: "" }];
@@ -497,7 +554,7 @@ register("ClassificationView elimina fila al hacer click en borrar", () => {
 });
 
 register("InstancesView.handleClick elimina instancia con delete-instance", () => {
-  const mod = path.join(__dirname, "..", "instancesView.js");
+  const mod = path.join(__dirname, "..", "src", "views", "instancesView.js");
   delete require.cache[mod];
   const tableBody = new StubElement("tbody");
   const stubDocument = createStubDocument();
@@ -540,6 +597,73 @@ register("InstancesView.handleClick elimina instancia con delete-instance", () =
   if (ctx.data.instances.length !== 0) {
     throw new Error("No se eliminó la instancia tras click");
   }
+});
+
+register("ExtrasFeature reenvía acciones al manejar clicks y checkboxes", () => {
+  const mod = path.join(__dirname, "..", "src", "features", "extras.js");
+  delete require.cache[mod];
+  const tableBody = new StubElement("tbody");
+  const calls = { delete: 0, move: 0, toggle: 0 };
+  global.window = { document: createStubDocument() };
+  require(mod);
+  global.window.ExtrasFeature.init({
+    refs: { tableBody },
+    actions: {
+      delete: () => calls.delete++,
+      moveToAlmacen: () => calls.move++,
+      toggleBuy: () => calls.toggle++,
+    },
+  });
+
+  const handler = tableBody._handlers.click;
+  // Checkbox buy
+  const checkbox = new StubElement("input");
+  checkbox.dataset = { id: "e1", field: "buy" };
+  checkbox.checked = true;
+  checkbox.matches = (sel) => sel.includes("checkbox") && sel.includes("buy");
+  handler({ target: checkbox });
+
+  // Delete button
+  const btn = new StubElement("button");
+  btn.dataset = { action: "delete", id: "e1" };
+  btn.matches = () => false;
+  handler({ target: btn });
+
+  // Move button (role mapping)
+  const moveBtn = new StubElement("button");
+  moveBtn.dataset = { role: "move", id: "e1" };
+  moveBtn.matches = () => false;
+  handler({ target: moveBtn });
+
+  assert.strictEqual(calls.toggle, 1, "Debe llamar a toggleBuy");
+  assert.strictEqual(calls.delete, 1, "Debe llamar a delete");
+  assert.strictEqual(calls.move, 1, "Debe llamar a moveToAlmacen");
+});
+
+register("InstancesFeature.handleInput llama a updateField", () => {
+  const mod = path.join(__dirname, "..", "src", "features", "instances.js");
+  delete require.cache[mod];
+  const tableBody = new StubElement("tbody");
+  const calls = { update: 0 };
+  global.window = { document: createStubDocument() };
+  require(mod);
+  global.window.InstancesFeature.init({
+    refs: { tableBody },
+    actions: {
+      updateField: () => calls.update++,
+      add: () => {},
+      save: () => {},
+    },
+    getInstances: () => [],
+  });
+  const handler = tableBody._handlers.change;
+  const input = {
+    dataset: { id: "i1", field: "brand" },
+    value: "Nueva",
+    type: "text",
+  };
+  handler({ target: input });
+  assert.strictEqual(calls.update, 1, "Debe propagar updateField");
 });
 
 register("AppStore.selectors.shoppingSummary suma items y tiendas", () => {
