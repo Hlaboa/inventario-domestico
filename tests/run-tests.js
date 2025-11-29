@@ -8,7 +8,7 @@ function loadStore(stubs = {}) {
   delete require.cache[modulePath];
 
   const previousWindow = global.window;
-  global.window = {};
+  global.window = { localStorage: createMemoryStorage() };
 
   ["AppState", "DataService", "AppStorage", "AppUtils"].forEach((key) => {
     if (stubs[key]) {
@@ -29,6 +29,17 @@ function loadStore(stubs = {}) {
   };
 
   return store;
+}
+
+function createMemoryStorage() {
+  const data = new Map();
+  return {
+    getItem: (k) => (data.has(k) ? data.get(k) : null),
+    setItem: (k, v) => data.set(k, String(v)),
+    removeItem: (k) => data.delete(k),
+    clear: () => data.clear(),
+    _data: data,
+  };
 }
 
 const tests = [];
@@ -150,6 +161,49 @@ register("selectores usan DataService si está disponible", () => {
   assert.strictEqual(calls.types, 1);
 
   store.__cleanup();
+});
+
+register("AppStorage normaliza productos y extraProducts con scope correcto", () => {
+  const AppUtils = {
+    nowIsoString: () => "2024-01-01T00:00:00.000Z",
+    safeLoadList: () => [],
+    saveList: () => {},
+  };
+  const storageModule = path.join(__dirname, "..", "storage.js");
+  delete require.cache[storageModule];
+  global.window = { AppUtils, localStorage: createMemoryStorage() };
+  require(storageModule);
+  const normalize = global.window.AppStorage.normalize;
+  const prod = normalize.product({ id: "1", name: "A", have: "on", block: "B" });
+  const extra = normalize.extraProduct({ id: "2", name: "E", buy: "on", scope: "otros" });
+  assert.strictEqual(prod.scope, undefined, "Productos no fijan scope (solo unified)");
+  assert.strictEqual(extra.buy, true, "Extra marca buy en booleano");
+  const unified = normalize.unifiedProduct({ id: "3", name: "U", have: "on", scope: "otros" });
+  assert.strictEqual(unified.scope, "otros", "Unified respeta scope 'otros'");
+});
+
+register("AppStorage migrates unifiedProducts if vacío", () => {
+  const AppUtils = {
+    nowIsoString: () => "2024-01-01T00:00:00.000Z",
+    safeLoadList: (key) => {
+      if (key === "inventarioCocinaAlmacen") return [{ id: "p1", name: "Prod" }];
+      if (key === "otrosProductosCompra") return [{ id: "e1", name: "Extra" }];
+      return [];
+    },
+    saveList: (key, list) => {
+      global.__saved = global.__saved || {};
+      global.__saved[key] = list;
+    },
+  };
+  const storageModule = path.join(__dirname, "..", "storage.js");
+  delete require.cache[storageModule];
+  global.window = { AppUtils, localStorage: createMemoryStorage() };
+  require(storageModule);
+  const storage = global.window.AppStorage;
+  const unified = storage.loadUnifiedProducts();
+  assert.strictEqual(unified.length, 2, "Debe migrar productos y extras");
+  assert.strictEqual(unified[0].scope, "almacen");
+  assert.strictEqual(unified[1].scope, "otros");
 });
 
 (function run() {

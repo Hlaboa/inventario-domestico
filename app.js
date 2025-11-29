@@ -614,7 +614,43 @@ document.addEventListener("DOMContentLoaded", () => {
     window.InstancesView.init(instancesViewContext);
   }
 
-  InventoryView.init(getInventoryContext());
+  const inventoryController =
+    window.InventoryController && window.InventoryController.create
+      ? window.InventoryController.create({
+          store: window.AppStore || window.AppState,
+          view: window.InventoryView,
+          helpers: {
+            createTableInput,
+            createTableTextarea,
+            createFamilySelect,
+            createTypeSelect,
+            linkFamilyTypeSelects,
+            buildFamilyStripeMap,
+            compareShelfBlockTypeName,
+            productMatchesStore,
+            getSelectionLabelForProduct,
+            getSelectionStoresForProduct,
+            createSelectionButton,
+            handleInventoryTableClick,
+          },
+        })
+      : null;
+
+  if (inventoryController) {
+    inventoryController.setRefs({
+      productTableBody,
+      filterSearchInput,
+      filterShelfSelect,
+      filterBlockSelect,
+      filterTypeSelect,
+      filterStoreSelect,
+      filterStatusSelect,
+      summaryInfo,
+    });
+    inventoryController.setDrafts(productDrafts);
+    inventoryController.render();
+  }
+
   renderAll();
   document.addEventListener("keydown", handleGlobalSaveShortcut);
   document.addEventListener("keydown", handleGlobalEscape);
@@ -2710,7 +2746,10 @@ function renderProductsDatalist() {
 function renderProducts() {
   refreshProductsFromUnified();
   products = getPantryProducts();
-  InventoryView.render(getInventoryContext());
+  if (window.InventoryView) {
+    const ctx = getInventoryContext();
+    InventoryView.render(ctx);
+  }
 }
 
 function handleInventoryTableClick(e) {

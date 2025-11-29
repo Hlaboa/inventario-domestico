@@ -156,9 +156,9 @@ body.lock-scroll {
 
 .tabs {
   display: flex;
-  gap: 0.35rem;
+  gap: var(--space-1);
   background: var(--surface);
-  padding: 0.4rem 0.5rem;
+  padding: 0.4rem 0.6rem;
   border-radius: 1rem;
   margin-bottom: 0.75rem;
   border: 1px solid var(--border);
@@ -191,6 +191,7 @@ body.lock-scroll {
   cursor: pointer;
   color: var(--muted);
   transition: all 0.15s ease;
+  font-weight: 600;
 }
 
 .tab-button.active {
@@ -271,10 +272,10 @@ body.lock-scroll {
 .filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem 0.5rem;
-  margin-bottom: 0.35rem;
+  gap: var(--space-1) var(--space-2);
+  margin-bottom: var(--space-1);
   background: var(--surface-2);
-  padding: 0.4rem 0.65rem 0.4rem 1rem;
+  padding: 0.45rem 0.75rem 0.45rem 1rem;
   border-radius: 0.9rem;
   border: 1px solid rgba(0, 0, 0, 0.04);
   overflow-x: auto;
@@ -359,6 +360,7 @@ textarea:focus {
   justify-content: center;
   gap: 0.3rem;
   transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+  font-weight: 600;
 }
 
 .btn:focus-visible,
