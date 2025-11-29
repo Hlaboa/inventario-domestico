@@ -20,6 +20,7 @@ let productInstances = []; // selección producto+productor+marca+tiendas
 let classifications = []; // combinaciones familia/tipo
 let productDrafts = [];
 let extraDrafts = [];
+const stateAdapter = window.StateAdapter || null;
 
 function refreshProductsFromUnified() {
   products = (unifiedProducts || []).filter((p) => p.scope === "almacen");
@@ -44,7 +45,11 @@ function recomputeUnifiedFromDerived() {
 }
 
 function isStoreActive() {
-  return !!(window.AppStore && typeof window.AppStore.subscribe === "function");
+  return !!(
+    stateAdapter &&
+    typeof stateAdapter.subscribe === "function" &&
+    typeof stateAdapter.getState === "function"
+  );
 }
 
 function applyStateSnapshot(snapshot = {}) {
@@ -67,8 +72,11 @@ function applyStateSnapshot(snapshot = {}) {
 }
 
 function syncFromAppStore() {
-  if (window.AppStore && typeof window.AppStore.getState === "function") {
-    applyStateSnapshot(window.AppStore.getState());
+  const snapshot =
+    (stateAdapter && typeof stateAdapter.getState === "function" && stateAdapter.getState()) ||
+    (window.AppStore && typeof window.AppStore.getState === "function" && window.AppStore.getState());
+  if (snapshot) {
+    applyStateSnapshot(snapshot);
   }
 }
 
@@ -214,6 +222,9 @@ let producersController;
 let storesController;
 // Snapshot helper para export/import en modo store o standalone
 function getLatestStateSnapshot() {
+  if (stateAdapter && typeof stateAdapter.getState === "function") {
+    return stateAdapter.getState() || {};
+  }
   if (window.AppStore && typeof window.AppStore.getState === "function") {
     return window.AppStore.getState() || {};
   }
@@ -1502,6 +1513,20 @@ function getStoreNames(storeIds) {
 
 function getClassificationFamilies() {
   if (
+    stateAdapter &&
+    stateAdapter.selectors &&
+    typeof stateAdapter.selectors.families === "function"
+  ) {
+    const baseState =
+      (stateAdapter.getState && stateAdapter.getState()) || {
+        products,
+        extraProducts,
+        classifications,
+      };
+    return stateAdapter.selectors.families(baseState);
+  }
+
+  if (
     window.DataService &&
     window.DataService.selectors &&
     typeof window.DataService.selectors.families === "function"
@@ -1532,6 +1557,20 @@ function getClassificationFamilies() {
 }
 
 function getClassificationTypes(family = "") {
+  if (
+    stateAdapter &&
+    stateAdapter.selectors &&
+    typeof stateAdapter.selectors.types === "function"
+  ) {
+    const baseState =
+      (stateAdapter.getState && stateAdapter.getState()) || {
+        products,
+        extraProducts,
+        classifications,
+      };
+    return stateAdapter.selectors.types(baseState, family);
+  }
+
   if (
     window.DataService &&
     window.DataService.selectors &&
@@ -1805,7 +1844,9 @@ function createSelectionButton(selectionId, id) {
   btn.dataset.id = id;
   const hasSel = !!getSelectionInstanceForProduct({ selectionId, id });
   btn.textContent = hasSel ? "⟳" : "+";
-  btn.title = hasSel ? "Cambiar selección" : "Añadir selección";
+  const label = hasSel ? "Cambiar selección" : "Añadir selección";
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
   btn.classList.toggle("btn-selection-empty", !hasSel);
   btn.classList.toggle("btn-selection-update", hasSel);
   return btn;
@@ -3830,6 +3871,12 @@ function renderShoppingList() {
   shoppingListContainer.innerHTML = "";
 
   const summary =
+    (stateAdapter &&
+      stateAdapter.selectors &&
+      typeof stateAdapter.selectors.shoppingSummary === "function" &&
+      stateAdapter.selectors.shoppingSummary(
+        (stateAdapter.getState && stateAdapter.getState()) || { products, extraProducts }
+      )) ||
     (window.AppStore &&
       window.AppStore.selectors &&
       window.AppStore.selectors.shoppingSummary &&

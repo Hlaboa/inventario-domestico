@@ -143,13 +143,15 @@
 
     addCellText(item.notes || "");
 
-    td = document.createElement("td");
-    const moveBtn = document.createElement("button");
-    moveBtn.className = "btn btn-small btn-icon";
-    moveBtn.textContent = "→";
-    moveBtn.dataset.action = "move-to-almacen";
-    moveBtn.dataset.id = item.id;
-    td.appendChild(moveBtn);
+  td = document.createElement("td");
+  const moveBtn = document.createElement("button");
+  moveBtn.className = "btn btn-small btn-icon";
+  moveBtn.textContent = "→";
+  moveBtn.title = "Mover a almacén";
+  moveBtn.setAttribute("aria-label", "Mover a almacén");
+  moveBtn.dataset.action = "move-to-almacen";
+  moveBtn.dataset.id = item.id;
+  td.appendChild(moveBtn);
 
     tr.appendChild(td);
     return tr;

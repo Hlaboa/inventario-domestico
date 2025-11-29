@@ -164,12 +164,13 @@
       inputName.setAttribute("autocomplete", "off");
       inputName.placeholder = "Escribe para buscar en tu inventario...";
 
-      const createBtn = document.createElement("button");
-      createBtn.type = "button";
-      createBtn.className = "btn btn-small btn-icon";
-      createBtn.textContent = "+";
-      createBtn.title = "Crear producto en 'Otros productos'";
-      createBtn.dataset.action = "create-product-selection";
+  const createBtn = document.createElement("button");
+  createBtn.type = "button";
+  createBtn.className = "btn btn-small btn-icon";
+  createBtn.textContent = "+";
+  createBtn.title = "Crear producto en 'Otros productos'";
+  createBtn.setAttribute("aria-label", "Crear producto en 'Otros productos'");
+  createBtn.dataset.action = "create-product-selection";
 
       const familyCell = document.createElement("td");
       familyCell.className = "instances-family-cell";

@@ -107,6 +107,8 @@
       const moveBtn = document.createElement("button");
       moveBtn.className = "btn btn-small btn-icon";
       moveBtn.textContent = "→";
+      moveBtn.title = "Mover a otros productos";
+      moveBtn.setAttribute("aria-label", "Mover a otros productos");
       moveBtn.dataset.action = "move-to-extra";
       moveBtn.dataset.id = p.id;
       td.appendChild(moveBtn);

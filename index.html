@@ -96,7 +96,14 @@
                   <td data-field="expiryText"></td>
                   <td data-field="notes"></td>
                   <td>
-                    <button class="btn btn-small btn-icon" data-role="move">→</button>
+                    <button
+                      class="btn btn-small btn-icon"
+                      data-role="move"
+                      aria-label="Mover a otros productos"
+                      title="Mover a otros productos"
+                    >
+                      →
+                    </button>
                   </td>
                 </tr>
               </template>
@@ -258,7 +265,14 @@
                       <td class="selection-td">
                         <div class="selection-cell">
                           <span class="selection-text" data-field="selectionText"></span>
-                          <button class="btn btn-small btn-icon" data-role="selection-btn">+</button>
+                          <button
+                            class="btn btn-small btn-icon"
+                            data-role="selection-btn"
+                            aria-label="Seleccionar productor y tiendas"
+                            title="Seleccionar productor y tiendas"
+                          >
+                            +
+                          </button>
                         </div>
                       </td>
                       <td><span data-field="stores"></span></td>
@@ -267,7 +281,14 @@
                       <td data-slot="expiryText"></td>
                       <td data-slot="notes"></td>
                       <td>
-                        <button class="btn btn-small btn-icon" data-role="move">→</button>
+                        <button
+                          class="btn btn-small btn-icon"
+                          data-role="move"
+                          aria-label="Mover a otros productos"
+                          title="Mover a otros productos"
+                        >
+                          →
+                        </button>
                         <button class="btn btn-small btn-danger" data-role="delete" aria-label="Eliminar producto">✕</button>
                       </td>
                     </tr>
@@ -476,14 +497,28 @@
                       <td class="selection-td">
                         <div class="selection-cell">
                           <span class="selection-text" data-field="selectionText"></span>
-                          <button class="btn btn-small btn-icon" data-role="selection-btn">+</button>
+                          <button
+                            class="btn btn-small btn-icon"
+                            data-role="selection-btn"
+                            aria-label="Seleccionar productor y tiendas"
+                            title="Seleccionar productor y tiendas"
+                          >
+                            +
+                          </button>
                         </div>
                       </td>
                       <td><span data-field="stores"></span></td>
                       <td data-slot="buy"></td>
                       <td data-slot="notes"></td>
                       <td>
-                        <button class="btn btn-small btn-icon" data-role="move">→</button>
+                        <button
+                          class="btn btn-small btn-icon"
+                          data-role="move"
+                          aria-label="Mover a almacén"
+                          title="Mover a almacén"
+                        >
+                          →
+                        </button>
                         <button class="btn btn-small btn-danger" data-role="delete" aria-label="Eliminar">✕</button>
                       </td>
                     </tr>
@@ -975,6 +1010,7 @@
     <script src="src/core/state.js"></script>
     <script src="src/core/dataService.js"></script>
     <script src="src/core/appStore.js"></script>
+    <script src="src/core/stateAdapter.js"></script>
     <script src="src/core/bootstrap.js"></script>
     <script src="src/core/uiHelpers.js"></script>
     <script src="src/controllers/viewControllers.js"></script>

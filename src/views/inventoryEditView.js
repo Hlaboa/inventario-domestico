@@ -187,20 +187,24 @@
     td.appendChild(makeTextarea(helpers, "notes", product.notes || ""));
     tr.appendChild(td);
 
-    td = document.createElement("td");
-    const moveBtn = document.createElement("button");
-    moveBtn.className = "btn btn-small btn-icon";
-    moveBtn.textContent = "→";
-    moveBtn.dataset.action = "move-to-extra";
-    moveBtn.dataset.id = product.id;
-    td.appendChild(moveBtn);
+  td = document.createElement("td");
+  const moveBtn = document.createElement("button");
+  moveBtn.className = "btn btn-small btn-icon";
+  moveBtn.textContent = "→";
+  moveBtn.title = "Mover a otros productos";
+  moveBtn.setAttribute("aria-label", "Mover a otros productos");
+  moveBtn.dataset.action = "move-to-extra";
+  moveBtn.dataset.id = product.id;
+  td.appendChild(moveBtn);
 
-    const delBtn = document.createElement("button");
-    delBtn.className = "btn btn-small btn-danger";
-    delBtn.textContent = "✕";
-    delBtn.dataset.action = "delete";
-    delBtn.dataset.id = product.id;
-    td.appendChild(delBtn);
+  const delBtn = document.createElement("button");
+  delBtn.className = "btn btn-small btn-danger";
+  delBtn.textContent = "✕";
+  delBtn.title = "Eliminar producto";
+  delBtn.setAttribute("aria-label", "Eliminar producto");
+  delBtn.dataset.action = "delete";
+  delBtn.dataset.id = product.id;
+  td.appendChild(delBtn);
     tr.appendChild(td);
 
     return tr;
