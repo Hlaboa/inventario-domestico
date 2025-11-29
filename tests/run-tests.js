@@ -92,12 +92,25 @@ class StubElement {
   get innerHTML() {
     return this._innerHTML || "";
   }
-  addEventListener() {}
+  addEventListener(type, handler) {
+    this._handlers = this._handlers || {};
+    this._handlers[type] = handler;
+  }
   querySelectorAll(selector) {
     if (selector === "tr") {
       return this.children.filter((c) => c.tag === "tr");
     }
     return [];
+  }
+  querySelector(selector) {
+    if (selector === "tr") return this.children.find((c) => c.tag === "tr") || null;
+    return null;
+  }
+  remove() {
+    this._removed = true;
+  }
+  closest() {
+    return this;
   }
 }
 
@@ -412,7 +425,9 @@ register("InstancesView.render crea filas para instancias", () => {
   const stubDocument = createStubDocument();
   global.window = { document: stubDocument };
   global.document = stubDocument;
-  require(path.join(__dirname, "..", "instancesView.js"));
+  const mod = path.join(__dirname, "..", "instancesView.js");
+  delete require.cache[mod];
+  require(mod);
 
   const inst = {
     id: "i1",
@@ -435,6 +450,149 @@ register("InstancesView.render crea filas para instancias", () => {
   const rows = tableBody.querySelectorAll("tr");
   if (rows.length !== 1) {
     throw new Error(`Se esperaba 1 fila de instancia, hay ${rows.length}`);
+  }
+});
+
+register("InstancesView respeta filtros de familia", () => {
+  delete require.cache[path.join(__dirname, "..", "instancesView.js")];
+  const tableBody = new StubElement("tbody");
+  const refs = {
+    tableBody,
+    searchInput: { value: "" },
+    familyFilter: { value: "Otra" },
+    producerFilter: { value: "" },
+    storeFilter: { value: "" },
+  };
+  const stubDocument = createStubDocument();
+  global.window = { document: stubDocument };
+  global.document = stubDocument;
+  require(path.join(__dirname, "..", "instancesView.js"));
+
+  const inst = { id: "i1", productName: "Arroz", producerId: "", brand: "", storeIds: [] };
+  const context = {
+    refs,
+    data: { instances: [inst], producers: [], stores: [] },
+    getFamilyForInstance: () => "Granos",
+    getProducerName: () => "",
+    getStoreNames: () => "",
+    buildFamilyStripeMap: () => ({}),
+  };
+
+  global.window.InstancesView.render(context);
+  const rows = tableBody.querySelectorAll("tr");
+  if (rows.length !== 0) {
+    throw new Error(`Filtro de familia debería ocultar la fila, hay ${rows.length}`);
+  }
+});
+
+register("DataService.setProducts guarda en localStorage y AppState", () => {
+  const AppState = {
+    state: {},
+    hydrate(patch) {
+      this.state = { ...this.state, ...(patch || {}) };
+    },
+    getState() {
+      return this.state;
+    },
+    subscribe() {
+      return () => {};
+    },
+  };
+  const localStorage = createMemoryStorage();
+  const ds = loadDataService({ AppState, localStorage });
+
+  const list = [{ id: "p1", name: "P" }];
+  ds.setProducts(list);
+
+  const stored = JSON.parse(localStorage.getItem("inventarioCocinaAlmacen"));
+  if (!stored || stored.length !== 1) {
+    throw new Error("No guardó productos en localStorage");
+  }
+  if (!AppState.state.products || AppState.state.products.length !== 1) {
+    throw new Error("No actualizó AppState con productos");
+  }
+
+  ds.__cleanup();
+});
+
+register("ClassificationView elimina fila al hacer click en borrar", () => {
+  delete require.cache[path.join(__dirname, "..", "classificationView.js")];
+  const tableBody = new StubElement("tbody");
+
+  const stubDocument = createStubDocument();
+  global.window = { document: stubDocument };
+  global.document = stubDocument;
+  require(path.join(__dirname, "..", "classificationView.js"));
+
+  const refs = { tableBody, addButton: null, saveButton: null };
+  const getClassifications = () => [{ id: "c1", block: "B", type: "T", notes: "" }];
+  global.window.ClassificationView.init({ refs, getClassifications });
+
+  const handler = tableBody._handlers && tableBody._handlers.click;
+  if (!handler) throw new Error("No se registró handler de click");
+  const tr = tableBody.children[0];
+  if (!tr) throw new Error(`No se creó fila, children=${tableBody.children.length}`);
+  const findBtn = (el) => {
+    if (!el) return null;
+    if (el.dataset && el.dataset.action === "delete-classification") return el;
+    if (el.children && el.children.length) {
+      for (const child of el.children) {
+        const found = findBtn(child);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+  const btn = findBtn(tr);
+  if (!btn) throw new Error(`No se encontró botón de borrar; celdas=${tr.children.length}`);
+  btn.closest = () => tr;
+  handler({ target: btn });
+  if (!tr._removed) throw new Error("La fila no se eliminó al clickar borrar");
+});
+
+register("InstancesView.handleClick elimina instancia con delete-instance", () => {
+  const mod = path.join(__dirname, "..", "instancesView.js");
+  delete require.cache[mod];
+  const tableBody = new StubElement("tbody");
+  const stubDocument = createStubDocument();
+  global.window = { document: stubDocument };
+  global.document = stubDocument;
+  require(mod);
+
+  const refs = { tableBody };
+  const inst = { id: "i1", productName: "A" };
+  const ctx = {
+    refs,
+    data: { instances: [inst], producers: [], stores: [] },
+    persist: (list) => {
+      ctx.data.instances = list;
+    },
+    getFamilyForInstance: () => "",
+    getProducerName: () => "",
+    getStoreNames: () => "",
+    buildFamilyStripeMap: () => ({}),
+  };
+  global.window.InstancesView.init(ctx);
+  const handler = tableBody._handlers && tableBody._handlers.click;
+  if (!handler) throw new Error("No se registró handler de click");
+  const tr = tableBody.children[0];
+  const findBtn = (el) => {
+    if (!el) return null;
+    if (el.dataset && el.dataset.action === "delete-instance") return el;
+    if (el.children && el.children.length) {
+      for (const child of el.children) {
+        const found = findBtn(child);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+  const btn = findBtn(tr);
+  if (!btn) throw new Error("No se encontró botón delete-instance");
+  btn.closest = () => tr;
+  handler({ target: btn });
+  if (ctx.data.instances.length !== 0) {
+    throw new Error("No se eliminó la instancia tras click");
   }
 });
 

@@ -3415,7 +3415,6 @@ function handleSaveGrid() {
   newProducts.sort(compareShelfBlockTypeName);
   products = newProducts;
   saveProducts();
-
   renderShelfOptions();
   renderBlockOptions();
   renderTypeOptions();
@@ -4409,28 +4408,6 @@ function renderInstancesTable() {
   }
 }
 
-function renderAll() {
-  refreshProductsFromUnified();
-  renderShelfOptions();
-  renderBlockOptions();
-  renderTypeOptions();
-  renderStoreOptions();
-  updateProducerFilterOptions();
-  updateStoreFilterOptions();
-  updateInstanceFilterOptions();
-  renderProductsDatalist();
-
-  renderProducts();
-  renderGridRows();
-  renderExtraQuickTable();
-  renderExtraEditTable();
-  renderProducersTable();
-  renderStoresTable();
-  renderClassificationTable();
-  renderInstancesTable();
-  renderShoppingList();
-  initResizableTables();
-}
 
 function handleAddInstanceRow() {
   if (window.InstancesView && typeof window.InstancesView.addRow === "function") {
@@ -4884,36 +4861,60 @@ function handleBackupFileChange(e) {
       const text = ev.target.result;
       const data = JSON.parse(text);
 
-      unifiedProducts = Array.isArray(data.unifiedProducts)
-        ? data.unifiedProducts
-        : [
-            ...(Array.isArray(data.products) ? data.products : []).map((p) => ({
-              ...p,
-              scope: "almacen",
-            })),
-            ...(Array.isArray(data.extraProducts) ? data.extraProducts : []).map(
-              (p) => ({ ...p, scope: "otros" })
-            ),
-          ];
-      refreshProductsFromUnified();
-      suppliers = Array.isArray(data.suppliers) ? data.suppliers : [];
-      producers = Array.isArray(data.producers) ? data.producers : [];
-      productInstances = Array.isArray(data.productInstances)
-        ? data.productInstances
-        : [];
-      classifications = Array.isArray(data.classifications)
-        ? data.classifications
-        : [];
+      const snapshot = {
+        unifiedProducts: Array.isArray(data.unifiedProducts)
+          ? data.unifiedProducts
+          : [
+              ...(Array.isArray(data.products) ? data.products : []).map((p) => ({
+                ...p,
+                scope: "almacen",
+              })),
+              ...(Array.isArray(data.extraProducts) ? data.extraProducts : []).map(
+                (p) => ({ ...p, scope: "otros" })
+              ),
+            ],
+        suppliers: Array.isArray(data.suppliers) ? data.suppliers : [],
+        producers: Array.isArray(data.producers) ? data.producers : [],
+        productInstances: Array.isArray(data.productInstances)
+          ? data.productInstances
+          : [],
+        classifications: Array.isArray(data.classifications)
+          ? data.classifications
+          : [],
+      };
 
-  persistUnified(unifiedProducts);
-  saveSuppliers();
-  saveProducers();
-  saveProductInstances();
-  saveClassifications();
-
-  loadAllData();
-  refreshProductsFromUnified();
-  renderAll();
+      if (window.AppStore && typeof window.AppStore.setState === "function") {
+        window.AppStore.setState(snapshot);
+      } else {
+        unifiedProducts = snapshot.unifiedProducts;
+        suppliers = snapshot.suppliers;
+        producers = snapshot.producers;
+        productInstances = snapshot.productInstances;
+        classifications = snapshot.classifications;
+        persistUnified(unifiedProducts);
+        saveSuppliers();
+        saveProducers();
+        saveProductInstances();
+        saveClassifications();
+        refreshProductsFromUnified();
+        renderShelfOptions();
+        renderBlockOptions();
+        renderTypeOptions();
+        renderStoreOptions();
+        updateProducerFilterOptions();
+        updateStoreFilterOptions();
+        updateInstanceFilterOptions();
+        renderProductsDatalist();
+        renderProducts();
+        renderGridRows();
+        renderExtraQuickTable();
+        renderExtraEditTable();
+        renderProducersTable();
+        renderStoresTable();
+        renderClassificationTable();
+        renderInstancesTable();
+        renderShoppingList();
+      }
 
       alert("Copia de seguridad restaurada correctamente.");
     } catch (err) {

@@ -425,6 +425,10 @@ textarea:focus-visible {
   box-shadow: none;
 }
 
+.btn-secondary:hover:not(:disabled) {
+  background: #e8dccd;
+}
+
 .btn-quick-add {
   padding: 0.08rem 0.3rem;
   min-width: 2rem;
@@ -496,6 +500,12 @@ textarea:focus-visible {
 
 .table-scroll thead th:hover {
   background: #f3e8d8;
+}
+
+.table-scroll thead th:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  background: #f1dfc8;
 }
 
 .table-wrapper table {
@@ -1082,6 +1092,15 @@ textarea:focus-visible {
 @media (max-width: 760px) {
   :root {
     --table-min-width: 720px;
+  }
+
+  .product-table {
+    font-size: 0.74rem;
+  }
+
+  .filters {
+    gap: 0.25rem 0.4rem;
+    padding: 0.4rem 0.5rem;
   }
 }
 .selection-td {

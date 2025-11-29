@@ -3,6 +3,23 @@
   const dataService = window.DataService;
   const storage = window.AppStorage;
 
+  /**
+   * Tipos base (JSDoc para autocompletado)
+   * @typedef {Object} BaseEntity
+   * @property {string} [id]
+   * @property {string} [createdAt]
+   * @property {string} [updatedAt]
+   *
+   * @typedef {BaseEntity & {name:string, block?:string, type?:string, shelf?:string, quantity?:string, have?:boolean, buy?:boolean, selectionId?:string, notes?:string, scope?:("almacen"|"otros")}} Product
+   * @typedef {BaseEntity & {productId?:string, productName?:string, producerId?:string, brand?:string, storeIds?:string[], notes?:string}} Instance
+   */
+
+  const nowIso = () => new Date().toISOString();
+  const ensureId = (val, prefix) =>
+    val && String(val).trim().length > 0
+      ? val
+      : (crypto?.randomUUID ? crypto.randomUUID() : `${prefix}-${Math.random().toString(36).slice(2)}`);
+
   const initialState = {
     products: [],
     extraProducts: [],
@@ -13,11 +30,58 @@
     productInstances: [],
   };
 
-  let state = { ...initialState, ...(appState?.getState?.() || {}) };
+  function normalizeUnifiedList(list) {
+    if (!Array.isArray(list)) return [];
+    return list.map((p) => {
+      const scope = p.scope === "otros" ? "otros" : "almacen";
+      return {
+        ...p,
+        scope,
+        id: ensureId(p.id, scope === "otros" ? "extra" : "prod"),
+        createdAt: p.createdAt || nowIso(),
+        updatedAt: p.updatedAt || p.createdAt || nowIso(),
+      };
+    });
+  }
+
+  function deriveSeparate(unified) {
+    const list = normalizeUnifiedList(unified);
+    return {
+      products: list.filter((p) => p.scope === "almacen"),
+      extraProducts: list.filter((p) => p.scope === "otros"),
+      unifiedProducts: list,
+    };
+  }
+
+  function ensureStateShape(next = {}) {
+    const unified = normalizeUnifiedList(next.unifiedProducts || []);
+    const derived = deriveSeparate(unified);
+    const products =
+      derived.products.length > 0
+        ? derived.products
+        : Array.isArray(next.products)
+        ? next.products
+        : [];
+    const extraProducts =
+      derived.extraProducts.length > 0
+        ? derived.extraProducts
+        : Array.isArray(next.extraProducts)
+        ? next.extraProducts
+        : [];
+    return {
+      ...initialState,
+      ...next,
+      unifiedProducts: derived.unifiedProducts,
+      products,
+      extraProducts,
+    };
+  }
+
+  let state = ensureStateShape(appState?.getState?.() || {});
   const listeners = new Set();
 
   const captureState = (next = {}) => {
-    state = { ...initialState, ...next };
+    state = ensureStateShape(next);
   };
 
   const notify = () => {
@@ -82,8 +146,17 @@
   }
 
   function setState(patch) {
-    captureState({ ...state, ...(patch || {}) });
-    appState?.hydrate?.(state);
+    const merged = ensureStateShape({ ...state, ...(patch || {}) });
+    captureState(merged);
+    appState?.hydrate?.({
+      unifiedProducts: state.unifiedProducts,
+      products: state.products,
+      extraProducts: state.extraProducts,
+      suppliers: state.suppliers,
+      producers: state.producers,
+      classifications: state.classifications,
+      productInstances: state.productInstances,
+    });
     dataService?.persistState?.(state);
     notify();
     return state;
@@ -97,16 +170,54 @@
       notify();
       return res;
     }
+
+    if (name === "products" || name === "extraProducts") {
+      const current = state || {};
+      const originalProducts = name === "products" ? (Array.isArray(list) ? list : []) : current.products || [];
+      const originalExtras = name === "extraProducts" ? (Array.isArray(list) ? list : []) : current.extraProducts || [];
+      const products = originalProducts.map((p) => ({ ...p }));
+      const extras = originalExtras.map((p) => ({ ...p }));
+      const unified = normalizeUnifiedList([
+        ...products.map((p) => ({ ...p, scope: "almacen" })),
+        ...extras.map((p) => ({ ...p, scope: "otros" })),
+      ]);
+      const nextState = ensureStateShape({ ...current, unifiedProducts: unified });
+      captureState(nextState);
+      if (name === "products") {
+        appState?.hydrate?.({ products: originalProducts });
+      } else {
+        appState?.hydrate?.({ extraProducts: originalExtras });
+      }
+      dataService?.persistState?.(nextState);
+      notify();
+      return nextState[name];
+    }
+
+    if (name === "unifiedProducts") {
+      const unified = normalizeUnifiedList(list);
+      const nextState = ensureStateShape({ ...state, unifiedProducts: unified });
+      captureState(nextState);
+      appState?.hydrate?.({
+        unifiedProducts: nextState.unifiedProducts,
+        products: nextState.products,
+        extraProducts: nextState.extraProducts,
+      });
+      dataService?.persistState?.(nextState);
+      notify();
+      return nextState.unifiedProducts;
+    }
+
     const normalized = Array.isArray(list) ? list : [];
-    captureState({ ...state, [name]: normalized });
+    const nextState = ensureStateShape({ ...state, [name]: normalized });
+    captureState(nextState);
     appState?.hydrate?.({ [name]: normalized });
-    dataService?.persistState?.(state);
+    dataService?.persistState?.(nextState);
     notify();
     return normalized;
   }
 
   function persist(next) {
-    dataService?.persistState?.(next || state);
+    dataService?.persistState?.(ensureStateShape(next || state));
   }
 
   function bootstrap() {
