@@ -1,4 +1,37 @@
 (() => {
+  const rowMap = new Map();
+  const hashMap = new Map();
+
+  const stripeClassRegex = /^family-stripe-/;
+
+  function getRowHash(p, helpers) {
+    return [
+      p.id,
+      p.name,
+      p.block,
+      p.type,
+      p.shelf,
+      p.quantity,
+      p.selectionId,
+      p.have ? "1" : "0",
+      p.acquisitionDate,
+      p.expiryText,
+      p.notes,
+      helpers.getSelectionLabelForProduct ? helpers.getSelectionLabelForProduct(p) : "",
+      helpers.getSelectionStoresForProduct ? helpers.getSelectionStoresForProduct(p) : "",
+    ].join("||");
+  }
+
+  function applyStripe(row, stripe) {
+    if (!row || typeof row.classList === "undefined") return;
+    Array.from(row.classList)
+      .filter((cls) => stripeClassRegex.test(cls))
+      .forEach((cls) => row.classList.remove(cls));
+    if (typeof stripe === "number") {
+      row.classList.add(`family-stripe-${stripe}`);
+    }
+  }
+
   function render({ refs, state, helpers }) {
     const {
       productTableBody,
@@ -13,7 +46,14 @@
     } = refs;
     const { products, productDrafts } = state;
     if (!productTableBody) return;
-    productTableBody.innerHTML = "";
+    productTableBody.querySelectorAll(".product-draft-row").forEach((tr) => tr.remove());
+    productTableBody
+      .querySelectorAll("tr:not([data-id]):not(.product-draft-row)")
+      .forEach((tr) => tr.remove());
+    const existingRows = new Map();
+    productTableBody.querySelectorAll("tr[data-id]").forEach((tr) => {
+      if (tr.dataset.id) existingRows.set(tr.dataset.id, tr);
+    });
 
     const components = window.AppComponents || {};
     const canUseTemplate =
@@ -127,6 +167,8 @@
         : null;
     const target = frag || productTableBody;
     const rows = [];
+    const nextRowMap = new Map();
+    const nextHashMap = new Map();
 
     productDrafts.forEach((d) => {
       const tr = document.createElement("tr");
@@ -218,13 +260,40 @@
 
     for (const p of items) {
       const stripe = stripeMap[(p.block || "").trim() || "__none__"] || 0;
-      const tr =
-        buildRowFromTemplate(p, stripe) || buildFallbackRow(p, stripe);
+      const hash = getRowHash(p, helpers);
+      const existing = existingRows.get(p.id);
+      let tr =
+        existing && hashMap.get(p.id) === hash ? existing : null;
+      if (!tr) {
+        tr = buildRowFromTemplate(p, stripe) || buildFallbackRow(p, stripe);
+      }
       if (tr) {
-        target.appendChild(tr);
+        applyStripe(tr, stripe);
+        tr.dataset.id = p.id;
+        tr.dataset.block = p.block || "";
+        tr.dataset.type = p.type || "";
+        tr.dataset.have = p.have ? "1" : "0";
+        const selectionLabel = helpers.getSelectionLabelForProduct(p) || "";
+        const storesLabel = helpers.getSelectionStoresForProduct(p) || "";
+        tr.dataset.search = `${p.name || ""} ${p.block || ""} ${p.type || ""} ${p.shelf || ""} ${p.quantity || ""} ${p.notes || ""} ${selectionLabel} ${storesLabel}`.toLowerCase();
+
+        if (target) target.appendChild(tr);
         rows.push({ row: tr, product: p });
+        nextRowMap.set(p.id, tr);
+        nextHashMap.set(p.id, hash);
       }
     }
+
+    existingRows.forEach((row, id) => {
+      if (!nextRowMap.has(id)) {
+        row.remove();
+      }
+    });
+
+    rowMap.clear();
+    nextRowMap.forEach((row, id) => rowMap.set(id, row));
+    hashMap.clear();
+    nextHashMap.forEach((hash, id) => hashMap.set(id, hash));
 
     if (rows.length === 0) {
       const tr = document.createElement("tr");

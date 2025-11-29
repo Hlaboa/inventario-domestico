@@ -68,11 +68,6 @@
       return names.join(", ");
     };
 
-    const search = (refs.searchInput?.value || "").toLowerCase();
-    const filterFamily = refs.familyFilter?.value || "";
-    const filterProducerId = refs.producerFilter?.value || "";
-    const filterStoreId = refs.storeFilter?.value || "";
-
     tableBody.innerHTML = "";
     let items = instances.slice();
 
@@ -88,33 +83,6 @@
         getFamilyForInstance(inst);
       if (family && !inst.block) inst.block = family;
       return { ...inst, block: family };
-    });
-
-    items = items.filter((inst) => {
-      const family = getFamilyForInstance(inst);
-      if (filterFamily && family !== filterFamily) {
-        return false;
-      }
-      if (filterProducerId && inst.producerId !== filterProducerId) {
-        return false;
-      }
-      if (filterStoreId) {
-        if (!inst.storeIds || !inst.storeIds.includes(filterStoreId)) {
-          return false;
-        }
-      }
-
-      if (search) {
-        const prodName = inst.productName || "";
-        const producerName = producerNameFor(inst.producerId);
-        const brand = inst.brand || "";
-        const stores = storeNamesFor(inst.storeIds);
-        const notes = inst.notes || "";
-        const haystack = `${prodName} ${producerName} ${brand} ${stores} ${notes}`.toLowerCase();
-        if (!haystack.includes(search)) return false;
-      }
-
-      return true;
     });
 
     const stripeMap =
@@ -298,6 +266,10 @@
         row.appendChild(td);
       }
 
+      row.dataset.family = family || "";
+      row.dataset.producerId = inst.producerId || "";
+      row.dataset.storeIds = Array.isArray(inst.storeIds) ? inst.storeIds.join(",") : "";
+
       const familyCellEl =
         row.querySelector(".instances-family-cell") ||
         row.querySelector('[data-field="family"]');
@@ -334,6 +306,8 @@
         (sel) => context.attachMultiSelectToggle(sel)
       );
     }
+
+    filterRows(context);
   }
 
   function persistAndRender(context, list, options = {}) {
@@ -382,6 +356,7 @@
     const storeIds = getStoreIds();
     const notes = getField('textarea[data-field="notes"]');
     const filterFamily = refs.familyFilter?.value || "";
+    const prev = byId.get(id) || {};
     const block = prev.block || filterFamily;
 
       // Si la fila está vacía y ya existía, la conservamos intacta.
@@ -396,7 +371,6 @@
         continue;
       }
 
-      const prev = byId.get(id) || {};
       const createdAt = prev.createdAt || now;
 
       byId.set(id, {
@@ -501,12 +475,60 @@
     persistAndRender(context, list, { allowClear: true });
   }
 
+  function filterRows(context) {
+    const ctx = getCtx(context);
+    const refs = ctx.refs || {};
+    const tableBody = refs.tableBody;
+    if (!tableBody) return;
+    const search = (refs.searchInput?.value || "").toLowerCase();
+    const filterFamily = refs.familyFilter?.value || "";
+    const filterProducerId = refs.producerFilter?.value || "";
+    const filterStoreId = refs.storeFilter?.value || "";
+
+    const rows = Array.from(tableBody.querySelectorAll("tr"));
+    rows.forEach((row) => {
+      const name =
+        (row.querySelector('input[data-field="productName"]')?.value || "").toLowerCase();
+      const brand =
+        (row.querySelector('input[data-field="brand"]')?.value || "").toLowerCase();
+      const notes =
+        (row.querySelector('textarea[data-field="notes"]')?.value || "").toLowerCase();
+      const family =
+        (row.querySelector('[data-field="family"]')?.textContent || "").trim() ||
+        row.dataset.family ||
+        "";
+      const producerId =
+        row.querySelector('select[data-field="producerId"]')?.value || "";
+      const producerName =
+        row
+          .querySelector('select[data-field="producerId"] option:checked')
+          ?.textContent?.toLowerCase() || "";
+      const storeSelect = row.querySelector('select[data-field="storeIds"]');
+      const storeIds = storeSelect
+        ? Array.from(storeSelect.selectedOptions || []).map((o) => o.value)
+        : [];
+      const storeNames = storeSelect
+        ? Array.from(storeSelect.selectedOptions || []).map((o) => o.textContent || "")
+        : [];
+
+      let visible = true;
+      if (filterFamily && family !== filterFamily) visible = false;
+      if (visible && filterProducerId && producerId !== filterProducerId) visible = false;
+      if (visible && filterStoreId && !storeIds.includes(filterStoreId)) visible = false;
+      if (visible && search) {
+        const haystack = `${name} ${brand} ${notes} ${family} ${producerName} ${storeNames.join(" ")}`.toLowerCase();
+        if (!haystack.includes(search)) visible = false;
+      }
+      row.style.display = visible ? "" : "none";
+    });
+  }
+
   function bindFilters(context) {
     const refs = context.refs || {};
     const handle =
       window.AppUtils && typeof window.AppUtils.debounce === "function"
-        ? window.AppUtils.debounce(() => render(context), 120)
-        : () => render(context);
+        ? window.AppUtils.debounce(() => filterRows(context), 120)
+        : () => filterRows(context);
     refs.searchInput?.addEventListener("input", handle);
     refs.familyFilter?.addEventListener("change", handle);
     refs.producerFilter?.addEventListener("change", handle);
@@ -518,9 +540,15 @@
     const context = getCtx(c);
     const refs = context.refs || {};
     bindFilters(context);
+    const refilterOnEdit =
+      window.AppUtils && typeof window.AppUtils.debounce === "function"
+        ? window.AppUtils.debounce(() => filterRows(context), 120)
+        : () => filterRows(context);
     refs.addButton?.addEventListener("click", () => addRow());
     refs.saveButton?.addEventListener("click", () => save());
     refs.tableBody?.addEventListener("click", handleClick);
+    refs.tableBody?.addEventListener("input", refilterOnEdit);
+    refs.tableBody?.addEventListener("change", refilterOnEdit);
     render(context);
   }
 

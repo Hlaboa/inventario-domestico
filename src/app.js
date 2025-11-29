@@ -128,6 +128,8 @@ function setInstancesList(list) {
 function setSuppliersList(list) {
   const next = Array.isArray(list) ? list : [];
   suppliers = next;
+  memoStores = [];
+  memoStoreLocations = [];
   if (isSyncingFromStore) return suppliers;
   if (stateAdapter && typeof stateAdapter.setEntity === "function") {
     stateAdapter.setEntity("suppliers", next);
@@ -164,6 +166,8 @@ function setSuppliersList(list) {
 function setProducersList(list) {
   const next = Array.isArray(list) ? list : [];
   producers = next;
+  memoProducerFilterOptions = "";
+  memoProducerLocations = [];
   if (isSyncingFromStore) return producers;
   if (stateAdapter && typeof stateAdapter.setEntity === "function") {
     stateAdapter.setEntity("producers", next);
@@ -585,6 +589,8 @@ let memoTypes = [];
 let memoStores = [];
 let memoProducerLocations = [];
 let memoStoreLocations = [];
+let memoInstanceFamilies = [];
+let memoProducerFilterOptions = "";
 
 let filtersDefaultsApplied = false;
 let selectionDragCleanup = null;
@@ -2135,6 +2141,7 @@ function addQuickProducer(data, selectEl) {
   };
   setProducersList([...getProducersList(), producer]);
   memoProducerLocations = []; // forzar recálculo de filtros de localización
+  memoProducerFilterOptions = "";
   if (window.ProducersFeature && typeof window.ProducersFeature.render === "function") {
     window.ProducersFeature.render();
   } else if (window.ProducersView && typeof window.ProducersView.render === "function") {
@@ -3081,22 +3088,35 @@ function updateProducerFilterOptions() {
 
   if (instancesProducerFilterSelect) {
     const current = instancesProducerFilterSelect.value;
-    instancesProducerFilterSelect.innerHTML = "";
-    const optAll = document.createElement("option");
-    optAll.value = "";
-    optAll.textContent = "Todos";
-    instancesProducerFilterSelect.appendChild(optAll);
-    producersList
+    const key = producersList
       .slice()
       .sort((a, b) =>
         (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" })
       )
-      .forEach((p) => {
-        const o = document.createElement("option");
-        o.value = p.id;
-        o.textContent = p.name || "(sin nombre)";
-        instancesProducerFilterSelect.appendChild(o);
-      });
+      .map((p) => `${p.id}::${p.name || ""}`)
+      .join("|||");
+    const alreadyHydrated =
+      memoProducerFilterOptions === key &&
+      instancesProducerFilterSelect.options.length > 0;
+    if (!alreadyHydrated) {
+      instancesProducerFilterSelect.innerHTML = "";
+      const optAll = document.createElement("option");
+      optAll.value = "";
+      optAll.textContent = "Todos";
+      instancesProducerFilterSelect.appendChild(optAll);
+      producersList
+        .slice()
+        .sort((a, b) =>
+          (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" })
+        )
+        .forEach((p) => {
+          const o = document.createElement("option");
+          o.value = p.id;
+          o.textContent = p.name || "(sin nombre)";
+          instancesProducerFilterSelect.appendChild(o);
+        });
+      memoProducerFilterOptions = key;
+    }
     if (current && producersList.some((p) => p.id === current)) {
       instancesProducerFilterSelect.value = current;
     }
@@ -3150,6 +3170,15 @@ function updateInstanceFilterOptions() {
         .filter((b) => b.length > 0)
     )
   ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+
+  const memoKey = families.join("|||");
+  if (
+    memoInstanceFamilies.join("|||") === memoKey &&
+    instancesFamilyFilterSelect.options.length > 0
+  ) {
+    return;
+  }
+  memoInstanceFamilies = families.slice();
 
   instancesFamilyFilterSelect.innerHTML = "";
   const optAll = document.createElement("option");
