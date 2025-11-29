@@ -116,6 +116,8 @@ let classificationTableBody;
 let addClassificationButton;
 let saveClassificationsButton;
 let classificationViewContext;
+let producersViewContext;
+let storesViewContext;
 
 // Tabs tiendas/productores
 let producersPanel;
@@ -381,23 +383,6 @@ document.addEventListener("DOMContentLoaded", () => {
   extraEditFilterStoreSelect.addEventListener("change", filterExtraEditRows);
 
   // Productores
-  producersSearchInput.addEventListener("input", filterProducersRows);
-  producersLocationFilterSelect.addEventListener(
-    "change",
-    filterProducersRows
-  );
-  addProducerButton.addEventListener("click", handleAddProducerRow);
-  saveProducersButton.addEventListener("click", handleSaveProducers);
-  producersTableBody.addEventListener("click", handleProducersTableClick);
-
-  // Tiendas
-  storesSearchInput.addEventListener("input", filterStoresRows);
-  storesTypeFilterSelect.addEventListener("change", filterStoresRows);
-  storesLocationFilterSelect.addEventListener("change", filterStoresRows);
-  addStoreButton.addEventListener("click", handleAddStoreRow);
-  saveStoresButton.addEventListener("click", handleSaveStores);
-  storesTableBody.addEventListener("click", handleStoresTableClick);
-
   // Selección de productos
   instancesSearchInput.addEventListener("input", renderInstancesTable);
   instancesFamilyFilterSelect.addEventListener("change", renderInstancesTable);
@@ -483,6 +468,49 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (window.ClassificationView && typeof window.ClassificationView.init === "function") {
     window.ClassificationView.init(classificationViewContext);
+  }
+
+  producersViewContext = {
+    refs: {
+      tableBody: producersTableBody,
+      addButton: addProducerButton,
+      saveButton: saveProducersButton,
+      searchInput: producersSearchInput,
+      locationFilter: producersLocationFilterSelect,
+    },
+    getProducers: () => producers,
+    persist: (list) => {
+      producers = list;
+      saveProducers();
+    },
+    onAfterSave: handleProducersDependencies,
+    nowIsoString,
+  };
+
+  if (window.ProducersView && typeof window.ProducersView.init === "function") {
+    window.ProducersView.init(producersViewContext);
+  }
+
+  storesViewContext = {
+    refs: {
+      tableBody: storesTableBody,
+      addButton: addStoreButton,
+      saveButton: saveStoresButton,
+      searchInput: storesSearchInput,
+      typeFilter: storesTypeFilterSelect,
+      locationFilter: storesLocationFilterSelect,
+    },
+    getStores: () => suppliers,
+    persist: (list) => {
+      suppliers = list;
+      saveSuppliers();
+    },
+    onAfterSave: handleStoresDependencies,
+    nowIsoString,
+  };
+
+  if (window.StoresView && typeof window.StoresView.init === "function") {
+    window.StoresView.init(storesViewContext);
   }
 
   InventoryView.init(getInventoryContext());
@@ -3777,212 +3805,37 @@ function filterExtraEditRows() {
 // ==============================
 
 function renderProducersTable() {
-  if (!producersTableBody) return;
-  producersTableBody.innerHTML = "";
-
-  const items = producers
-    .slice()
-    .sort((a, b) =>
-      (a.location || "").localeCompare(b.location || "", "es", {
-        sensitivity: "base",
-      }) || (a.name || "").localeCompare(b.name || "", "es", {
-        sensitivity: "base",
-      })
-    );
-
-  if (items.length === 0) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 4;
-    td.textContent =
-      "No hay productores todavía. Usa 'Añadir productor' para crear uno.";
-    tr.appendChild(td);
-    producersTableBody.appendChild(tr);
-    return;
+  if (
+    window.ProducersView &&
+    typeof window.ProducersView.render === "function"
+  ) {
+    window.ProducersView.render(producersViewContext);
   }
-
-  items.forEach((p) => {
-    const tr = document.createElement("tr");
-    tr.dataset.id = p.id;
-
-    let td;
-
-    // Nombre
-    td = document.createElement("td");
-    td.appendChild(createTableInput("name", p.name));
-    tr.appendChild(td);
-
-    // Localización
-    td = document.createElement("td");
-    td.appendChild(createTableInput("location", p.location));
-    tr.appendChild(td);
-
-    // Notas
-    td = document.createElement("td");
-    td.appendChild(createTableTextarea("notes", p.notes || ""));
-    tr.appendChild(td);
-
-    // Acciones
-    td = document.createElement("td");
-  const delBtn = document.createElement("button");
-  delBtn.className = "btn btn-small btn-danger";
-  delBtn.textContent = "✕";
-  delBtn.dataset.action = "delete";
-  delBtn.dataset.id = p.id;
-    td.appendChild(delBtn);
-    tr.appendChild(td);
-
-    producersTableBody.appendChild(tr);
-  });
-
-  updateProducerFilterOptions();
-  filterProducersRows();
-}
-
-function readProducersFromTable() {
-  if (!producersTableBody) return producers;
-  const rows = Array.from(producersTableBody.querySelectorAll("tr"));
-  const list = [];
-  const now = nowIsoString();
-
-  for (const tr of rows) {
-    const id = tr.dataset.id;
-    if (!id) continue;
-
-    const getField = (selector) => {
-      const el = tr.querySelector(selector);
-      return el ? el.value.trim() : "";
-    };
-
-    const name = getField('input[data-field="name"]');
-    const location = getField('input[data-field="location"]');
-    const notes = (tr.querySelector('textarea[data-field="notes"]') || {})
-      .value;
-
-    if (!name && !location && !notes) continue;
-
-    const existing = producers.find((p) => p.id === id) || {};
-    const createdAt = existing.createdAt || now;
-
-    list.push({
-      id,
-      name,
-      location,
-      notes,
-      createdAt,
-      updatedAt: now,
-    });
-  }
-
-  return list;
 }
 
 function handleAddProducerRow() {
-  producers = readProducersFromTable();
-  if (!producersTableBody) return;
-
-  if (
-    producersTableBody.children.length === 1 &&
-    !producersTableBody.children[0].dataset.id
-  ) {
-    producersTableBody.innerHTML = "";
+  if (window.ProducersView && typeof window.ProducersView.addRow === "function") {
+    window.ProducersView.addRow(producersViewContext);
   }
-
-  const id =
-    (crypto.randomUUID ? crypto.randomUUID() : "prod-" + Date.now()) +
-    "-" +
-    Math.random().toString(36).slice(2);
-
-  const tr = document.createElement("tr");
-  tr.dataset.id = id;
-
-  let td;
-
-  // Nombre
-  td = document.createElement("td");
-  td.appendChild(createTableInput("name", ""));
-  tr.appendChild(td);
-
-  // Localización
-  td = document.createElement("td");
-  td.appendChild(createTableInput("location", ""));
-  tr.appendChild(td);
-
-  // Notas
-  td = document.createElement("td");
-  const area = document.createElement("textarea");
-  area.className = "table-input";
-  area.dataset.field = "notes";
-  td.appendChild(area);
-  tr.appendChild(td);
-
-  // Acciones
-  td = document.createElement("td");
-  const delBtn = document.createElement("button");
-  delBtn.className = "btn btn-small btn-danger";
-  delBtn.textContent = "✕";
-  delBtn.dataset.action = "delete";
-  delBtn.dataset.id = id;
-  td.appendChild(delBtn);
-  tr.appendChild(td);
-
-  producersTableBody.prepend(tr);
 }
 
 function handleProducersTableClick(e) {
-  const target = e.target;
-  const action = target.dataset.action;
-  if (!action) return;
-
-  if (action === "delete") {
-    const tr = target.closest("tr");
-    if (tr) tr.remove();
-  }
+  // Gestionado por ProducersView
 }
 
 function handleSaveProducers() {
-  producers = readProducersFromTable();
-  saveProducers();
-  renderProducersTable();
-  updateProducerFilterOptions();
-  renderInstancesTable();
+  if (window.ProducersView && typeof window.ProducersView.save === "function") {
+    window.ProducersView.save(producersViewContext);
+  }
 }
 
 function filterProducersRows() {
-  if (!producersTableBody) return;
-  const search = (producersSearchInput.value || "").toLowerCase();
-  const filterLoc = producersLocationFilterSelect.value || "";
-
-  const rows = Array.from(producersTableBody.querySelectorAll("tr"));
-  rows.forEach((tr) => {
-    const id = tr.dataset.id;
-    if (!id) {
-      tr.style.display = "";
-      return;
-    }
-    const nameEl = tr.querySelector('input[data-field="name"]');
-    const locEl = tr.querySelector('input[data-field="location"]');
-    const notesEl = tr.querySelector('textarea[data-field="notes"]');
-
-    const name = (nameEl && nameEl.value) || "";
-    const location = (locEl && locEl.value) || "";
-    const notes = (notesEl && notesEl.value) || "";
-
-    if (filterLoc && location !== filterLoc) {
-      tr.style.display = "none";
-      return;
-    }
-
-    if (search) {
-      const haystack = `${name} ${location} ${notes}`.toLowerCase();
-      if (!haystack.includes(search)) {
-        tr.style.display = "none";
-        return;
-      }
-    }
-
-    tr.style.display = "";
-  });
+  if (
+    window.ProducersView &&
+    typeof window.ProducersView.filterRows === "function"
+  ) {
+    window.ProducersView.filterRows(producersViewContext);
+  }
 }
 
 // ==============================
@@ -3990,102 +3843,9 @@ function filterProducersRows() {
 // ==============================
 
 function renderStoresTable() {
-  if (!storesTableBody) return;
-  storesTableBody.innerHTML = "";
-
-  const items = suppliers
-    .slice()
-    .sort((a, b) =>
-      (a.location || "").localeCompare(b.location || "", "es", {
-        sensitivity: "base",
-      }) || (a.name || "").localeCompare(b.name || "", "es", {
-        sensitivity: "base",
-      })
-    );
-
-  if (items.length === 0) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 6;
-    td.textContent =
-      "No hay tiendas todavía. Usa 'Añadir tienda' para crear una.";
-    tr.appendChild(td);
-    storesTableBody.appendChild(tr);
-    return;
+  if (window.StoresView && typeof window.StoresView.render === "function") {
+    window.StoresView.render(storesViewContext);
   }
-
-  items.forEach((s) => {
-    const tr = document.createElement("tr");
-    tr.dataset.id = s.id;
-
-    const makeInput = (field, value = "", type = "text") => {
-      const input = document.createElement("input");
-      input.type = type;
-      input.value = value || "";
-      input.className = "table-input";
-      input.dataset.field = field;
-      return input;
-    };
-
-    let td;
-
-    // Nombre
-    td = document.createElement("td");
-    td.appendChild(makeInput("name", s.name));
-    tr.appendChild(td);
-
-    // Tipo
-    td = document.createElement("td");
-    const sel = document.createElement("select");
-    sel.className = "table-input";
-    sel.dataset.field = "type";
-    ["", "fisico", "online"].forEach((val) => {
-      const o = document.createElement("option");
-      o.value = val;
-      if (val === "") o.textContent = "—";
-      else if (val === "fisico") o.textContent = "Físico";
-      else if (val === "online") o.textContent = "Online";
-      sel.appendChild(o);
-    });
-    sel.value = s.type || "";
-    td.appendChild(sel);
-    tr.appendChild(td);
-
-    // Localización
-    td = document.createElement("td");
-    td.appendChild(makeInput("location", s.location));
-    tr.appendChild(td);
-
-    // Web
-    td = document.createElement("td");
-    td.appendChild(makeInput("website", s.website));
-    tr.appendChild(td);
-
-    // Notas
-    td = document.createElement("td");
-    const area = document.createElement("textarea");
-    area.className = "table-input";
-    area.dataset.field = "notes";
-    area.value = s.notes || "";
-    td.appendChild(area);
-    tr.appendChild(td);
-
-    // Acciones
-    td = document.createElement("td");
-    const delBtn = document.createElement("button");
-    delBtn.className = "btn btn-small btn-danger";
-    delBtn.textContent = "✕";
-    delBtn.dataset.action = "delete";
-    delBtn.dataset.id = s.id;
-    td.appendChild(delBtn);
-    tr.appendChild(td);
-
-    storesTableBody.appendChild(tr);
-  });
-
-  updateStoreFilterOptions();
-  renderStoreOptions();
-  filterStoresRows();
 }
 
 // ==============================
@@ -4131,6 +3891,22 @@ function handleClassificationDependencies() {
   renderExtraQuickTable();
   renderExtraEditTable();
   renderGridRows();
+}
+
+function handleProducersDependencies() {
+  updateProducerFilterOptions();
+  renderInstancesTable();
+}
+
+function handleStoresDependencies() {
+  updateStoreFilterOptions();
+  renderStoreOptions();
+  updateInstanceFilterOptions();
+  renderInstancesTable();
+  renderProducts();
+  renderExtraQuickTable();
+  renderExtraEditTable();
+  renderShoppingList();
 }
 
 function handleGlobalSaveShortcut(e) {
@@ -4191,152 +3967,20 @@ function handleGlobalEscape(e) {
   }
 }
 
-function readStoresFromTable() {
-  if (!storesTableBody) return suppliers;
-  const rows = Array.from(storesTableBody.querySelectorAll("tr"));
-  const list = [];
-  const now = nowIsoString();
-
-  for (const tr of rows) {
-    const id = tr.dataset.id;
-    if (!id) continue;
-
-    const getField = (selector) => {
-      const el = tr.querySelector(selector);
-      return el ? el.value.trim() : "";
-    };
-
-    const name = getField('input[data-field="name"]');
-    const typeEl = tr.querySelector('select[data-field="type"]');
-    const type = typeEl ? typeEl.value : "";
-    const location = getField('input[data-field="location"]');
-    const website = getField('input[data-field="website"]');
-    const notes = (tr.querySelector('textarea[data-field="notes"]') || {})
-      .value;
-
-    if (!name && !location && !website && !notes && !type) continue;
-
-    const existing = suppliers.find((s) => s.id === id) || {};
-    const createdAt = existing.createdAt || now;
-
-    list.push({
-      id,
-      name,
-      type,
-      location,
-      website,
-      notes,
-      createdAt,
-      updatedAt: now,
-    });
-  }
-
-  return list;
-}
-
 function handleAddStoreRow() {
-  suppliers = readStoresFromTable();
-  if (!storesTableBody) return;
-
-  if (
-    storesTableBody.children.length === 1 &&
-    !storesTableBody.children[0].dataset.id
-  ) {
-    storesTableBody.innerHTML = "";
+  if (window.StoresView && typeof window.StoresView.addRow === "function") {
+    window.StoresView.addRow(storesViewContext);
   }
-
-  const id =
-    (crypto.randomUUID ? crypto.randomUUID() : "store-" + Date.now()) +
-    "-" +
-    Math.random().toString(36).slice(2);
-
-  const tr = document.createElement("tr");
-  tr.dataset.id = id;
-
-  const makeInput = (field, value = "", type = "text") => {
-    const input = document.createElement("input");
-    input.type = type;
-    input.value = value || "";
-    input.className = "table-input";
-    input.dataset.field = field;
-    return input;
-  };
-
-  let td;
-
-  // Nombre
-  td = document.createElement("td");
-  td.appendChild(makeInput("name", ""));
-  tr.appendChild(td);
-
-  // Tipo
-  td = document.createElement("td");
-  const sel = document.createElement("select");
-  sel.className = "table-input";
-  sel.dataset.field = "type";
-  ["", "fisico", "online"].forEach((val) => {
-    const o = document.createElement("option");
-    o.value = val;
-    if (val === "") o.textContent = "—";
-    else if (val === "fisico") o.textContent = "Físico";
-    else if (val === "online") o.textContent = "Online";
-    sel.appendChild(o);
-  });
-  td.appendChild(sel);
-  tr.appendChild(td);
-
-  // Localización
-  td = document.createElement("td");
-  td.appendChild(makeInput("location", ""));
-  tr.appendChild(td);
-
-  // Web
-  td = document.createElement("td");
-  td.appendChild(makeInput("website", ""));
-  tr.appendChild(td);
-
-  // Notas
-  td = document.createElement("td");
-  const area = document.createElement("textarea");
-  area.className = "table-input";
-  area.dataset.field = "notes";
-  td.appendChild(area);
-  tr.appendChild(td);
-
-  // Acciones
-  td = document.createElement("td");
-  const delBtn = document.createElement("button");
-  delBtn.className = "btn btn-small btn-danger";
-  delBtn.textContent = "✕";
-  delBtn.dataset.action = "delete";
-  delBtn.dataset.id = id;
-  td.appendChild(delBtn);
-  tr.appendChild(td);
-
-  storesTableBody.prepend(tr);
 }
 
 function handleStoresTableClick(e) {
-  const target = e.target;
-  const action = target.dataset.action;
-  if (!action) return;
-  if (action === "delete") {
-    const tr = target.closest("tr");
-    if (tr) tr.remove();
-  }
+  // Gestionado por StoresView
 }
 
 function handleSaveStores() {
-  suppliers = readStoresFromTable();
-  saveSuppliers();
-  renderStoresTable();
-  renderStoreOptions();
-  updateInstanceFilterOptions();
-  renderInstancesTable();
-  renderProducts();
-  renderExtraQuickTable();
-  renderExtraEditTable();
-  renderShoppingList();
+  if (window.StoresView && typeof window.StoresView.save === "function") {
+    window.StoresView.save(storesViewContext);
+  }
 }
 
 // ==============================
@@ -4397,50 +4041,9 @@ function setColumnWidth(table, colIndex, widthPx) {
 }
 
 function filterStoresRows() {
-  if (!storesTableBody) return;
-  const search = (storesSearchInput.value || "").toLowerCase();
-  const filterType = storesTypeFilterSelect.value || "";
-  const filterLoc = storesLocationFilterSelect.value || "";
-
-  const rows = Array.from(storesTableBody.querySelectorAll("tr"));
-  rows.forEach((tr) => {
-    const id = tr.dataset.id;
-    if (!id) {
-      tr.style.display = "";
-      return;
-    }
-
-    const nameEl = tr.querySelector('input[data-field="name"]');
-    const typeEl = tr.querySelector('select[data-field="type"]');
-    const locEl = tr.querySelector('input[data-field="location"]');
-    const webEl = tr.querySelector('input[data-field="website"]');
-    const notesEl = tr.querySelector('textarea[data-field="notes"]');
-
-    const name = (nameEl && nameEl.value) || "";
-    const type = (typeEl && typeEl.value) || "";
-    const location = (locEl && locEl.value) || "";
-    const website = (webEl && webEl.value) || "";
-    const notes = (notesEl && notesEl.value) || "";
-
-    if (filterType && type !== filterType) {
-      tr.style.display = "none";
-      return;
-    }
-    if (filterLoc && location !== filterLoc) {
-      tr.style.display = "none";
-      return;
-    }
-
-    if (search) {
-      const haystack = `${name} ${type} ${location} ${website} ${notes}`.toLowerCase();
-      if (!haystack.includes(search)) {
-        tr.style.display = "none";
-        return;
-      }
-    }
-
-    tr.style.display = "";
-  });
+  if (window.StoresView && typeof window.StoresView.filterRows === "function") {
+    window.StoresView.filterRows(storesViewContext);
+  }
 }
 
 // ==============================
