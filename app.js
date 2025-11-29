@@ -28,6 +28,16 @@ function refreshProductsFromUnified() {
   extraProducts = (unifiedProducts || []).filter((p) => p.scope === "otros");
 }
 
+function getPantryProducts() {
+  refreshProductsFromUnified();
+  return products;
+}
+
+function getOtherProducts() {
+  refreshProductsFromUnified();
+  return extraProducts;
+}
+
 function recomputeUnifiedFromDerived() {
   return [
     ...products.map((p) => ({ ...p, scope: "almacen" })),
@@ -2614,11 +2624,12 @@ function renderProductsDatalist() {
 
 function renderProducts() {
   refreshProductsFromUnified();
-  products = (unifiedProducts || []).filter((p) => p.scope === "almacen");
+  products = getPantryProducts();
   InventoryView.render(getInventoryContext());
 }
 
 function handleInventoryTableClick(e) {
+  refreshProductsFromUnified();
   const target = e.target;
   const action = target.dataset.action;
 
@@ -2860,10 +2871,11 @@ function commitDraftExtras() {
 // ==============================
 
 function renderGridRows() {
+  refreshProductsFromUnified();
   if (!gridTableBody) return;
   gridTableBody.innerHTML = "";
 
-  const items = products.slice().sort(compareShelfBlockTypeName);
+  const items = getPantryProducts().slice().sort(compareShelfBlockTypeName);
   const stripeMap = buildFamilyStripeMap(items);
 
   if (items.length === 0) {
@@ -3199,6 +3211,7 @@ function handleSaveGrid() {
 }
 
 function filterGridRows() {
+  refreshProductsFromUnified();
   if (!gridTableBody) return;
   const search = (editFilterSearchInput.value || "").toLowerCase();
   const filterBlock = editFilterFamilySelect.value || "";
@@ -3267,7 +3280,7 @@ function filterGridRows() {
 
 function renderExtraQuickTable() {
   refreshProductsFromUnified();
-  const extras = (unifiedProducts || []).filter((p) => p.scope === "otros");
+  const extras = getOtherProducts();
   if (!extraListTableBody) return;
   extraListTableBody.innerHTML = "";
 
@@ -3502,7 +3515,7 @@ function moveExtraToAlmacen(id) {
 
 function renderExtraEditTable() {
   refreshProductsFromUnified();
-  const extras = (unifiedProducts || []).filter((p) => p.scope === "otros");
+  const extras = getOtherProducts();
   if (!extraTableBody) return;
   extraTableBody.innerHTML = "";
 
@@ -3621,6 +3634,7 @@ function renderExtraEditTable() {
 }
 
 function handleAddExtraRow() {
+  refreshProductsFromUnified();
   if (!extraTableBody) return;
 
   if (
