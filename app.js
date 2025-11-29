@@ -2,8 +2,6 @@
 //  CLAVES LOCALSTORAGE
 // ==============================
 
-const STORAGE_KEY = "inventarioCocinaAlmacen"; // Almacén
-const STORAGE_KEY_EXTRA = "otrosProductosCompra"; // Otros productos
 const STORAGE_KEY_SUPPLIERS = "proveedoresCocina"; // Tiendas
 const STORAGE_KEY_PRODUCERS = "productoresCocina"; // Productores
 const STORAGE_KEY_INSTANCES = "instanciasProductosCocina"; // Selección de productos
@@ -43,6 +41,10 @@ function recomputeUnifiedFromDerived() {
     ...products.map((p) => ({ ...p, scope: "almacen" })),
     ...extraProducts.map((p) => ({ ...p, scope: "otros" })),
   ];
+}
+
+function isStoreActive() {
+  return !!(window.AppStore && typeof window.AppStore.subscribe === "function");
 }
 
 function applyStateSnapshot(snapshot = {}) {
@@ -209,6 +211,8 @@ let instancesPanel;
 let shoppingListContainer;
 let shoppingSummary;
 let copyListButton;
+let shoppingStoreTemplate;
+let shoppingItemTemplate;
 
 // Backup y Excel
 let exportBackupButton;
@@ -385,6 +389,8 @@ document.addEventListener("DOMContentLoaded", () => {
   shoppingSummary = document.getElementById("shoppingSummary");
   copyListButton = document.getElementById("copyListButton");
   instancesTableWrapper = document.getElementById("instancesTableWrapper");
+  shoppingStoreTemplate = document.getElementById("shoppingStoreTemplate");
+  shoppingItemTemplate = document.getElementById("shoppingItemTemplate");
 
   // Backup y Excel
   exportBackupButton = document.getElementById("exportBackupButton");
@@ -533,9 +539,11 @@ document.addEventListener("DOMContentLoaded", () => {
     } else {
       renderProducts();
     }
-    renderGridRows();
-    renderExtraQuickTable();
-    renderExtraEditTable();
+    if (!isStoreActive()) {
+      renderGridRows();
+      renderExtraQuickTable();
+      renderExtraEditTable();
+    }
     renderProducersTable();
     renderStoresTable();
     renderClassificationTable();
@@ -838,7 +846,7 @@ function setProveedoresTab(tab) {
 
   if (isProd) renderProducersTable();
   if (isStores) renderStoresTable();
-  if (isInstances) renderInstancesTable();
+  if (isInstances && !isStoreActive()) renderInstancesTable();
 }
 
 function handleToggleShoppingPanel() {
@@ -963,14 +971,6 @@ function normalizeClassification(c) {
     createdAt: c.createdAt || now,
     updatedAt: c.updatedAt || now,
   };
-}
-
-function loadProducts() {
-  products = safeLoadList(STORAGE_KEY, normalizeProduct);
-}
-
-function loadExtraProducts() {
-  extraProducts = safeLoadList(STORAGE_KEY_EXTRA, normalizeExtraProduct);
 }
 
 function loadSuppliers() {
@@ -1139,40 +1139,17 @@ function loadAllData() {
     typeof window.DataService.hydrateFromStorage === "function"
   ) {
     const data = window.DataService.hydrateFromStorage();
-    applyStateSnapshot({
-      ...data,
-      unifiedProducts:
-        (data.unifiedProducts && data.unifiedProducts.length > 0
-          ? data.unifiedProducts
-          : [
-              ...(data.products || []).map((p) => ({ ...p, scope: "almacen" })),
-              ...(data.extraProducts || []).map((p) => ({ ...p, scope: "otros" })),
-            ]) || [],
-    });
+    applyStateSnapshot(data);
     return;
   }
 
   if (window.AppStorage && typeof window.AppStorage.loadAllData === "function") {
     const data = window.AppStorage.loadAllData();
-    applyStateSnapshot({
-      ...data,
-      unifiedProducts:
-        (data.unifiedProducts && data.unifiedProducts.length > 0
-          ? data.unifiedProducts
-          : [
-              ...(data.products || []).map((p) => ({ ...p, scope: "almacen" })),
-              ...(data.extraProducts || []).map((p) => ({ ...p, scope: "otros" })),
-            ]) || [],
-    });
+    applyStateSnapshot(data);
     return;
   }
 
-  loadProducts();
-  loadExtraProducts();
-  unifiedProducts = [
-    ...products.map((p) => ({ ...p, scope: "almacen" })),
-    ...extraProducts.map((p) => ({ ...p, scope: "otros" })),
-  ];
+  unifiedProducts = [];
   refreshProductsFromUnified();
   loadSuppliers();
   loadProducers();
@@ -1190,6 +1167,11 @@ function todayDateString() {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
+}
+
+function cloneTemplateContent(tpl) {
+  if (!tpl || !tpl.content) return null;
+  return tpl.content.cloneNode(true);
 }
 
 function nowIsoString() {
@@ -1572,7 +1554,7 @@ function addQuickProducer(data, selectEl) {
   saveProducers();
   renderProducersTable();
   updateProducerFilterOptions();
-  renderInstancesTable();
+  if (!isStoreActive()) renderInstancesTable();
   if (selectEl) {
     const opt = document.createElement("option");
     opt.value = id;
@@ -1608,7 +1590,7 @@ function addQuickStore(data, selectEl, chipsContainer) {
   renderStoresTable();
   renderStoreOptions();
   updateStoreFilterOptions();
-  renderInstancesTable();
+  if (!isStoreActive()) renderInstancesTable();
   if (selectEl) {
     const opt = document.createElement("option");
     opt.value = id;
@@ -2210,8 +2192,10 @@ function applySelectionToProduct(productId, selectionId) {
     saveProducts();
     saveExtraProducts();
     renderProducts();
-    renderExtraQuickTable();
-    renderExtraEditTable();
+    if (!isStoreActive()) {
+      renderExtraQuickTable();
+      renderExtraEditTable();
+    }
     renderShoppingList();
   }
 
@@ -2896,8 +2880,12 @@ function moveProductToExtra(id) {
   saveExtraProducts();
 
   renderProducts();
-  renderExtraQuickTable();
-  renderExtraEditTable();
+  if (!isStoreActive()) {
+    if (!isStoreActive()) {
+      renderExtraQuickTable();
+      renderExtraEditTable();
+    }
+  }
   renderShelfOptions();
   renderBlockOptions();
   renderTypeOptions();
@@ -3017,7 +3005,7 @@ function commitDraftProducts() {
     persistUnified(unifiedProducts);
     saveProducts();
     renderProducts();
-    renderGridRows();
+    if (!isStoreActive()) renderGridRows();
     renderShelfOptions();
     renderBlockOptions();
     renderTypeOptions();
@@ -3074,7 +3062,7 @@ function commitDraftExtras() {
     persistUnified(unifiedProducts);
     saveExtraProducts();
     renderExtraQuickTable();
-    renderExtraEditTable();
+    if (!isStoreActive()) renderExtraEditTable();
     renderBlockOptions();
     renderTypeOptions();
     renderProductsDatalist();
@@ -3414,14 +3402,17 @@ function handleSaveGrid() {
 
   newProducts.sort(compareShelfBlockTypeName);
   products = newProducts;
+  const hasStore = isStoreActive() && window.AppStore && window.AppStore.actions && typeof window.AppStore.actions.setProducts === "function";
   saveProducts();
-  renderShelfOptions();
-  renderBlockOptions();
-  renderTypeOptions();
-  updateInstanceFilterOptions();
-  renderProductsDatalist();
-  renderProducts();
-  renderShoppingList();
+  if (!hasStore) {
+    renderShelfOptions();
+    renderBlockOptions();
+    renderTypeOptions();
+    updateInstanceFilterOptions();
+    renderProductsDatalist();
+    renderProducts();
+    renderShoppingList();
+  }
   setAlmacenMode(false);
 }
 
@@ -3715,8 +3706,10 @@ function moveExtraToAlmacen(id) {
   saveProducts();
 
   renderProducts();
-  renderExtraQuickTable();
-  renderExtraEditTable();
+  if (!isStoreActive()) {
+    renderExtraQuickTable();
+    renderExtraEditTable();
+  }
   renderShelfOptions();
   renderBlockOptions();
   renderTypeOptions();
@@ -4019,13 +4012,15 @@ function handleSaveExtra() {
 
   extraProducts = newExtra;
   saveExtraProducts();
-
-  renderBlockOptions();
-  renderTypeOptions();
-  updateInstanceFilterOptions();
-  renderProductsDatalist();
-  renderExtraQuickTable();
-  renderShoppingList();
+  const hasStore = isStoreActive() && window.AppStore && window.AppStore.actions && typeof window.AppStore.actions.setExtraProducts === "function";
+  if (!hasStore) {
+    renderBlockOptions();
+    renderTypeOptions();
+    updateInstanceFilterOptions();
+    renderProductsDatalist();
+    renderExtraQuickTable();
+    renderShoppingList();
+  }
   setOtrosMode(false);
 }
 
@@ -4169,21 +4164,26 @@ function handleSaveClassifications() {
 }
 
 function handleClassificationDependencies() {
+  if (isStoreActive()) return;
   renderBlockOptions();
   renderTypeOptions();
   renderProductsDatalist();
   renderProducts();
-  renderExtraQuickTable();
-  renderExtraEditTable();
+  if (!isStoreActive()) {
+    renderExtraQuickTable();
+    renderExtraEditTable();
+  }
   renderGridRows();
 }
 
 function handleProducersDependencies() {
+  if (isStoreActive()) return;
   updateProducerFilterOptions();
   renderInstancesTable();
 }
 
 function handleStoresDependencies() {
+  if (isStoreActive()) return;
   updateStoreFilterOptions();
   renderStoreOptions();
   updateInstanceFilterOptions();
@@ -4397,6 +4397,7 @@ function filterStoresRows() {
 // ==============================
 
 function renderInstancesTable() {
+  if (isStoreActive()) return;
   hideProductAutocomplete();
   if (window.InstancesView && typeof window.InstancesView.render === "function") {
     if (instancesViewContext && instancesViewContext.data) {
@@ -4689,53 +4690,56 @@ function renderShoppingList() {
     return;
   }
 
+  const createStoreBlock = (store, items) => {
+    const frag = cloneTemplateContent(shoppingStoreTemplate);
+    if (!frag) return null;
+    const block = frag.querySelector(".shopping-store-block");
+    const title = frag.querySelector(".shopping-store-title");
+    const count = frag.querySelector(".shopping-store-count");
+    const list = frag.querySelector(".shopping-store-items");
+    if (!block || !title || !count || !list) return null;
+    block.dataset.store = store;
+    title.textContent = store;
+    count.textContent = `${items.length} producto(s)`;
+
+    items.forEach(({ product, source }) => {
+      const itemFrag = cloneTemplateContent(shoppingItemTemplate);
+      const li = itemFrag ? itemFrag.querySelector("li") : document.createElement("li");
+      const main = li.querySelector(".shopping-item-main") || document.createElement("div");
+      const meta = li.querySelector(".shopping-item-meta") || document.createElement("div");
+
+      main.className = "shopping-item-main";
+      meta.className = "shopping-item-meta";
+      main.textContent = product.quantity
+        ? `${product.name || ""} — ${product.quantity}`
+        : product.name || "";
+
+      const parts = [];
+      if (source === "almacén") parts.push("Almacén");
+      else if (source === "otros") parts.push("Otros productos");
+      if (product.notes) parts.push(product.notes);
+      meta.textContent = parts.join(" · ");
+      if (!meta.textContent) {
+        meta.style.display = "none";
+      }
+
+      if (!li.contains(main)) li.appendChild(main);
+      if (!li.contains(meta)) li.appendChild(meta);
+
+      list.appendChild(li);
+    });
+
+    return frag;
+  };
+
   summary.stores
     .slice()
     .sort((a, b) => a.store.localeCompare(b.store, "es", { sensitivity: "base" }))
     .forEach(({ store, items }) => {
-      const block = document.createElement("div");
-      block.className = "shopping-store-block";
-      block.dataset.store = store;
-
-      const header = document.createElement("div");
-      header.className = "shopping-store-header";
-      const title = document.createElement("span");
-      title.textContent = store;
-      const count = document.createElement("span");
-      count.className = "shopping-store-count";
-      count.textContent = `${items.length} producto(s)`;
-      header.appendChild(title);
-      header.appendChild(count);
-      block.appendChild(header);
-
-      const list = document.createElement("ul");
-      list.className = "shopping-store-items";
-
-      items.forEach(({ product, source }) => {
-        const li = document.createElement("li");
-        const line = document.createElement("div");
-        line.className = "shopping-item-main";
-        line.textContent = product.quantity
-          ? `${product.name || ""} — ${product.quantity}`
-          : product.name || "";
-        li.appendChild(line);
-
-        if (product.notes || source) {
-          const meta = document.createElement("div");
-          meta.className = "shopping-item-meta";
-          const parts = [];
-          if (source === "almacén") parts.push("Almacén");
-          else if (source === "otros") parts.push("Otros productos");
-          if (product.notes) parts.push(product.notes);
-          meta.textContent = parts.join(" · ");
-          li.appendChild(meta);
-        }
-
-        list.appendChild(li);
-      });
-
-      block.appendChild(list);
-      shoppingListContainer.appendChild(block);
+      const block = createStoreBlock(store, items);
+      if (block) {
+        shoppingListContainer.appendChild(block);
+      }
     });
 
   shoppingSummary.textContent = `${summary.totalItems} producto(s) · ${summary.totalStores} tienda(s)`;

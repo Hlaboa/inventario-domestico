@@ -31,6 +31,7 @@
     const scope = p.scope === "otros" ? "otros" : "almacen";
     const now = nowIso();
     const trimmedName = (p.name || "").trim();
+    if (!trimmedName) return null;
     return {
       id: ensureId(p.id, scope === "otros" ? "extra" : "prod"),
       name: trimmedName,
@@ -57,7 +58,7 @@
     const now = nowIso();
     return {
       id: ensureId(inst.id, "inst"),
-      productId: inst.productId || "",
+      productId: (inst.productId || "").trim(),
       productName: (inst.productName || "").trim(),
       producerId: inst.producerId || "",
       brand: (inst.brand || "").trim(),
@@ -75,9 +76,11 @@
    */
   function validateSupplier(s) {
     const now = nowIso();
+    const name = (s.name || "").trim();
+    if (!name) return null;
     return {
       id: ensureId(s.id, "store"),
-      name: (s.name || "").trim(),
+      name,
       type: (s.type || "").trim(),
       location: (s.location || "").trim(),
       website: (s.website || "").trim(),
@@ -93,9 +96,11 @@
    */
   function validateProducer(p) {
     const now = nowIso();
+    const name = (p.name || "").trim();
+    if (!name) return null;
     return {
       id: ensureId(p.id, "producer"),
-      name: (p.name || "").trim(),
+      name,
       location: (p.location || "").trim(),
       website: (p.website || "").trim(),
       notes: p.notes || "",
@@ -110,10 +115,13 @@
    */
   function validateClassification(c) {
     const now = nowIso();
+    const block = (c.block || "").trim();
+    const type = (c.type || "").trim();
+    if (!block && !type) return null;
     return {
       id: ensureId(c.id, "cls"),
-      block: (c.block || "").trim(),
-      type: (c.type || "").trim(),
+      block,
+      type,
       notes: c.notes || "",
       createdAt: c.createdAt || now,
       updatedAt: c.updatedAt || c.createdAt || now,
@@ -132,10 +140,9 @@
 
   function normalizeUnifiedList(list) {
     if (!Array.isArray(list)) return [];
-    return list.map((p) => {
-      const prod = validateProduct(p);
-      return prod;
-    });
+    return list
+      .map((p) => validateProduct(p))
+      .filter(Boolean);
   }
 
   function deriveSeparate(unified) {
@@ -310,7 +317,7 @@
     const normalizer = normalizersByEntity[name];
     const normalized = Array.isArray(list)
       ? normalizer
-        ? list.map((item) => normalizer(item))
+        ? list.map((item) => normalizer(item)).filter(Boolean)
         : list
       : [];
     const nextState = ensureStateShape({ ...state, [name]: normalized });

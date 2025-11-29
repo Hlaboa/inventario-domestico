@@ -262,30 +262,6 @@ register("AppStorage normaliza productos y extraProducts con scope correcto", ()
   assert.strictEqual(unified.scope, "otros", "Unified respeta scope 'otros'");
 });
 
-register("AppStorage migrates unifiedProducts if vacío", () => {
-  const AppUtils = {
-    nowIsoString: () => "2024-01-01T00:00:00.000Z",
-    safeLoadList: (key) => {
-      if (key === "inventarioCocinaAlmacen") return [{ id: "p1", name: "Prod" }];
-      if (key === "otrosProductosCompra") return [{ id: "e1", name: "Extra" }];
-      return [];
-    },
-    saveList: (key, list) => {
-      global.__saved = global.__saved || {};
-      global.__saved[key] = list;
-    },
-  };
-  const storageModule = path.join(__dirname, "..", "storage.js");
-  delete require.cache[storageModule];
-  global.window = { AppUtils, localStorage: createMemoryStorage() };
-  require(storageModule);
-  const storage = global.window.AppStorage;
-  const unified = storage.loadUnifiedProducts();
-  assert.strictEqual(unified.length, 2, "Debe migrar productos y extras");
-  assert.strictEqual(unified[0].scope, "almacen");
-  assert.strictEqual(unified[1].scope, "otros");
-});
-
 register("DataService.persistState guarda unifiedProducts y listas separadas", () => {
   const AppState = {
     state: {},
@@ -483,36 +459,6 @@ register("InstancesView respeta filtros de familia", () => {
   if (rows.length !== 0) {
     throw new Error(`Filtro de familia debería ocultar la fila, hay ${rows.length}`);
   }
-});
-
-register("DataService.setProducts guarda en localStorage y AppState", () => {
-  const AppState = {
-    state: {},
-    hydrate(patch) {
-      this.state = { ...this.state, ...(patch || {}) };
-    },
-    getState() {
-      return this.state;
-    },
-    subscribe() {
-      return () => {};
-    },
-  };
-  const localStorage = createMemoryStorage();
-  const ds = loadDataService({ AppState, localStorage });
-
-  const list = [{ id: "p1", name: "P" }];
-  ds.setProducts(list);
-
-  const stored = JSON.parse(localStorage.getItem("inventarioCocinaAlmacen"));
-  if (!stored || stored.length !== 1) {
-    throw new Error("No guardó productos en localStorage");
-  }
-  if (!AppState.state.products || AppState.state.products.length !== 1) {
-    throw new Error("No actualizó AppState con productos");
-  }
-
-  ds.__cleanup();
 });
 
 register("ClassificationView elimina fila al hacer click en borrar", () => {

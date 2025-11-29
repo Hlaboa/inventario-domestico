@@ -22,8 +22,6 @@
 
   const storageKeys =
     storage.keys || {
-      products: "inventarioCocinaAlmacen",
-      extraProducts: "otrosProductosCompra",
       unifiedProducts: "productosCocinaUnificados",
       suppliers: "proveedoresCocina",
       producers: "productoresCocina",
@@ -32,8 +30,6 @@
     };
 
   const saveMap = {
-    products: storage.saveProducts,
-    extraProducts: storage.saveExtraProducts,
     unifiedProducts: storage.saveUnifiedProducts,
     suppliers: storage.saveSuppliers,
     producers: storage.saveProducers,
@@ -42,8 +38,6 @@
   };
 
   const normalizerMap = {
-    products: normalizers.product,
-    extraProducts: normalizers.extraProduct,
     unifiedProducts: normalizers.unifiedProduct,
     suppliers: normalizers.supplier,
     producers: normalizers.producer,
@@ -52,8 +46,6 @@
   };
 
   const loadMap = {
-    products: storage.loadProducts,
-    extraProducts: storage.loadExtraProducts,
     unifiedProducts: storage.loadUnifiedProducts,
     suppliers: storage.loadSuppliers,
     producers: storage.loadProducers,
@@ -190,27 +182,11 @@
         fallbackLoad(storageKeys.unifiedProducts, normalizers.unifiedProduct),
       normalizers.unifiedProduct
     );
-    const productsRaw =
-      unifiedProducts.length > 0
-        ? unifiedProducts
-        : normalizeList(
-            (loadMap.products && loadMap.products()) ||
-              fallbackLoad(storageKeys.products, normalizers.product),
-            normalizers.product
-          );
-    const extrasRaw =
-      unifiedProducts.length > 0
-        ? unifiedProducts
-        : normalizeList(
-            (loadMap.extraProducts && loadMap.extraProducts()) ||
-              fallbackLoad(storageKeys.extraProducts, normalizers.extraProduct),
-            normalizers.extraProduct
-          );
-    const products = productsRaw
-      .filter((p) => (p.scope ? p.scope === "almacen" : true))
+    const products = unifiedProducts
+      .filter((p) => p.scope === "almacen")
       .map((p) => ({ ...p, scope: "almacen" }));
-    const extraProducts = extrasRaw
-      .filter((p) => (p.scope ? p.scope === "otros" : true))
+    const extraProducts = unifiedProducts
+      .filter((p) => p.scope === "otros")
       .map((p) => ({ ...p, scope: "otros" }));
     const suppliers = normalizeList(
       (loadMap.suppliers && loadMap.suppliers()) ||

@@ -684,6 +684,21 @@
 
         <!-- Panel lista de la compra + backup -->
         <section class="panel panel-shopping">
+          <template id="shoppingStoreTemplate">
+            <div class="shopping-store-block">
+              <div class="shopping-store-header">
+                <span class="shopping-store-title"></span>
+                <span class="shopping-store-count"></span>
+              </div>
+              <ul class="shopping-store-items"></ul>
+            </div>
+          </template>
+          <template id="shoppingItemTemplate">
+            <li>
+              <div class="shopping-item-main"></div>
+              <div class="shopping-item-meta"></div>
+            </li>
+          </template>
           <div class="list-header">
             <div>
               <h2>Lista de la compra</h2>

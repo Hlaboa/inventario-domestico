@@ -1,8 +1,6 @@
 (() => {
   const { nowIsoString, safeLoadList, saveList } = window.AppUtils;
 
-  const STORAGE_KEY = "inventarioCocinaAlmacen";
-  const STORAGE_KEY_EXTRA = "otrosProductosCompra";
   const STORAGE_KEY_SUPPLIERS = "proveedoresCocina";
   const STORAGE_KEY_PRODUCERS = "productoresCocina";
   const STORAGE_KEY_INSTANCES = "instanciasProductosCocina";
@@ -137,84 +135,19 @@
     };
   }
 
-  function loadProducts() {
-    return safeLoadList(STORAGE_KEY, normalizeProduct);
-  }
-
-  function loadExtraProducts() {
-    return safeLoadList(STORAGE_KEY_EXTRA, normalizeExtraProduct);
-  }
-
-  function loadSuppliers() {
-    return safeLoadList(STORAGE_KEY_SUPPLIERS, normalizeSupplier);
-  }
-
-  function loadProducers() {
-    return safeLoadList(STORAGE_KEY_PRODUCERS, normalizeProducer);
-  }
-
-  function loadClassifications(products = [], extraProducts = []) {
-    let classifications = safeLoadList(
-      STORAGE_KEY_CLASSIFICATIONS,
-      normalizeClassification
-    );
-
-    const combos = new Set(
-      classifications.map((c) => `${c.block}|||${c.type}`)
-    );
-    const now = nowIsoString();
-    [...products, ...extraProducts].forEach((p) => {
-      const block = (p.block || "").trim();
-      const type = (p.type || "").trim();
-      if (!block && !type) return;
-      const key = `${block}|||${type}`;
-      if (!combos.has(key)) {
-        combos.add(key);
-        classifications.push({
-          id:
-            (crypto.randomUUID
-              ? crypto.randomUUID()
-              : "cls-" + Math.random().toString(36).slice(2)),
-          block,
-          type,
-          notes: "",
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-    });
-
-    saveClassifications(classifications);
-    return classifications;
-  }
-
-  function loadProductInstances() {
-    return safeLoadList(STORAGE_KEY_INSTANCES, normalizeInstance);
-  }
-
-  function loadUnifiedProducts() {
+  const loadProducts = () => [];
+  const loadExtraProducts = () => [];
+  const loadSuppliers = () => safeLoadList(STORAGE_KEY_SUPPLIERS, normalizeSupplier);
+  const loadProducers = () => safeLoadList(STORAGE_KEY_PRODUCERS, normalizeProducer);
+  const loadClassifications = () => safeLoadList(STORAGE_KEY_CLASSIFICATIONS, normalizeClassification);
+  const loadProductInstances = () => safeLoadList(STORAGE_KEY_INSTANCES, normalizeInstance);
+  const loadUnifiedProducts = () => {
     const unified = safeLoadList(STORAGE_KEY_UNIFIED, normalizeUnifiedProduct);
-    if (Array.isArray(unified) && unified.length > 0) {
-      return unified;
-    }
+    if (Array.isArray(unified) && unified.length > 0) return unified;
+    // Si no hay unified, devolver lista vacía; ya no migramos claves antiguas
+    return [];
+  };
 
-    // Migración desde claves antiguas
-    const oldProducts = loadProducts();
-    const oldExtras = loadExtraProducts();
-    const migrated = [
-      ...oldProducts.map((p) => normalizeUnifiedProduct({ ...p, scope: "almacen" })),
-      ...oldExtras.map((p) => normalizeUnifiedProduct({ ...p, scope: "otros" })),
-    ];
-    saveUnifiedProducts(migrated);
-    return migrated;
-  }
-
-  function saveProducts(products) {
-    saveList(STORAGE_KEY, products);
-  }
-  function saveExtraProducts(list) {
-    saveList(STORAGE_KEY_EXTRA, list);
-  }
   function saveSuppliers(list) {
     saveList(STORAGE_KEY_SUPPLIERS, list);
   }
@@ -253,8 +186,6 @@
   }
 
   window.AppStorage = {
-    STORAGE_KEY,
-    STORAGE_KEY_EXTRA,
     STORAGE_KEY_SUPPLIERS,
     STORAGE_KEY_PRODUCERS,
     STORAGE_KEY_INSTANCES,
@@ -266,8 +197,6 @@
     loadClassifications,
     loadProductInstances,
     loadUnifiedProducts,
-    saveProducts,
-    saveExtraProducts,
     saveSuppliers,
     saveProducers,
     saveProductInstances,
@@ -284,8 +213,6 @@
       classification: normalizeClassification,
     },
     keys: {
-      products: STORAGE_KEY,
-      extraProducts: STORAGE_KEY_EXTRA,
       unifiedProducts: STORAGE_KEY_UNIFIED,
       suppliers: STORAGE_KEY_SUPPLIERS,
       producers: STORAGE_KEY_PRODUCERS,
