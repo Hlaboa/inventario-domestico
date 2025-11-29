@@ -204,11 +204,22 @@
       tr.appendChild(td);
 
       td = document.createElement("td");
+      const saveBtn = document.createElement("button");
+      saveBtn.className = "btn btn-small btn-success";
+      saveBtn.dataset.action = "save-draft-product";
+      saveBtn.dataset.id = d.id;
+      saveBtn.title = "Guardar producto";
+      saveBtn.setAttribute("aria-label", "Guardar producto");
+      saveBtn.textContent = "✓";
+      td.appendChild(saveBtn);
+
       const cancelBtn = document.createElement("button");
       cancelBtn.className = "btn btn-small btn-danger";
       cancelBtn.dataset.action = "cancel-draft-product";
       cancelBtn.dataset.id = d.id;
       cancelBtn.textContent = "✕";
+      cancelBtn.title = "Cancelar";
+      cancelBtn.setAttribute("aria-label", "Cancelar");
       td.appendChild(cancelBtn);
       tr.appendChild(td);
 

@@ -22,9 +22,36 @@ let productDrafts = [];
 let extraDrafts = [];
 const stateAdapter = window.StateAdapter || null;
 
+function getStateSnapshot() {
+  if (stateAdapter && typeof stateAdapter.getState === "function") {
+    return stateAdapter.getState() || {};
+  }
+  if (window.AppStore && typeof window.AppStore.getState === "function") {
+    return window.AppStore.getState() || {};
+  }
+  if (window.AppState && typeof window.AppState.getState === "function") {
+    return window.AppState.getState() || {};
+  }
+  return {
+    products,
+    extraProducts,
+    unifiedProducts,
+    suppliers,
+    producers,
+    productInstances,
+    classifications,
+  };
+}
+
 function refreshProductsFromUnified() {
-  products = (unifiedProducts || []).filter((p) => p.scope === "almacen");
-  extraProducts = (unifiedProducts || []).filter((p) => p.scope === "otros");
+  const state = getStateSnapshot();
+  const unified =
+    (Array.isArray(state.unifiedProducts) && state.unifiedProducts.length
+      ? state.unifiedProducts
+      : unifiedProducts) || [];
+  unifiedProducts = unified;
+  products = unified.filter((p) => p.scope === "almacen");
+  extraProducts = unified.filter((p) => p.scope === "otros");
 }
 
 function getPantryProducts() {
@@ -44,11 +71,69 @@ function recomputeUnifiedFromDerived() {
   ];
 }
 
+function getUnifiedList() {
+  const state = getStateSnapshot();
+  const unified =
+    (Array.isArray(state.unifiedProducts) && state.unifiedProducts) ||
+    (Array.isArray(unifiedProducts) && unifiedProducts) ||
+    [];
+  return unified.filter(Boolean);
+}
+
+function setUnifiedList(next) {
+  unifiedProducts = Array.isArray(next) ? next.filter(Boolean) : [];
+  refreshProductsFromUnified();
+  if (stateAdapter && typeof stateAdapter.setEntity === "function") {
+    stateAdapter.setEntity("unifiedProducts", unifiedProducts);
+    syncFromAppStore();
+    return unifiedProducts;
+  }
+  if (
+    window.AppStore &&
+    window.AppStore.actions &&
+    typeof window.AppStore.actions.setUnifiedProducts === "function"
+  ) {
+    window.AppStore.actions.setUnifiedProducts(unifiedProducts);
+    syncFromAppStore();
+    return unifiedProducts;
+  }
+  if (window.DataService && typeof window.DataService.setUnifiedProducts === "function") {
+    unifiedProducts = window.DataService.setUnifiedProducts(unifiedProducts);
+    refreshProductsFromUnified();
+    return unifiedProducts;
+  }
+  if (window.AppStorage && typeof window.AppStorage.saveUnifiedProducts === "function") {
+    window.AppStorage.saveUnifiedProducts(unifiedProducts);
+    return unifiedProducts;
+  }
+  try {
+    localStorage.setItem("productosCocinaUnificados", JSON.stringify(unifiedProducts));
+  } catch {}
+  return unifiedProducts;
+}
+
+function updateUnifiedWithProducts(list) {
+  const extras = getOtherProducts();
+  const scoped = [
+    ...list.map((p) => ({ ...p, scope: "almacen" })),
+    ...extras.map((p) => ({ ...p, scope: "otros" })),
+  ];
+  return setUnifiedList(scoped);
+}
+
+function updateUnifiedWithExtras(list) {
+  const prods = getPantryProducts();
+  const scoped = [
+    ...prods.map((p) => ({ ...p, scope: "almacen" })),
+    ...list.map((p) => ({ ...p, scope: "otros" })),
+  ];
+  return setUnifiedList(scoped);
+}
+
 function isStoreActive() {
   return !!(
-    stateAdapter &&
-    typeof stateAdapter.subscribe === "function" &&
-    typeof stateAdapter.getState === "function"
+    (stateAdapter && typeof stateAdapter.subscribe === "function") ||
+    (window.AppStore && typeof window.AppStore.subscribe === "function")
   );
 }
 
@@ -75,9 +160,7 @@ function syncFromAppStore() {
   const snapshot =
     (stateAdapter && typeof stateAdapter.getState === "function" && stateAdapter.getState()) ||
     (window.AppStore && typeof window.AppStore.getState === "function" && window.AppStore.getState());
-  if (snapshot) {
-    applyStateSnapshot(snapshot);
-  }
+  if (snapshot) applyStateSnapshot(snapshot);
 }
 
 function persistUnified(list) {
@@ -222,9 +305,6 @@ let producersController;
 let storesController;
 // Snapshot helper para export/import en modo store o standalone
 function getLatestStateSnapshot() {
-  if (stateAdapter && typeof stateAdapter.getState === "function") {
-    return stateAdapter.getState() || {};
-  }
   if (window.AppStore && typeof window.AppStore.getState === "function") {
     return window.AppStore.getState() || {};
   }
@@ -334,7 +414,7 @@ function getInventoryContext() {
       inventoryRowTemplate,
     },
     state: {
-      products: products,
+      products: getPantryProducts(),
       productDrafts,
     },
     helpers: {
@@ -527,6 +607,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (inventoryController) {
       inventoryController.setDrafts(productDrafts);
       inventoryController.render();
+    } else if (window.InventoryFeature && typeof window.InventoryFeature.render === "function") {
+      window.InventoryFeature.render();
     } else {
       renderProducts();
     }
@@ -649,7 +731,7 @@ document.addEventListener("DOMContentLoaded", () => {
       rowTemplate: extraEditRowTemplate,
     },
     getProducts: () => getOtherProducts(),
-    findById: (id) => extraProducts.find((p) => p.id === id),
+    findById: (id) => getOtherProducts().find((p) => p.id === id),
     buildFamilyStripeMap,
     sorter: (a, b) =>
       (a.block || "").localeCompare(b.block || "", "es", { sensitivity: "base" }) ||
@@ -657,7 +739,7 @@ document.addEventListener("DOMContentLoaded", () => {
       (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" }),
     matchesStore: (id, storeId) => {
       if (!storeId) return true;
-      const product = extraProducts.find((p) => p.id === id);
+      const product = getOtherProducts().find((p) => p.id === id);
       if (!product) return true;
       const inst = getSelectionInstanceForProduct(product);
       return !!(inst && Array.isArray(inst.storeIds) && inst.storeIds.includes(storeId));
@@ -673,7 +755,13 @@ document.addEventListener("DOMContentLoaded", () => {
       getSelectionStoresForProduct,
     },
     persist: (list) => {
-      extraProducts = list;
+      const nextList = Array.isArray(list) ? list : [];
+      const prods = getPantryProducts();
+      const unified = [
+        ...prods.map((p) => ({ ...p, scope: "almacen" })),
+        ...nextList.map((p) => ({ ...p, scope: "otros" })),
+      ];
+      setUnifiedList(unified);
       saveExtraProducts();
     },
     onAfterSave: () => {
@@ -709,12 +797,12 @@ document.addEventListener("DOMContentLoaded", () => {
       rowTemplate: inventoryEditRowTemplate,
     },
     getProducts: () => getPantryProducts(),
-    findById: (id) => products.find((p) => p.id === id),
+    findById: (id) => getPantryProducts().find((p) => p.id === id),
     buildFamilyStripeMap,
     sorter: compareShelfBlockTypeName,
     matchesStore: (id, storeId) => {
       if (!storeId) return true;
-      const product = products.find((p) => p.id === id);
+      const product = getPantryProducts().find((p) => p.id === id);
       if (!product) return true;
       const inst = getSelectionInstanceForProduct(product);
       return !!(inst && Array.isArray(inst.storeIds) && inst.storeIds.includes(storeId));
@@ -730,7 +818,13 @@ document.addEventListener("DOMContentLoaded", () => {
       getSelectionStoresForProduct,
     },
     persist: (list) => {
-      products = list;
+      const nextList = Array.isArray(list) ? list : [];
+      const extras = getOtherProducts();
+      const unified = [
+        ...nextList.map((p) => ({ ...p, scope: "almacen" })),
+        ...extras.map((p) => ({ ...p, scope: "otros" })),
+      ];
+      setUnifiedList(unified);
       saveProducts();
     },
     onAfterSave: () => {
@@ -886,6 +980,44 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     inventoryController.setDrafts(productDrafts);
     inventoryController.render();
+  } else if (window.InventoryFeature && typeof window.InventoryFeature.init === "function") {
+    window.InventoryFeature.init({
+      refs: {
+        tableBody: productTableBody,
+      },
+      getProducts: () => getPantryProducts(),
+      getDrafts: () => productDrafts,
+      getInventoryContext,
+      actions: {
+        toggleHave: (id, checked) => {
+          const list = getPantryProducts().map((p) =>
+            p.id === id
+              ? {
+                  ...p,
+                  have: checked,
+                  acquisitionDate: !p.have && checked ? todayDateString() : p.acquisitionDate,
+                }
+              : p
+          );
+          const extras = getOtherProducts();
+          setUnifiedList([
+            ...list.map((p) => ({ ...p, scope: "almacen" })),
+            ...extras.map((p) => ({ ...p, scope: "otros" })),
+          ]);
+          saveProducts();
+          renderProducts();
+          renderShoppingList();
+        },
+        moveToExtra: moveProductToExtra,
+        selectSelection: openSelectionPopupForProduct,
+        cancelDraft: (id) => {
+          productDrafts = productDrafts.filter((d) => d.id !== id);
+          renderProducts();
+        },
+        saveDraft: (id) => commitDraftProducts(id ? [id] : null),
+      },
+    });
+    window.InventoryFeature.render();
   }
 
   extraController =
@@ -1513,20 +1645,6 @@ function getStoreNames(storeIds) {
 
 function getClassificationFamilies() {
   if (
-    stateAdapter &&
-    stateAdapter.selectors &&
-    typeof stateAdapter.selectors.families === "function"
-  ) {
-    const baseState =
-      (stateAdapter.getState && stateAdapter.getState()) || {
-        products,
-        extraProducts,
-        classifications,
-      };
-    return stateAdapter.selectors.families(baseState);
-  }
-
-  if (
     window.DataService &&
     window.DataService.selectors &&
     typeof window.DataService.selectors.families === "function"
@@ -1557,20 +1675,6 @@ function getClassificationFamilies() {
 }
 
 function getClassificationTypes(family = "") {
-  if (
-    stateAdapter &&
-    stateAdapter.selectors &&
-    typeof stateAdapter.selectors.types === "function"
-  ) {
-    const baseState =
-      (stateAdapter.getState && stateAdapter.getState()) || {
-        products,
-        extraProducts,
-        classifications,
-      };
-    return stateAdapter.selectors.types(baseState, family);
-  }
-
   if (
     window.DataService &&
     window.DataService.selectors &&
@@ -1844,9 +1948,7 @@ function createSelectionButton(selectionId, id) {
   btn.dataset.id = id;
   const hasSel = !!getSelectionInstanceForProduct({ selectionId, id });
   btn.textContent = hasSel ? "⟳" : "+";
-  const label = hasSel ? "Cambiar selección" : "Añadir selección";
-  btn.title = label;
-  btn.setAttribute("aria-label", label);
+  btn.title = hasSel ? "Cambiar selección" : "Añadir selección";
   btn.classList.toggle("btn-selection-empty", !hasSel);
   btn.classList.toggle("btn-selection-update", hasSel);
   return btn;
@@ -2909,7 +3011,6 @@ function renderProductsDatalist() {
 
 function renderProducts() {
   refreshProductsFromUnified();
-  products = getPantryProducts();
   if (!productTableBody) return;
   // InventoryView se encarga del render (usa plantilla cuando está disponible)
   if (window.InventoryView) {
@@ -2967,16 +3068,15 @@ function handleInventoryTableClick(e) {
 }
 
 function moveProductToExtra(id) {
-  const item =
-    unifiedProducts.find((p) => p.id === id) ||
-    products.find((p) => p.id === id);
+  const unified = getUnifiedList();
+  const item = unified.find((p) => p.id === id);
   if (!item) return;
   const ok = confirm("¿Mover este producto a 'Otros productos'? Se mantendrá la información.");
   if (!ok) return;
-  const updated = unifiedProducts.map((p) =>
+  const updated = unified.map((p) =>
     p.id === id ? { ...p, scope: "otros" } : p
   );
-  persistUnified(updated);
+  setUnifiedList(updated);
   saveExtraProducts();
 
   renderProducts();
@@ -3238,11 +3338,10 @@ function moveExtraToAlmacen(id) {
 
 function removeExtraById(id) {
   if (!id) return;
-  const before = extraProducts.length;
-  extraProducts = extraProducts.filter((p) => p.id !== id);
-  unifiedProducts = unifiedProducts.filter((p) => p.id !== id);
-  if (extraProducts.length === before) return;
-  persistUnified(unifiedProducts);
+  const unified = getUnifiedList();
+  const filtered = unified.filter((p) => p.id !== id);
+  if (filtered.length === unified.length) return;
+  setUnifiedList(filtered);
   saveExtraProducts();
   renderExtraEditTable();
   renderExtraQuickTable();
@@ -3251,11 +3350,10 @@ function removeExtraById(id) {
 
 function removeProductById(id) {
   if (!id) return;
-  const before = products.length;
-  products = products.filter((p) => p.id !== id);
-  unifiedProducts = unifiedProducts.filter((p) => p.id !== id);
-  if (products.length === before) return;
-  persistUnified(unifiedProducts);
+  const unified = getUnifiedList();
+  const filtered = unified.filter((p) => p.id !== id);
+  if (filtered.length === unified.length) return;
+  setUnifiedList(filtered);
   saveProducts();
   renderGridRows();
   renderProducts();
@@ -3871,12 +3969,6 @@ function renderShoppingList() {
   shoppingListContainer.innerHTML = "";
 
   const summary =
-    (stateAdapter &&
-      stateAdapter.selectors &&
-      typeof stateAdapter.selectors.shoppingSummary === "function" &&
-      stateAdapter.selectors.shoppingSummary(
-        (stateAdapter.getState && stateAdapter.getState()) || { products, extraProducts }
-      )) ||
     (window.AppStore &&
       window.AppStore.selectors &&
       window.AppStore.selectors.shoppingSummary &&

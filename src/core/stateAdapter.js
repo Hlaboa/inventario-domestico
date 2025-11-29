@@ -196,6 +196,15 @@
   };
 
   window.StateAdapter = {
+    bootstrap: () => {
+      if (appStore && typeof appStore.bootstrap === "function") {
+        return appStore.bootstrap();
+      }
+      if (dataService && typeof dataService.hydrateFromStorage === "function") {
+        return dataService.hydrateFromStorage();
+      }
+      return getState();
+    },
     getState,
     setState,
     setEntity,

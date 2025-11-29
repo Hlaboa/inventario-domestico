@@ -420,6 +420,12 @@ textarea:focus-visible {
   box-shadow: 0 8px 20px rgba(37, 99, 235, 0.25);
 }
 
+.btn-success {
+  background: #4caf50;
+  color: #ffffff;
+  box-shadow: 0 8px 20px rgba(76, 175, 80, 0.28);
+}
+
 .btn-secondary {
   background: var(--secondary);
   color: var(--text);
@@ -558,6 +564,67 @@ textarea:focus-visible {
   border-collapse: collapse;
   font-size: 0.78rem;
   table-layout: auto;
+}
+
+.table-inventory-edit col:nth-child(1) {
+  width: 18%;
+}
+.table-inventory-edit col:nth-child(2),
+.table-inventory-edit col:nth-child(3) {
+  width: 10%;
+}
+.table-inventory-edit col:nth-child(4) {
+  width: 8%;
+}
+.table-inventory-edit col:nth-child(5) {
+  width: 6%;
+}
+.table-inventory-edit col:nth-child(6) {
+  width: 12%;
+}
+.table-inventory-edit col:nth-child(7) {
+  width: 8%;
+}
+.table-inventory-edit col:nth-child(8) {
+  width: 6%;
+}
+.table-inventory-edit col:nth-child(9) {
+  width: 8%;
+}
+.table-inventory-edit col:nth-child(10) {
+  width: 7%;
+}
+.table-inventory-edit col:nth-child(11) {
+  width: 10%;
+}
+.table-inventory-edit col:nth-child(12) {
+  width: 7%;
+}
+
+.table-extra-edit col:nth-child(1) {
+  width: 20%;
+}
+.table-extra-edit col:nth-child(2),
+.table-extra-edit col:nth-child(3) {
+  width: 12%;
+}
+.table-extra-edit col:nth-child(4) {
+  width: 8%;
+}
+.table-extra-edit col:nth-child(5) {
+  width: 12%;
+}
+.table-extra-edit col:nth-child(6) {
+  width: 8%;
+}
+.table-extra-edit col:nth-child(7) {
+  width: 6%;
+}
+.table-extra-edit col:nth-child(8) {
+  width: 10%;
+}
+.table-extra-edit col:nth-child(9) {
+  width: 12%;
 }
 
 .product-table thead,
