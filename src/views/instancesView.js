@@ -160,7 +160,6 @@
       const inputName = makeInput("productName", inst.productName);
       inputName.dataset.id = inst.id;
       inputName.dataset.field = "productName";
-      inputName.setAttribute("list", "productsDatalist");
       inputName.classList.add("product-name-input");
       inputName.setAttribute("autocomplete", "off");
       inputName.placeholder = "Escribe para buscar en tu inventario...";

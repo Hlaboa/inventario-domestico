@@ -286,17 +286,12 @@ let selectionPopupList;
 let selectionPopupClose;
 let selectionPopupHeader;
 let selectionPopupBody;
-let productAutocompleteDropdown;
-let currentProductInput = null;
 let lastSelectionTrigger = null;
 let instancesTableWrapper;
 let inlineProducerSelect;
 let inlineBrandInput;
 let inlineStoresSelect;
 
-let isDraggingSelectionPopup = false;
-let dragOffsetX = 0;
-let dragOffsetY = 0;
 let filtersDefaultsApplied = false;
 let selectionDragCleanup = null;
 let selectionPopupInitialized = false;
@@ -458,18 +453,16 @@ document.addEventListener("DOMContentLoaded", () => {
     selectionPopupClose,
     selectionPopupHeader,
     selectionPopupBody,
-    productAutocompleteDropdown,
   } = { ...refs });
 
-  productAutocompleteDropdown =
-    productAutocompleteDropdown ||
-    (window.UIHelpers && typeof window.UIHelpers.createAutocompleteDropdown === "function"
-      ? window.UIHelpers.createAutocompleteDropdown({
-          onSelect: (name) => applyProductAutocompleteSelection(name),
-        })
-      : createProductAutocompleteDropdown());
-
   ensureSelectionPopupInit();
+
+  if (window.ProductAutocomplete && typeof window.ProductAutocomplete.init === "function") {
+    window.ProductAutocomplete.init({
+      tableBody: instancesTableBody,
+      getSuggestions: getProductAutocompleteSuggestions,
+    });
+  }
 
   if (window.AppBootstrap) {
     window.AppBootstrap.initMainNav(refs, {
@@ -496,8 +489,6 @@ document.addEventListener("DOMContentLoaded", () => {
     window.AppBootstrap.initPopups(refs, {
       closeSelectionPopup,
       handleSelectionPopupResize,
-      initSelectionPopupDrag,
-      initProductAutocompleteEvents,
       handleSelectionPopupKeydown,
       initHorizontalTableScroll,
     });
@@ -2578,84 +2569,6 @@ function createAndApplySelection(productId) {
   closeSelectionPopup();
 }
 
-function initSelectionPopupDrag() {
-  const handle = selectionPopupHeader || selectionPopup;
-  if (!handle || !selectionPopup) return;
-
-  const startDrag = (clientX, clientY) => {
-    isDraggingSelectionPopup = true;
-    selectionPopup.classList.add("dragging");
-
-    const rect = selectionPopup.getBoundingClientRect();
-
-    dragOffsetX = clientX - rect.left;
-    dragOffsetY = clientY - rect.top;
-
-    selectionPopup.style.position = "fixed";
-    selectionPopup.style.transition = "none";
-    selectionPopup.style.transform = "none";
-    selectionPopup.style.left = rect.left + "px";
-    selectionPopup.style.top = rect.top + "px";
-    clampSelectionPopupPosition(rect.left, rect.top);
-
-    document.addEventListener("mousemove", handleSelectionPopupDrag);
-    document.addEventListener("mouseup", stopSelectionPopupDrag);
-    document.addEventListener("touchmove", handleSelectionPopupDrag, {
-      passive: false,
-    });
-    document.addEventListener("touchend", stopSelectionPopupDrag);
-    document.addEventListener("touchcancel", stopSelectionPopupDrag);
-  };
-
-  const shouldBlockDrag = (target) =>
-    target.closest("button") ||
-    target.closest("input") ||
-    target.closest("select") ||
-    target.closest("textarea");
-
-  handle.addEventListener("mousedown", (e) => {
-    if (shouldBlockDrag(e.target)) return;
-    e.preventDefault();
-    startDrag(e.clientX, e.clientY);
-  });
-
-  handle.addEventListener("touchstart", (e) => {
-    if (shouldBlockDrag(e.target)) return;
-    const touch = e.touches && e.touches[0];
-    if (!touch) return;
-    e.preventDefault();
-    startDrag(touch.clientX, touch.clientY);
-  });
-}
-
-function handleSelectionPopupDrag(e) {
-  if (!isDraggingSelectionPopup || !selectionPopup || !selectionPopupOverlay) return;
-
-  const point = e.touches ? e.touches[0] : e;
-  if (!point) return;
-
-  e.preventDefault();
-
-  const left = point.clientX - dragOffsetX;
-  const top = point.clientY - dragOffsetY;
-
-  clampSelectionPopupPosition(left, top);
-}
-
-function stopSelectionPopupDrag() {
-  if (!isDraggingSelectionPopup) return;
-  isDraggingSelectionPopup = false;
-  if (selectionPopup) {
-    selectionPopup.classList.remove("dragging");
-    selectionPopup.style.transition = "";
-  }
-  document.removeEventListener("mousemove", handleSelectionPopupDrag);
-  document.removeEventListener("mouseup", stopSelectionPopupDrag);
-  document.removeEventListener("touchmove", handleSelectionPopupDrag);
-  document.removeEventListener("touchend", stopSelectionPopupDrag);
-  document.removeEventListener("touchcancel", stopSelectionPopupDrag);
-}
-
 // ==============================
 //  SCROLL HORIZONTAL TABLAS
 // ==============================
@@ -2684,192 +2597,16 @@ function initHorizontalTableScroll() {
 }
 
 // ==============================
-//  AUTOCOMPLETE PRODUCTOS (INSTANCIAS)
+//  OPCIONES DE FILTRO
 // ==============================
-
-function createProductAutocompleteDropdown() {
-  if (window.UIHelpers && typeof window.UIHelpers.createAutocompleteDropdown === "function") {
-    return window.UIHelpers.createAutocompleteDropdown({
-      onSelect: (name) => applyProductAutocompleteSelection(name),
-    });
-  }
-  const div = document.createElement("div");
-  div.id = "productAutocompleteDropdown";
-  div.className = "product-autocomplete-dropdown";
-  div.style.display = "none";
-  document.body.appendChild(div);
-  div.addEventListener("mousedown", (e) => {
-    const item = e.target.closest(".product-autocomplete-item");
-    if (!item) return;
-    e.preventDefault();
-    const name = item.dataset.name || "";
-    applyProductAutocompleteSelection(name);
-  });
-  return div;
-}
-
-function isAutocompleteOpen() {
-  return (
-    productAutocompleteDropdown &&
-    productAutocompleteDropdown.style.display !== "none"
-  );
-}
-
-function handleGlobalAutocompleteWheel(e) {
-  if (!isAutocompleteOpen()) return;
-
-  const dropdown = productAutocompleteDropdown;
-  const maxScroll = Math.max(dropdown.scrollHeight - dropdown.clientHeight, 0);
-  if (maxScroll <= 0) {
-    e.preventDefault();
-    return;
-  }
-
-  e.preventDefault();
-  e.stopPropagation();
-  if (typeof e.stopImmediatePropagation === "function") {
-    e.stopImmediatePropagation();
-  }
-
-  const next = Math.min(
-    Math.max(dropdown.scrollTop + e.deltaY, 0),
-    maxScroll
-  );
-  dropdown.scrollTop = next;
-}
-
-function initProductAutocompleteEvents() {
-  if (!instancesTableBody || !productAutocompleteDropdown) return;
-
-  instancesTableBody.addEventListener("focusin", handleProductInputFocus);
-  instancesTableBody.addEventListener("input", handleProductInputInput);
-  instancesTableBody.addEventListener("keydown", handleProductInputKeydown);
-
-  document.addEventListener("mousedown", handleDocumentClickAutocomplete);
-  window.addEventListener("scroll", handleGlobalScrollAutocomplete, true);
-  window.addEventListener("resize", hideProductAutocomplete);
-  window.addEventListener("wheel", handleGlobalAutocompleteWheel, {
-    passive: false,
-    capture: true,
-  });
-}
-
-function isProductAutocompleteInput(target) {
-  return target && target.dataset && target.dataset.field === "productName";
-}
-
-function handleProductInputFocus(e) {
-  const input = e.target;
-  if (!isProductAutocompleteInput(input)) return;
-  showProductAutocomplete(input);
-}
-
-function handleProductInputInput(e) {
-  const input = e.target;
-  if (!isProductAutocompleteInput(input)) return;
-  showProductAutocomplete(input);
-}
-
-function handleProductInputKeydown(e) {
-  if (e.key === "Escape") {
-    hideProductAutocomplete();
-  }
-}
-
-function handleDocumentClickAutocomplete(e) {
-  if (!productAutocompleteDropdown) return;
-  if (productAutocompleteDropdown.style.display === "none") return;
-  if (productAutocompleteDropdown.contains(e.target)) return;
-  if (currentProductInput && e.target === currentProductInput) return;
-  hideProductAutocomplete();
-}
-
-function handleGlobalScrollAutocomplete(e) {
-  if (!isAutocompleteOpen()) return;
-  const overDropdown =
-    productAutocompleteDropdown &&
-    productAutocompleteDropdown.contains(e.target);
-  const overInput =
-    currentProductInput && currentProductInput.contains(e.target);
-  if (overDropdown || overInput) return;
-  hideProductAutocomplete();
-}
 
 function getProductAutocompleteSuggestions(query) {
   const list = getAllProductsForAssociationList();
   const lower = (query || "").toLowerCase();
-  const filtered = lower
-    ? list.filter((p) => p.name.toLowerCase().includes(lower))
+  return lower
+    ? list.filter((p) => (p.name || "").toLowerCase().includes(lower))
     : list;
-  return filtered;
 }
-
-function showProductAutocomplete(input) {
-  if (!productAutocompleteDropdown) return;
-
-  currentProductInput = input;
-  const suggestions = getProductAutocompleteSuggestions(input.value || "");
-
-  const escape = (str) =>
-    (str || "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-
-  if (suggestions.length === 0) {
-    productAutocompleteDropdown.innerHTML =
-      '<div class="product-autocomplete-empty">Sin coincidencias en tu inventario.</div>';
-  } else {
-    productAutocompleteDropdown.innerHTML = suggestions
-      .map(
-        (p) => `
-        <div class="product-autocomplete-item" data-name="${escape(p.name)}">
-          <span class="product-autocomplete-name">${escape(p.name)}</span>
-          <span class="product-autocomplete-meta">${[
-            p.block || "",
-            p.type || "",
-            p.kind || "",
-          ]
-            .filter(Boolean)
-            .map(escape)
-            .join(" · ")}</span>
-        </div>`
-      )
-      .join("");
-  }
-
-  const rect = input.getBoundingClientRect();
-  const left = rect.left + window.scrollX;
-  const top = rect.bottom + window.scrollY + 4;
-  const width = Math.max(rect.width, 240);
-
-  productAutocompleteDropdown.style.minWidth = width + "px";
-  productAutocompleteDropdown.style.left = left + "px";
-  productAutocompleteDropdown.style.top = top + "px";
-  productAutocompleteDropdown.style.display = "block";
-  document.body.classList.add("lock-scroll");
-}
-
-function hideProductAutocomplete() {
-  if (!productAutocompleteDropdown) return;
-  productAutocompleteDropdown.style.display = "none";
-  productAutocompleteDropdown.innerHTML = "";
-  currentProductInput = null;
-  document.body.classList.remove("lock-scroll");
-}
-
-function applyProductAutocompleteSelection(name) {
-  if (!currentProductInput) return;
-  currentProductInput.value = name;
-  currentProductInput.focus();
-  currentProductInput.dispatchEvent(new Event("input", { bubbles: true }));
-  hideProductAutocomplete();
-}
-
-// ==============================
-//  OPCIONES DE FILTRO
-// ==============================
 
 function renderShelfOptions() {
   refreshProductsFromUnified();

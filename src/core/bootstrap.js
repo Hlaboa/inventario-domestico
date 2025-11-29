@@ -257,8 +257,6 @@
     const {
       closeSelectionPopup,
       handleSelectionPopupResize,
-      initSelectionPopupDrag,
-      initProductAutocompleteEvents,
       handleSelectionPopupKeydown,
       initHorizontalTableScroll,
     } = handlers;
@@ -274,12 +272,6 @@
       });
     }
 
-    if (typeof initSelectionPopupDrag === "function") {
-      initSelectionPopupDrag();
-    }
-    if (typeof initProductAutocompleteEvents === "function") {
-      initProductAutocompleteEvents();
-    }
     if (typeof handleSelectionPopupResize === "function") {
       window.addEventListener("resize", handleSelectionPopupResize);
     }
