@@ -118,6 +118,7 @@ let saveClassificationsButton;
 let classificationViewContext;
 let producersViewContext;
 let storesViewContext;
+let instancesViewContext;
 
 // Tabs tiendas/productores
 let producersPanel;
@@ -511,6 +512,39 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (window.StoresView && typeof window.StoresView.init === "function") {
     window.StoresView.init(storesViewContext);
+  }
+
+  instancesViewContext = {
+    refs: {
+      tableBody: instancesTableBody,
+      addButton: addInstanceButton,
+      saveButton: saveInstancesButton,
+      searchInput: instancesSearchInput,
+      familyFilter: instancesFamilyFilterSelect,
+      producerFilter: instancesProducerFilterSelect,
+      storeFilter: instancesStoreFilterSelect,
+    },
+    data: {
+      instances: productInstances,
+      producers,
+      stores: suppliers,
+    },
+    getFamilyForInstance,
+    getProducerName,
+    getStoreNames,
+    buildFamilyStripeMap,
+    attachMultiSelectToggle,
+    persist: (list) => {
+      productInstances = list;
+      saveProductInstances();
+      cleanupSelectionsWithInstances();
+    },
+    onAfterSave: handleInstancesDependencies,
+    nowIsoString,
+  };
+
+  if (window.InstancesView && typeof window.InstancesView.init === "function") {
+    window.InstancesView.init(instancesViewContext);
   }
 
   InventoryView.init(getInventoryContext());
@@ -3909,6 +3943,14 @@ function handleStoresDependencies() {
   renderShoppingList();
 }
 
+function handleInstancesDependencies() {
+  renderInstancesTable();
+  renderProducts();
+  renderExtraQuickTable();
+  renderExtraEditTable();
+  renderShoppingList();
+}
+
 function handleGlobalSaveShortcut(e) {
   const isSaveKey = e.key && e.key.toLowerCase() === "s";
   if (!isSaveKey || (!e.metaKey && !e.ctrlKey)) return;
@@ -4051,191 +4093,14 @@ function filterStoresRows() {
 // ==============================
 
 function renderInstancesTable() {
-  if (!instancesTableBody) return;
-  hideProductAutocomplete();
-  instancesTableBody.innerHTML = "";
-
-  const search = (instancesSearchInput.value || "").toLowerCase();
-  const filterFamily = instancesFamilyFilterSelect.value || "";
-  const filterProducerId = instancesProducerFilterSelect.value || "";
-  const filterStoreId = instancesStoreFilterSelect.value || "";
-
-  let items = productInstances.slice();
-
-  items = items.filter((inst) => {
-    const family = getFamilyForInstance(inst);
-    if (filterFamily && family !== filterFamily) {
-      return false;
+  if (window.InstancesView && typeof window.InstancesView.render === "function") {
+    if (instancesViewContext && instancesViewContext.data) {
+      instancesViewContext.data.instances = productInstances;
+      instancesViewContext.data.producers = producers;
+      instancesViewContext.data.stores = suppliers;
     }
-    if (filterProducerId && inst.producerId !== filterProducerId) {
-      return false;
-    }
-    if (filterStoreId) {
-      if (!inst.storeIds || !inst.storeIds.includes(filterStoreId)) {
-        return false;
-      }
-    }
-
-    if (search) {
-      const prodName = inst.productName || "";
-      const producerName = getProducerName(inst.producerId);
-      const brand = inst.brand || "";
-      const stores = getStoreNames(inst.storeIds);
-      const notes = inst.notes || "";
-      const haystack = `${prodName} ${producerName} ${brand} ${stores} ${notes}`.toLowerCase();
-      if (!haystack.includes(search)) return false;
-    }
-
-    return true;
-  });
-
-  items.sort((a, b) => {
-    const famA = getFamilyForInstance(a) || "";
-    const famB = getFamilyForInstance(b) || "";
-    const cmpFam = famA.localeCompare(famB, "es", { sensitivity: "base" });
-    if (cmpFam !== 0) return cmpFam;
-    return (a.productName || "").localeCompare(b.productName || "", "es", {
-      sensitivity: "base",
-    });
-  });
-
-  if (items.length === 0) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 7;
-    td.textContent =
-      "No hay selecciones de productos todavía. Usa 'Añadir selección' para crear una.";
-    tr.appendChild(td);
-  instancesTableBody.prepend(tr);
-    return;
+    window.InstancesView.render(instancesViewContext);
   }
-
-  items.forEach((inst) => {
-    const tr = document.createElement("tr");
-    tr.dataset.id = inst.id;
-
-    const makeInput = (field, value = "", type = "text") => {
-      const input = document.createElement("input");
-      input.type = type;
-      input.value = value || "";
-      input.className = "table-input";
-      input.dataset.field = field;
-      return input;
-    };
-
-    let td;
-
-    // Producto (con datalist)
-    td = document.createElement("td");
-    const inputProd = makeInput("productName", inst.productName);
-    inputProd.classList.add("product-name-input");
-    inputProd.setAttribute("autocomplete", "off");
-    inputProd.placeholder = "Escribe para buscar en tu inventario...";
-    td.appendChild(inputProd);
-    const createBtn = document.createElement("button");
-    createBtn.type = "button";
-    createBtn.className = "btn btn-small btn-icon";
-    createBtn.textContent = "+";
-    createBtn.title = "Crear producto en 'Otros productos'";
-    createBtn.dataset.action = "create-product-selection";
-    td.appendChild(createBtn);
-    tr.appendChild(td);
-
-    const familyTd = document.createElement("td");
-    familyTd.className = "instances-family-cell";
-    familyTd.textContent = getFamilyForInstance(inst) || "—";
-    tr.appendChild(familyTd);
-    const updateMissingState = () => {
-      const known = isKnownProduct(inputProd.value, inst.productId);
-      tr.classList.toggle("instance-missing-product", !known);
-      familyTd.textContent = getFamilyByProductName(inputProd.value) || "—";
-      if (createBtn) {
-        createBtn.style.display = known ? "none" : "inline-flex";
-      }
-    };
-    inputProd.addEventListener("input", updateMissingState);
-    updateMissingState();
-
-    // Productor
-    td = document.createElement("td");
-    const selProd = document.createElement("select");
-    selProd.className = "table-input";
-    selProd.dataset.field = "producerId";
-
-    const optNone = document.createElement("option");
-    optNone.value = "";
-    optNone.textContent = "Sin productor";
-    selProd.appendChild(optNone);
-
-    producers
-      .slice()
-      .sort((a, b) =>
-        (a.name || "").localeCompare(b.name || "", "es", {
-          sensitivity: "base",
-        })
-      )
-      .forEach((p) => {
-        const o = document.createElement("option");
-        o.value = p.id;
-        o.textContent = p.name || "(sin nombre)";
-        selProd.appendChild(o);
-      });
-
-    selProd.value = inst.producerId || "";
-    td.appendChild(selProd);
-    tr.appendChild(td);
-
-    // Marca
-    td = document.createElement("td");
-    td.appendChild(makeInput("brand", inst.brand));
-    tr.appendChild(td);
-
-    // Tiendas asociadas (multiselect)
-    td = document.createElement("td");
-    const selStores = document.createElement("select");
-    selStores.className = "table-input";
-    selStores.dataset.field = "storeIds";
-    selStores.multiple = true;
-
-    suppliers
-      .slice()
-      .sort((a, b) =>
-        (a.name || "").localeCompare(b.name || "", "es", {
-          sensitivity: "base",
-        })
-      )
-      .forEach((s) => {
-        const o = document.createElement("option");
-        o.value = s.id;
-        o.textContent = s.name || "(sin nombre)";
-        if (inst.storeIds && inst.storeIds.includes(s.id)) {
-          o.selected = true;
-        }
-        selStores.appendChild(o);
-      });
-
-    td.appendChild(selStores);
-    tr.appendChild(td);
-    attachMultiSelectToggle(selStores);
-
-    // Notas
-    td = document.createElement("td");
-    const notesInput = makeInput("notes", inst.notes);
-    td.appendChild(notesInput);
-    tr.appendChild(td);
-
-    // Acciones
-    td = document.createElement("td");
-    const delBtn = document.createElement("button");
-    delBtn.className = "btn btn-small btn-danger";
-    delBtn.dataset.action = "delete-instance";
-    delBtn.dataset.id = inst.id;
-    delBtn.textContent = "✕";
-    td.appendChild(delBtn);
-    tr.appendChild(td);
-
-    instancesTableBody.appendChild(tr);
-  });
 }
 
 function renderAll() {

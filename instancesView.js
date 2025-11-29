@@ -103,14 +103,39 @@
       inputName.dataset.id = inst.id;
       inputName.dataset.field = "productName";
       inputName.setAttribute("list", "productsDatalist");
+      inputName.classList.add("product-name-input");
+      inputName.setAttribute("autocomplete", "off");
+      inputName.placeholder = "Escribe para buscar en tu inventario...";
       td.appendChild(inputName);
+      const createBtn = document.createElement("button");
+      createBtn.type = "button";
+      createBtn.className = "btn btn-small btn-icon";
+      createBtn.textContent = "+";
+      createBtn.title = "Crear producto en 'Otros productos'";
+      createBtn.dataset.action = "create-product-selection";
+      td.appendChild(createBtn);
       tr.appendChild(td);
 
       // Familia
       td = document.createElement("td");
       td.className = "instances-family-cell";
-      td.textContent = getFamilyForInstance(inst);
+      td.textContent = getFamilyForInstance(inst) || "—";
       tr.appendChild(td);
+      if (
+        typeof context.isKnownProduct === "function" &&
+        typeof context.getFamilyByProductName === "function"
+      ) {
+        const updateMissingState = () => {
+          const known = context.isKnownProduct(inputName.value, inst.productId);
+          tr.classList.toggle("instance-missing-product", !known);
+          td.textContent = context.getFamilyByProductName(inputName.value) || "—";
+          if (createBtn) {
+            createBtn.style.display = known ? "none" : "inline-flex";
+          }
+        };
+        inputName.addEventListener("input", updateMissingState);
+        updateMissingState();
+      }
 
       // Productor
       td = document.createElement("td");
