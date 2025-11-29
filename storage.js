@@ -7,6 +7,7 @@
   const STORAGE_KEY_PRODUCERS = "productoresCocina";
   const STORAGE_KEY_INSTANCES = "instanciasProductosCocina";
   const STORAGE_KEY_CLASSIFICATIONS = "clasificacionesProductosCocina";
+  const STORAGE_KEY_UNIFIED = "productosCocinaUnificados";
 
   function normalizeMultiFields(obj) {
     const copy = { ...obj };
@@ -33,6 +34,14 @@
     res.createdAt = res.createdAt || nowIsoString();
     res.updatedAt = res.updatedAt || res.createdAt;
     return res;
+  }
+
+  function normalizeUnifiedProduct(p) {
+    const scope =
+      p.scope === "otros" || p.scope === "almacen" ? p.scope : "almacen";
+    const base =
+      scope === "almacen" ? normalizeProduct(p) : normalizeExtraProduct(p);
+    return { ...base, scope };
   }
 
   function normalizeExtraProduct(p) {
@@ -173,6 +182,23 @@
     return safeLoadList(STORAGE_KEY_INSTANCES, normalizeInstance);
   }
 
+  function loadUnifiedProducts() {
+    const unified = safeLoadList(STORAGE_KEY_UNIFIED, normalizeUnifiedProduct);
+    if (Array.isArray(unified) && unified.length > 0) {
+      return unified;
+    }
+
+    // Migración desde claves antiguas
+    const oldProducts = loadProducts();
+    const oldExtras = loadExtraProducts();
+    const migrated = [
+      ...oldProducts.map((p) => normalizeUnifiedProduct({ ...p, scope: "almacen" })),
+      ...oldExtras.map((p) => normalizeUnifiedProduct({ ...p, scope: "otros" })),
+    ];
+    saveUnifiedProducts(migrated);
+    return migrated;
+  }
+
   function saveProducts(products) {
     saveList(STORAGE_KEY, products);
   }
@@ -192,6 +218,10 @@
     saveList(STORAGE_KEY_CLASSIFICATIONS, list);
   }
 
+  function saveUnifiedProducts(list) {
+    saveList(STORAGE_KEY_UNIFIED, list);
+  }
+
   function loadAllData() {
     const products = loadProducts();
     const extraProducts = loadExtraProducts();
@@ -199,9 +229,12 @@
     const producers = loadProducers();
     const classifications = loadClassifications(products, extraProducts);
     const productInstances = loadProductInstances();
+    const unifiedProducts = loadUnifiedProducts();
+
     return {
       products,
       extraProducts,
+      unifiedProducts,
       suppliers,
       producers,
       classifications,
@@ -222,16 +255,19 @@
     loadProducers,
     loadClassifications,
     loadProductInstances,
+    loadUnifiedProducts,
     saveProducts,
     saveExtraProducts,
     saveSuppliers,
     saveProducers,
     saveProductInstances,
     saveClassifications,
+    saveUnifiedProducts,
     loadAllData,
     normalize: {
       product: normalizeProduct,
       extraProduct: normalizeExtraProduct,
+      unifiedProduct: normalizeUnifiedProduct,
       supplier: normalizeSupplier,
       producer: normalizeProducer,
       instance: normalizeInstance,
@@ -240,6 +276,7 @@
     keys: {
       products: STORAGE_KEY,
       extraProducts: STORAGE_KEY_EXTRA,
+      unifiedProducts: STORAGE_KEY_UNIFIED,
       suppliers: STORAGE_KEY_SUPPLIERS,
       producers: STORAGE_KEY_PRODUCERS,
       productInstances: STORAGE_KEY_INSTANCES,

@@ -13,6 +13,7 @@
     {
       product: (p) => p,
       extraProduct: (p) => p,
+      unifiedProduct: (p) => p,
       supplier: (p) => p,
       producer: (p) => p,
       instance: (p) => p,
@@ -23,6 +24,7 @@
     storage.keys || {
       products: "inventarioCocinaAlmacen",
       extraProducts: "otrosProductosCompra",
+      unifiedProducts: "productosCocinaUnificados",
       suppliers: "proveedoresCocina",
       producers: "productoresCocina",
       productInstances: "instanciasProductosCocina",
@@ -32,6 +34,7 @@
   const saveMap = {
     products: storage.saveProducts,
     extraProducts: storage.saveExtraProducts,
+    unifiedProducts: storage.saveUnifiedProducts,
     suppliers: storage.saveSuppliers,
     producers: storage.saveProducers,
     productInstances: storage.saveProductInstances,
@@ -41,6 +44,7 @@
   const normalizerMap = {
     products: normalizers.product,
     extraProducts: normalizers.extraProduct,
+    unifiedProducts: normalizers.unifiedProduct,
     suppliers: normalizers.supplier,
     producers: normalizers.producer,
     productInstances: normalizers.instance,
@@ -50,6 +54,7 @@
   const loadMap = {
     products: storage.loadProducts,
     extraProducts: storage.loadExtraProducts,
+    unifiedProducts: storage.loadUnifiedProducts,
     suppliers: storage.loadSuppliers,
     producers: storage.loadProducers,
     productInstances: storage.loadProductInstances,
@@ -110,15 +115,63 @@
     return list;
   }
 
+  function buildUnifiedList(products = [], extras = [], existing = []) {
+    const now = nowIsoString();
+    const map = new Map();
+    const add = (item, scope) => {
+      if (!item) return;
+      const id =
+        item.id ||
+        (crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${scope}-` + Math.random().toString(36).slice(2));
+      const current = existing.find((u) => u.id === id) || {};
+      map.set(id, {
+        ...current,
+        ...item,
+        id,
+        scope,
+        createdAt: item.createdAt || current.createdAt || now,
+        updatedAt: now,
+      });
+    };
+    products.forEach((p) => add(p, "almacen"));
+    extras.forEach((p) => add(p, "otros"));
+    existing
+      .filter((u) => u && u.scope && !map.has(u.id))
+      .forEach((u) => map.set(u.id, u));
+    return Array.from(map.values());
+  }
+
   function loadAllFromStorage() {
     if (typeof storage.loadAllData === "function") {
       const data = storage.loadAllData();
+      const unified = normalizeList(
+        data.unifiedProducts || [],
+        normalizers.unifiedProduct
+      );
+      const products =
+        unified.length > 0
+          ? unified.filter((p) => p.scope === "almacen")
+          : normalizeList(data.products || [], normalizers.product);
+      const extraProducts =
+        unified.length > 0
+          ? unified.filter((p) => p.scope === "otros")
+          : normalizeList(data.extraProducts || [], normalizers.extraProduct);
+
       return {
-        products: normalizeList(data.products || [], normalizers.product),
-        extraProducts: normalizeList(
-          data.extraProducts || [],
-          normalizers.extraProduct
-        ),
+        products: normalizeList(products, normalizers.product),
+        extraProducts: normalizeList(extraProducts, normalizers.extraProduct),
+        unifiedProducts:
+          unified.length > 0
+            ? unified
+            : normalizeList(
+                [
+                  ...products.map((p) => ({ ...p, scope: "almacen" })),
+                  ...extraProducts.map((p) => ({ ...p, scope: "otros" })),
+                ],
+                normalizers.unifiedProduct
+              ),
         suppliers: normalizeList(data.suppliers || [], normalizers.supplier),
         producers: normalizeList(data.producers || [], normalizers.producer),
         classifications: normalizeList(
@@ -132,16 +185,33 @@
       };
     }
 
-    const products = normalizeList(
-      (loadMap.products && loadMap.products()) ||
-        fallbackLoad(storageKeys.products, normalizers.product),
-      normalizers.product
+    const unifiedProducts = normalizeList(
+      (loadMap.unifiedProducts && loadMap.unifiedProducts()) ||
+        fallbackLoad(storageKeys.unifiedProducts, normalizers.unifiedProduct),
+      normalizers.unifiedProduct
     );
-    const extraProducts = normalizeList(
-      (loadMap.extraProducts && loadMap.extraProducts()) ||
-        fallbackLoad(storageKeys.extraProducts, normalizers.extraProduct),
-      normalizers.extraProduct
-    );
+    const productsRaw =
+      unifiedProducts.length > 0
+        ? unifiedProducts
+        : normalizeList(
+            (loadMap.products && loadMap.products()) ||
+              fallbackLoad(storageKeys.products, normalizers.product),
+            normalizers.product
+          );
+    const extrasRaw =
+      unifiedProducts.length > 0
+        ? unifiedProducts
+        : normalizeList(
+            (loadMap.extraProducts && loadMap.extraProducts()) ||
+              fallbackLoad(storageKeys.extraProducts, normalizers.extraProduct),
+            normalizers.extraProduct
+          );
+    const products = productsRaw
+      .filter((p) => (p.scope ? p.scope === "almacen" : true))
+      .map((p) => ({ ...p, scope: "almacen" }));
+    const extraProducts = extrasRaw
+      .filter((p) => (p.scope ? p.scope === "otros" : true))
+      .map((p) => ({ ...p, scope: "otros" }));
     const suppliers = normalizeList(
       (loadMap.suppliers && loadMap.suppliers()) ||
         fallbackLoad(storageKeys.suppliers, normalizers.supplier),
@@ -156,7 +226,8 @@
       products,
       extraProducts,
       normalizeList(
-        (loadMap.classifications && loadMap.classifications(products, extraProducts)) ||
+        (loadMap.classifications &&
+          loadMap.classifications(products, extraProducts)) ||
           fallbackLoad(storageKeys.classifications, normalizers.classification),
         normalizers.classification
       )
@@ -167,9 +238,18 @@
       normalizers.instance
     );
 
+    const unified =
+      unifiedProducts.length > 0
+        ? unifiedProducts
+        : [
+            ...products.map((p) => ({ ...p, scope: "almacen" })),
+            ...extraProducts.map((p) => ({ ...p, scope: "otros" })),
+          ];
+
     return {
       products,
       extraProducts,
+      unifiedProducts: unified,
       suppliers,
       producers,
       classifications,
@@ -191,10 +271,27 @@
 
   function persistState(nextState) {
     const state = nextState || (stateStore && stateStore.getState()) || {};
-    persistEntity("products", normalizeList(state.products, normalizers.product));
+    const unified = buildUnifiedList(
+      state.products,
+      state.extraProducts,
+      state.unifiedProducts
+    );
+
+    persistEntity("unifiedProducts", unified);
+    // Compat: seguir guardando las listas separadas mientras migramos vistas
+    persistEntity(
+      "products",
+      normalizeList(
+        (state.products || []).map((p) => ({ ...p, scope: "almacen" })),
+        normalizers.product
+      )
+    );
     persistEntity(
       "extraProducts",
-      normalizeList(state.extraProducts, normalizers.extraProduct)
+      normalizeList(
+        (state.extraProducts || []).map((p) => ({ ...p, scope: "otros" })),
+        normalizers.extraProduct
+      )
     );
     persistEntity(
       "suppliers",
@@ -220,6 +317,20 @@
     if (stateStore && typeof stateStore.hydrate === "function") {
       stateStore.hydrate({ [name]: normalized });
     }
+
+    if (name === "products" || name === "extraProducts" || name === "unifiedProducts") {
+      const state =
+        (stateStore && typeof stateStore.getState === "function"
+          ? stateStore.getState()
+          : {}) || {};
+      const unified = buildUnifiedList(
+        name === "products" ? normalized : state.products,
+        name === "extraProducts" ? normalized : state.extraProducts,
+        name === "unifiedProducts" ? normalized : state.unifiedProducts
+      );
+      persistEntity("unifiedProducts", unified);
+    }
+
     persistEntity(name, normalized);
     return normalized;
   }
@@ -297,6 +408,7 @@
     persistState,
     setProducts: (list) => setEntity("products", list),
     setExtraProducts: (list) => setEntity("extraProducts", list),
+    setUnifiedProducts: (list) => setEntity("unifiedProducts", list),
     setSuppliers: (list) => setEntity("suppliers", list),
     setProducers: (list) => setEntity("producers", list),
     setProductInstances: (list) => setEntity("productInstances", list),

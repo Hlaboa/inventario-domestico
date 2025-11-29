@@ -3,6 +3,7 @@
   let state = {
     products: [],
     extraProducts: [],
+    unifiedProducts: [],
     suppliers: [],
     producers: [],
     classifications: [],
