@@ -3,6 +3,10 @@
   const rowMap = new Map();
   const hashMap = new Map();
   const stripeClassRegex = /^family-stripe-/;
+  let stripeCacheKey = "";
+  let stripeCache = {};
+  const selectionLabelCache = new Map();
+  const selectionStoresCache = new Map();
 
   const getCtx = (c) => c || ctx || {};
 
@@ -43,6 +47,44 @@
     typeof context.buildFamilyStripeMap === "function"
       ? context.buildFamilyStripeMap(items)
       : {};
+
+  function getStripeMap(context, items) {
+    const signature = items
+      .map((p) => ((p.block || "").trim() || "__none__"))
+      .join("|");
+    if (signature === stripeCacheKey && stripeCache) return stripeCache;
+    stripeCacheKey = signature;
+    stripeCache = buildStripeMap(context, items);
+    return stripeCache || {};
+  }
+
+  function getSelectionLabelCached(item, context) {
+    const key = item.selectionId || item.id || "";
+    const helpers = context.helpers || {};
+    if (!key || typeof helpers.getSelectionLabelForProduct !== "function") {
+      return helpers.getSelectionLabelForProduct
+        ? helpers.getSelectionLabelForProduct(item)
+        : "";
+    }
+    if (selectionLabelCache.has(key)) return selectionLabelCache.get(key);
+    const value = helpers.getSelectionLabelForProduct(item) || "";
+    selectionLabelCache.set(key, value);
+    return value;
+  }
+
+  function getSelectionStoresCached(item, context) {
+    const key = item.selectionId || item.id || "";
+    const helpers = context.helpers || {};
+    if (!key || typeof helpers.getSelectionStoresForProduct !== "function") {
+      return helpers.getSelectionStoresForProduct
+        ? helpers.getSelectionStoresForProduct(item)
+        : "";
+    }
+    if (selectionStoresCache.has(key)) return selectionStoresCache.get(key);
+    const value = helpers.getSelectionStoresForProduct(item) || "";
+    selectionStoresCache.set(key, value);
+    return value;
+  }
 
   const getRowHash = (item, context) => {
     const helpers = context.helpers || {};
@@ -99,12 +141,8 @@
           "[data-field='type']": item.type,
           "[data-field='quantity']": item.quantity,
           "[data-field='notes']": item.notes,
-          "[data-field='stores']": helpers.getSelectionStoresForProduct
-            ? helpers.getSelectionStoresForProduct(item)
-            : "",
-          "[data-field='selectionText']": helpers.getSelectionLabelForProduct
-            ? helpers.getSelectionLabelForProduct(item)
-            : "",
+          "[data-field='stores']": getSelectionStoresCached(item, context),
+          "[data-field='selectionText']": getSelectionLabelCached(item, context),
         },
         checkboxes: {
           'input[data-field="buy"]': !!item.buy,
@@ -142,19 +180,13 @@
     selCell.className = "selection-cell";
     const selText = document.createElement("div");
     selText.className = "selection-text";
-    selText.textContent = helpers.getSelectionLabelForProduct
-      ? helpers.getSelectionLabelForProduct(item)
-      : "";
+    selText.textContent = getSelectionLabelCached(item, context);
     selCell.appendChild(selectionBtn || document.createElement("span"));
     selCell.appendChild(selText);
     selTd.appendChild(selCell);
     tr.appendChild(selTd);
 
-    addCellText(
-      helpers.getSelectionStoresForProduct
-        ? helpers.getSelectionStoresForProduct(item)
-        : ""
-    );
+    addCellText(getSelectionStoresCached(item, context));
 
     let td = document.createElement("td");
     const chk = document.createElement("input");
@@ -188,13 +220,8 @@
     row.dataset.block = item.block || "";
     row.dataset.type = item.type || "";
     row.dataset.buy = item.buy ? "1" : "0";
-    const helpers = context.helpers || {};
-    const selectionLabel = helpers.getSelectionLabelForProduct
-      ? helpers.getSelectionLabelForProduct(item)
-      : "";
-    const storesLabel = helpers.getSelectionStoresForProduct
-      ? helpers.getSelectionStoresForProduct(item)
-      : "";
+    const selectionLabel = getSelectionLabelCached(item, context);
+    const storesLabel = getSelectionStoresCached(item, context);
     const inst =
       typeof context.getSelectionInstanceForProduct === "function"
         ? context.getSelectionInstanceForProduct(item)
@@ -202,6 +229,22 @@
     const storeIds = Array.isArray(inst?.storeIds) ? inst.storeIds : [];
     row.dataset.storeIds = storeIds.join(",");
     row.dataset.search = `${item.name || ""} ${item.block || ""} ${item.type || ""} ${item.quantity || ""} ${selectionLabel} ${storesLabel} ${item.notes || ""}`.toLowerCase();
+  }
+
+  function hasActiveFilters(refs = {}) {
+    const search = (refs.searchInput?.value || "").trim();
+    const filterFamily = refs.familyFilter?.value || "";
+    const filterType = refs.typeFilter?.value || "";
+    const filterStore = refs.storeFilter?.value || "";
+    const filterBuy = refs.buyFilter?.value || "all";
+    return (
+      search ||
+      filterFamily ||
+      filterType ||
+      filterStore ||
+      filterBuy === "yes" ||
+      filterBuy === "no"
+    );
   }
 
   function renderDrafts(context, tableBody) {
@@ -283,7 +326,10 @@
         ? context.getExtras()
         : []) || [];
     const sorted = extras.slice().sort(defaultSort);
-    const stripeMap = buildStripeMap(context, sorted);
+    const stripeMap = getStripeMap(context, sorted);
+
+    selectionLabelCache.clear();
+    selectionStoresCache.clear();
 
     tableBody.querySelectorAll(".extra-draft-row").forEach((tr) => tr.remove());
     tableBody
@@ -401,7 +447,9 @@
       if (row) {
         row.dataset.buy = target.checked ? "1" : "0";
       }
-      filterRows(context);
+      if (hasActiveFilters(context.refs)) {
+        filterRows(context);
+      }
       if (typeof context.onToggleBuy === "function") {
         context.onToggleBuy(id, target.checked);
       }

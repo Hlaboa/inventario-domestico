@@ -1,8 +1,25 @@
 (() => {
   const rowMap = new Map();
   const hashMap = new Map();
+  const selectionLabelCache = new Map();
+  const selectionStoresCache = new Map();
+  let stripeCacheKey = "";
+  let stripeCache = {};
 
   const stripeClassRegex = /^family-stripe-/;
+
+  function getStripeMap(items, helpers) {
+    const signature = items
+      .map((p) => ((p.block || "").trim() || "__none__"))
+      .join("|");
+    if (signature === stripeCacheKey && stripeCache) return stripeCache;
+    stripeCacheKey = signature;
+    stripeCache =
+      typeof helpers.buildFamilyStripeMap === "function"
+        ? helpers.buildFamilyStripeMap(items)
+        : {};
+    return stripeCache || {};
+  }
 
   function getRowHash(p, helpers) {
     return [
@@ -20,6 +37,28 @@
       helpers.getSelectionLabelForProduct ? helpers.getSelectionLabelForProduct(p) : "",
       helpers.getSelectionStoresForProduct ? helpers.getSelectionStoresForProduct(p) : "",
     ].join("||");
+  }
+
+  function getSelectionLabelCached(p, helpers) {
+    const key = p.selectionId || p.id || "";
+    if (!key || typeof helpers.getSelectionLabelForProduct !== "function") {
+      return helpers.getSelectionLabelForProduct ? helpers.getSelectionLabelForProduct(p) : "";
+    }
+    if (selectionLabelCache.has(key)) return selectionLabelCache.get(key);
+    const value = helpers.getSelectionLabelForProduct(p) || "";
+    selectionLabelCache.set(key, value);
+    return value;
+  }
+
+  function getSelectionStoresCached(p, helpers) {
+    const key = p.selectionId || p.id || "";
+    if (!key || typeof helpers.getSelectionStoresForProduct !== "function") {
+      return helpers.getSelectionStoresForProduct ? helpers.getSelectionStoresForProduct(p) : "";
+    }
+    if (selectionStoresCache.has(key)) return selectionStoresCache.get(key);
+    const value = helpers.getSelectionStoresForProduct(p) || "";
+    selectionStoresCache.set(key, value);
+    return value;
   }
 
   function applyStripe(row, stripe) {
@@ -46,6 +85,8 @@
     } = refs;
     const { products, productDrafts } = state;
     if (!productTableBody) return;
+    selectionLabelCache.clear();
+    selectionStoresCache.clear();
     productTableBody.querySelectorAll(".product-draft-row").forEach((tr) => tr.remove());
     productTableBody
       .querySelectorAll("tr:not([data-id]):not(.product-draft-row)")
@@ -76,8 +117,8 @@
           "[data-field='type']": product.type || "",
           "[data-field='shelf']": product.shelf || "",
           "[data-field='quantity']": product.quantity || "",
-          "[data-field='selectionText']": helpers.getSelectionLabelForProduct(product),
-          "[data-field='stores']": helpers.getSelectionStoresForProduct(product),
+          "[data-field='selectionText']": getSelectionLabelCached(product, helpers),
+          "[data-field='stores']": getSelectionStoresCached(product, helpers),
           "[data-field='acquisitionDate']": product.acquisitionDate || "",
           "[data-field='expiryText']": product.expiryText || "",
           "[data-field='notes']": product.notes || "",
@@ -128,7 +169,7 @@
       selCell.appendChild(selText);
       selTd.appendChild(selCell);
       tr.appendChild(selTd);
-      addCellText(helpers.getSelectionStoresForProduct(p));
+      addCellText(getSelectionStoresCached(p, helpers));
 
       let td = document.createElement("td");
       const haveCheck = document.createElement("input");
@@ -159,7 +200,7 @@
 
     let items = products.slice();
     items.sort(helpers.compareShelfBlockTypeName);
-    const stripeMap = helpers.buildFamilyStripeMap(items);
+    const stripeMap = getStripeMap(items, helpers);
 
     const frag =
       typeof document !== "undefined" && document.createDocumentFragment
@@ -273,8 +314,8 @@
         tr.dataset.block = p.block || "";
         tr.dataset.type = p.type || "";
         tr.dataset.have = p.have ? "1" : "0";
-        const selectionLabel = helpers.getSelectionLabelForProduct(p) || "";
-        const storesLabel = helpers.getSelectionStoresForProduct(p) || "";
+        const selectionLabel = getSelectionLabelCached(p, helpers) || "";
+        const storesLabel = getSelectionStoresCached(p, helpers) || "";
         tr.dataset.search = `${p.name || ""} ${p.block || ""} ${p.type || ""} ${p.shelf || ""} ${p.quantity || ""} ${p.notes || ""} ${selectionLabel} ${storesLabel}`.toLowerCase();
 
         if (target) target.appendChild(tr);

@@ -281,6 +281,7 @@ function getUnifiedList() {
 
 function setUnifiedList(next) {
   unifiedProducts = Array.isArray(next) ? next.filter(Boolean) : [];
+  memoProductsDatalistKey = "";
   refreshProductsFromUnified();
   if (stateAdapter && typeof stateAdapter.setEntity === "function") {
     stateAdapter.setEntity("unifiedProducts", unifiedProducts);
@@ -591,6 +592,7 @@ let memoProducerLocations = [];
 let memoStoreLocations = [];
 let memoInstanceFamilies = [];
 let memoProducerFilterOptions = "";
+let memoProductsDatalistKey = "";
 
 let filtersDefaultsApplied = false;
 let selectionDragCleanup = null;
@@ -3199,8 +3201,17 @@ function updateInstanceFilterOptions() {
 
 function renderProductsDatalist() {
   if (!productsDatalist) return;
-  productsDatalist.innerHTML = "";
   const list = getAllProductsForAssociationList();
+  const key = list
+    .slice()
+    .sort((a, b) => (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" }))
+    .map((p) => `${p.name}::${p.kind}`)
+    .join("|||");
+  if (memoProductsDatalistKey === key && productsDatalist.options.length === list.length) {
+    return;
+  }
+  memoProductsDatalistKey = key;
+  productsDatalist.innerHTML = "";
   list.forEach((p) => {
     const opt = document.createElement("option");
     opt.value = p.name;

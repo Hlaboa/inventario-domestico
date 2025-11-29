@@ -1,11 +1,54 @@
 (() => {
   let ctx = null;
+  const rowMap = new Map();
+  const hashMap = new Map();
+  let stripeCacheKey = "";
+  let stripeCache = {};
+
+  const stripeClassRegex = /^family-stripe-/;
 
   const getCtx = (c) => c || ctx || {};
   const getNow = (c) =>
     (c && typeof c.nowIsoString === "function"
       ? c.nowIsoString()
       : new Date().toISOString());
+
+  function getStripeMap(context, items, getFamilyForInstance) {
+    const signature = items
+      .map((inst) => ((getFamilyForInstance(inst) || "").trim() || "__none__"))
+      .join("|");
+    if (signature === stripeCacheKey && stripeCache) return stripeCache;
+    stripeCacheKey = signature;
+    stripeCache =
+      typeof context.buildFamilyStripeMap === "function"
+        ? context.buildFamilyStripeMap(items.map((inst) => ({ block: getFamilyForInstance(inst) })))
+        : {};
+    return stripeCache || {};
+  }
+
+  function applyStripe(row, stripe) {
+    if (!row || typeof row.classList === "undefined") return;
+    Array.from(row.classList)
+      .filter((cls) => stripeClassRegex.test(cls))
+      .forEach((cls) => row.classList.remove(cls));
+    if (typeof stripe === "number") {
+      row.classList.add(`family-stripe-${stripe}`);
+    }
+  }
+
+  function getRowHash(inst) {
+    const storeIds = Array.isArray(inst.storeIds) ? inst.storeIds.join(",") : "";
+    return [
+      inst.id,
+      inst.productId,
+      inst.productName,
+      inst.producerId,
+      inst.brand,
+      inst.block,
+      storeIds,
+      inst.notes,
+    ].join("||");
+  }
 
   function render(c) {
     const context = getCtx(c);
@@ -68,7 +111,11 @@
       return names.join(", ");
     };
 
-    tableBody.innerHTML = "";
+    const existingRows = new Map();
+    tableBody.querySelectorAll("tr[data-id]").forEach((tr) => {
+      if (tr.dataset.id) existingRows.set(tr.dataset.id, tr);
+    });
+
     let items = instances.slice();
 
     // Enriquecer con familia calculada (y actualizar instancia en memoria)
@@ -85,14 +132,11 @@
       return { ...inst, block: family };
     });
 
-    const stripeMap =
-      typeof context.buildFamilyStripeMap === "function"
-        ? context.buildFamilyStripeMap(
-            items.map((inst) => ({
-              block: getFamilyForInstance(inst),
-            }))
-          )
-        : {};
+    const stripeMap = getStripeMap(context, items, getFamilyForInstance);
+
+    const frag = document.createDocumentFragment();
+    const nextRowMap = new Map();
+    const nextHashMap = new Map();
 
     const makeInput = (field, value = "", type = "text") => {
       if (window.AppUtils && typeof window.AppUtils.createTableInput === "function") {
@@ -121,6 +165,12 @@
     };
 
     items.forEach((inst) => {
+      const hash = getRowHash(inst);
+      const existing = existingRows.get(inst.id);
+      let row = existing && hashMap.get(inst.id) === hash ? existing : null;
+      if (row) {
+        existingRows.delete(inst.id);
+      }
       const family = inst.block || getFamilyForInstance(inst) || "";
       const stripeKey = family || "__none__";
       const stripe = stripeMap[stripeKey] || 0;
@@ -189,8 +239,7 @@
 
       const notesArea = makeTextarea("notes", inst.notes || "");
 
-      let row = null;
-      if (rowTemplate && window.AppComponents && typeof window.AppComponents.buildRowWithTemplate === "function") {
+      if (!row && rowTemplate && window.AppComponents && typeof window.AppComponents.buildRowWithTemplate === "function") {
         row = window.AppComponents.buildRowWithTemplate({
           template: rowTemplate,
           stripe,
@@ -266,6 +315,7 @@
         row.appendChild(td);
       }
 
+      applyStripe(row, stripe);
       row.dataset.family = family || "";
       row.dataset.producerId = inst.producerId || "";
       row.dataset.storeIds = Array.isArray(inst.storeIds) ? inst.storeIds.join(",") : "";
@@ -298,8 +348,19 @@
         updateMissingState();
       }
 
-      tableBody.appendChild(row);
+      frag.appendChild(row);
+      nextRowMap.set(inst.id, row);
+      nextHashMap.set(inst.id, hash);
     });
+
+    existingRows.forEach((row) => row.remove());
+
+    rowMap.clear();
+    nextRowMap.forEach((row, id) => rowMap.set(id, row));
+    hashMap.clear();
+    nextHashMap.forEach((hash, id) => hashMap.set(id, hash));
+
+    tableBody.appendChild(frag);
 
     if (typeof context.attachMultiSelectToggle === "function") {
       Array.from(tableBody.querySelectorAll('select[multiple][data-field="storeIds"]')).forEach(
