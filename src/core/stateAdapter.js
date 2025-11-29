@@ -203,6 +203,9 @@
       if (dataService && typeof dataService.hydrateFromStorage === "function") {
         return dataService.hydrateFromStorage();
       }
+      if (appState && typeof appState.getState === "function") {
+        return appState.getState();
+      }
       return getState();
     },
     getState,

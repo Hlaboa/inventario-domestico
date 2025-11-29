@@ -21,6 +21,7 @@ let classifications = []; // combinaciones familia/tipo
 let productDrafts = [];
 let extraDrafts = [];
 const stateAdapter = window.StateAdapter || null;
+let isSyncingFromStore = false;
 
 function getStateSnapshot() {
   if (stateAdapter && typeof stateAdapter.getState === "function") {
@@ -65,6 +66,36 @@ function getInstancesList() {
   return Array.isArray(state.productInstances) && state.productInstances.length
     ? state.productInstances
     : productInstances;
+}
+
+function setInstancesList(list) {
+  const next = Array.isArray(list) ? list : [];
+  productInstances = next;
+  if (isSyncingFromStore) return next;
+  if (stateAdapter && typeof stateAdapter.setEntity === "function") {
+    stateAdapter.setEntity("productInstances", next);
+    syncFromAppStore();
+    return next;
+  }
+  if (
+    window.AppStore &&
+    window.AppStore.actions &&
+    typeof window.AppStore.actions.setProductInstances === "function"
+  ) {
+    window.AppStore.actions.setProductInstances(next);
+    syncFromAppStore();
+    return next;
+  }
+  if (window.DataService && typeof window.DataService.setProductInstances === "function") {
+    productInstances = window.DataService.setProductInstances(next);
+    return productInstances;
+  }
+  if (window.AppStorage && typeof window.AppStorage.saveProductInstances === "function") {
+    window.AppStorage.saveProductInstances(productInstances);
+    return productInstances;
+  }
+  saveList(STORAGE_KEY_INSTANCES, productInstances);
+  return productInstances;
 }
 
 function getStateSnapshot() {
@@ -182,6 +213,20 @@ function isStoreActive() {
   );
 }
 
+function hasSnapshotData(snap) {
+  if (!snap || typeof snap !== "object") return false;
+  const arrays = [
+    snap.unifiedProducts,
+    snap.products,
+    snap.extraProducts,
+    snap.suppliers,
+    snap.producers,
+    snap.productInstances,
+    snap.classifications,
+  ].filter(Array.isArray);
+  return arrays.some((arr) => arr.length > 0);
+}
+
 function applyStateSnapshot(snapshot = {}) {
   const nextProducts = snapshot.products || products || [];
   const nextExtras = snapshot.extraProducts || extraProducts || [];
@@ -211,27 +256,18 @@ function syncFromAppStore() {
 function persistUnified(list) {
   unifiedProducts = Array.isArray(list) ? list : [];
   refreshProductsFromUnified();
-  if (
-    window.AppStore &&
-    window.AppStore.actions &&
-    typeof window.AppStore.actions.setUnifiedProducts === "function"
-  ) {
-    window.AppStore.actions.setUnifiedProducts(unifiedProducts);
-    syncFromAppStore();
-    return;
-  }
-  if (window.DataService && typeof window.DataService.setUnifiedProducts === "function") {
-    unifiedProducts = window.DataService.setUnifiedProducts(unifiedProducts);
-    refreshProductsFromUnified();
-    return;
-  }
+  // Persist directly to storage to evitar bucles con AppStore durante el refactor
   if (window.AppStorage && typeof window.AppStorage.saveUnifiedProducts === "function") {
     window.AppStorage.saveUnifiedProducts(unifiedProducts);
-    return;
+  } else if (window.DataService && typeof window.DataService.setUnifiedProducts === "function") {
+    try {
+      window.DataService.setUnifiedProducts(unifiedProducts);
+    } catch {}
+  } else {
+    try {
+      localStorage.setItem("productosCocinaUnificados", JSON.stringify(unifiedProducts));
+    } catch {}
   }
-  try {
-    localStorage.setItem("productosCocinaUnificados", JSON.stringify(unifiedProducts));
-  } catch {}
 }
 
 // ==============================
@@ -638,8 +674,10 @@ document.addEventListener("DOMContentLoaded", () => {
   loadAllData();
 
   const syncFromState = (next) => {
+    isSyncingFromStore = true;
     applyStateSnapshot(next || {});
     ensureInstanceFamilies({ persist: false });
+    isSyncingFromStore = false;
     renderShelfOptions();
     renderBlockOptions();
     renderTypeOptions();
@@ -1371,39 +1409,56 @@ function saveClassifications() {
 }
 
 function loadAllData() {
-  if (stateAdapter && typeof stateAdapter.bootstrap === "function") {
-    const snapshot = stateAdapter.bootstrap();
-    applyStateSnapshot(snapshot || {});
+  const loaders = [
+    () => stateAdapter && typeof stateAdapter.bootstrap === "function" && stateAdapter.bootstrap(),
+    () => window.AppStore && typeof window.AppStore.bootstrap === "function" && window.AppStore.bootstrap(),
+    () =>
+      window.DataService &&
+      typeof window.DataService.hydrateFromStorage === "function" &&
+      window.DataService.hydrateFromStorage(),
+    () => window.AppStorage && typeof window.AppStorage.loadAllData === "function" && window.AppStorage.loadAllData(),
+    () => ({
+      unifiedProducts: safeLoadList("productosCocinaUnificados"),
+      suppliers: safeLoadList(STORAGE_KEY_SUPPLIERS),
+      producers: safeLoadList(STORAGE_KEY_PRODUCERS),
+      classifications: safeLoadList(STORAGE_KEY_CLASSIFICATIONS),
+      productInstances: safeLoadList(STORAGE_KEY_INSTANCES),
+    }),
+  ];
+
+  for (const load of loaders) {
+    let snapshot = null;
+    try {
+      snapshot = typeof load === "function" ? load() : null;
+    } catch {
+      snapshot = null;
+    }
+    if (hasSnapshotData(snapshot)) {
+      applyStateSnapshot(snapshot);
+      ensureInstanceFamilies({ persist: false });
+      return;
+    }
+  }
+
+  // Fallback legacy keys (antes: inventarioCocinaAlmacen / otrosProductosCompra)
+  const legacyProducts = safeLoadList("inventarioCocinaAlmacen");
+  const legacyExtras = safeLoadList("otrosProductosCompra");
+  if (legacyProducts.length || legacyExtras.length) {
+    const unified = [
+      ...legacyProducts.map((p) => ({ ...p, scope: "almacen" })),
+      ...legacyExtras.map((p) => ({ ...p, scope: "otros" })),
+    ];
+    applyStateSnapshot({ unifiedProducts: unified });
     ensureInstanceFamilies({ persist: false });
     return;
   }
 
-  if (window.AppStore && typeof window.AppStore.bootstrap === "function") {
-    const snapshot = window.AppStore.bootstrap();
-    applyStateSnapshot(snapshot);
-    ensureInstanceFamilies({ persist: false });
-    return;
-  }
+  // Si llegamos aquí, no se encontró nada; logueamos claves para diagnosticar
+  try {
+    console.warn("[loadAllData] No data found; localStorage keys:", Object.keys(localStorage));
+  } catch {}
 
-  if (
-    window.DataService &&
-    typeof window.DataService.hydrateFromStorage === "function"
-  ) {
-    const data = window.DataService.hydrateFromStorage();
-    applyStateSnapshot(data);
-    ensureInstanceFamilies({ persist: false });
-    return;
-  }
-
-  if (window.AppStorage && typeof window.AppStorage.loadAllData === "function") {
-    const data = window.AppStorage.loadAllData();
-    applyStateSnapshot(data);
-    ensureInstanceFamilies({ persist: false });
-    return;
-  }
-
-  // Fallback mínimo a almacenamiento local unificado
-  unifiedProducts = safeLoadList("productosCocinaUnificados");
+  unifiedProducts = [];
   refreshProductsFromUnified();
 }
 
@@ -1720,10 +1775,13 @@ function ensureInstanceFamilies({ persist = false } = {}) {
   });
   if (changed) {
     productInstances = updated;
-    if (persist) {
-      try {
-        saveProductInstances();
-      } catch {}
+    if (!isSyncingFromStore) {
+      setInstancesList(productInstances);
+      if (persist) {
+        try {
+          saveProductInstances();
+        } catch {}
+      }
     }
   }
 }
@@ -3434,6 +3492,7 @@ function persistInstances(list, options = {}) {
 
   const next = Array.from(updates.values());
   productInstances = consolidateInstances(next, now);
+  setInstancesList(productInstances);
   saveProductInstances();
   cleanupSelectionsWithInstances();
 }

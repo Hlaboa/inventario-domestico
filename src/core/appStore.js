@@ -195,10 +195,11 @@
     });
   };
 
+  // Evita bucles de notificación entre AppState y AppStore
   if (appState?.subscribe) {
     appState.subscribe((next) => {
       captureState(next || {});
-      notify();
+      // No disparamos notify aquí para no entrar en recursión con AppState
     });
   }
 
