@@ -345,16 +345,6 @@ document.addEventListener("DOMContentLoaded", () => {
   almacenEditModeButton.addEventListener("click", toggleAlmacenEditMode);
   otrosEditModeButton.addEventListener("click", toggleOtrosEditMode);
 
-  // Filtros almacén
-  filterSearchInput.addEventListener("input", renderProducts);
-  filterShelfSelect.addEventListener("change", renderProducts);
-  filterBlockSelect.addEventListener("change", renderProducts);
-  filterTypeSelect.addEventListener("change", renderProducts);
-  filterStoreSelect.addEventListener("change", renderProducts);
-  filterStatusSelect.addEventListener("change", renderProducts);
-
-  productTableBody.addEventListener("click", handleInventoryTableClick);
-
   // Edición almacén
   saveGridButton.addEventListener("click", handleSaveGrid);
   addGridRowButton.addEventListener("click", handleAddGridRow);
@@ -465,6 +455,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Carga datos y renderizado inicial
   loadAllData();
+
+  const syncFromState = (next) => {
+    const snapshot = next || {};
+    if (snapshot.products) products = snapshot.products;
+    if (snapshot.extraProducts) extraProducts = snapshot.extraProducts;
+    if (snapshot.suppliers) suppliers = snapshot.suppliers;
+    if (snapshot.producers) producers = snapshot.producers;
+    if (snapshot.classifications) classifications = snapshot.classifications;
+    if (snapshot.productInstances) productInstances = snapshot.productInstances;
+  };
+
+  if (window.AppState && typeof window.AppState.subscribe === "function") {
+    syncFromState(window.AppState.getState());
+    window.AppState.subscribe(syncFromState);
+  }
+
   InventoryView.init(getInventoryContext());
   renderAll();
   document.addEventListener("keydown", handleGlobalSaveShortcut);
@@ -740,6 +746,10 @@ function loadProductInstances() {
 }
 
 function saveProducts() {
+  if (window.DataService && typeof window.DataService.setProducts === "function") {
+    products = window.DataService.setProducts(products);
+    return;
+  }
   if (window.AppStorage && typeof window.AppStorage.saveProducts === "function") {
     window.AppStorage.saveProducts(products);
     return;
@@ -747,6 +757,13 @@ function saveProducts() {
   saveList(STORAGE_KEY, products);
 }
 function saveExtraProducts() {
+  if (
+    window.DataService &&
+    typeof window.DataService.setExtraProducts === "function"
+  ) {
+    extraProducts = window.DataService.setExtraProducts(extraProducts);
+    return;
+  }
   if (window.AppStorage && typeof window.AppStorage.saveExtraProducts === "function") {
     window.AppStorage.saveExtraProducts(extraProducts);
     return;
@@ -754,6 +771,10 @@ function saveExtraProducts() {
   saveList(STORAGE_KEY_EXTRA, extraProducts);
 }
 function saveSuppliers() {
+  if (window.DataService && typeof window.DataService.setSuppliers === "function") {
+    suppliers = window.DataService.setSuppliers(suppliers);
+    return;
+  }
   if (window.AppStorage && typeof window.AppStorage.saveSuppliers === "function") {
     window.AppStorage.saveSuppliers(suppliers);
     return;
@@ -761,6 +782,10 @@ function saveSuppliers() {
   saveList(STORAGE_KEY_SUPPLIERS, suppliers);
 }
 function saveProducers() {
+  if (window.DataService && typeof window.DataService.setProducers === "function") {
+    producers = window.DataService.setProducers(producers);
+    return;
+  }
   if (window.AppStorage && typeof window.AppStorage.saveProducers === "function") {
     window.AppStorage.saveProducers(producers);
     return;
@@ -768,6 +793,13 @@ function saveProducers() {
   saveList(STORAGE_KEY_PRODUCERS, producers);
 }
 function saveProductInstances() {
+  if (
+    window.DataService &&
+    typeof window.DataService.setProductInstances === "function"
+  ) {
+    productInstances = window.DataService.setProductInstances(productInstances);
+    return;
+  }
   if (window.AppStorage && typeof window.AppStorage.saveProductInstances === "function") {
     window.AppStorage.saveProductInstances(productInstances);
     return;
@@ -775,6 +807,13 @@ function saveProductInstances() {
   saveList(STORAGE_KEY_INSTANCES, productInstances);
 }
 function saveClassifications() {
+  if (
+    window.DataService &&
+    typeof window.DataService.setClassifications === "function"
+  ) {
+    classifications = window.DataService.setClassifications(classifications);
+    return;
+  }
   if (window.AppStorage && typeof window.AppStorage.saveClassifications === "function") {
     window.AppStorage.saveClassifications(classifications);
     return;
@@ -783,6 +822,20 @@ function saveClassifications() {
 }
 
 function loadAllData() {
+  if (
+    window.DataService &&
+    typeof window.DataService.hydrateFromStorage === "function"
+  ) {
+    const data = window.DataService.hydrateFromStorage();
+    products = data.products || [];
+    extraProducts = data.extraProducts || [];
+    suppliers = data.suppliers || [];
+    producers = data.producers || [];
+    classifications = data.classifications || [];
+    productInstances = data.productInstances || [];
+    return;
+  }
+
   if (window.AppStorage && typeof window.AppStorage.loadAllData === "function") {
     const data = window.AppStorage.loadAllData();
     products = data.products || [];
@@ -793,6 +846,7 @@ function loadAllData() {
     productInstances = data.productInstances || [];
     return;
   }
+
   loadProducts();
   loadExtraProducts();
   loadSuppliers();
@@ -928,6 +982,18 @@ function getStoreNames(storeIds) {
 }
 
 function getClassificationFamilies() {
+  if (
+    window.DataService &&
+    window.DataService.selectors &&
+    typeof window.DataService.selectors.families === "function"
+  ) {
+    return window.DataService.selectors.families({
+      products,
+      extraProducts,
+      classifications,
+    });
+  }
+
   if (classifications.length === 0) {
     return Array.from(
       new Set(
@@ -947,6 +1013,17 @@ function getClassificationFamilies() {
 }
 
 function getClassificationTypes(family = "") {
+  if (
+    window.DataService &&
+    window.DataService.selectors &&
+    typeof window.DataService.selectors.types === "function"
+  ) {
+    return window.DataService.selectors.types(
+      { products, extraProducts, classifications },
+      family
+    );
+  }
+
   const fam = (family || "").trim();
   const source =
     classifications.length === 0
@@ -2294,13 +2371,20 @@ function renderStoreOptions() {
 }
 
 function updateProducerFilterOptions() {
-  const locations = Array.from(
-    new Set(
-      producers
-        .map((p) => (p.location || "").trim())
-        .filter((l) => l.length > 0)
-    )
-  ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+  const locations =
+    (window.DataService &&
+      window.DataService.selectors &&
+      typeof window.DataService.selectors.producerLocations === "function" &&
+      window.DataService.selectors.producerLocations({
+        producers,
+      })) ||
+    Array.from(
+      new Set(
+        producers
+          .map((p) => (p.location || "").trim())
+          .filter((l) => l.length > 0)
+      )
+    ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
 
   if (producersLocationFilterSelect) {
     const current = producersLocationFilterSelect.value;
@@ -2345,13 +2429,20 @@ function updateProducerFilterOptions() {
 }
 
 function updateStoreFilterOptions() {
-  const locations = Array.from(
-    new Set(
-      suppliers
-        .map((s) => (s.location || "").trim())
-        .filter((l) => l.length > 0)
-    )
-  ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+  const locations =
+    (window.DataService &&
+      window.DataService.selectors &&
+      typeof window.DataService.selectors.storeLocations === "function" &&
+      window.DataService.selectors.storeLocations({
+        suppliers,
+      })) ||
+    Array.from(
+      new Set(
+        suppliers
+          .map((s) => (s.location || "").trim())
+          .filter((l) => l.length > 0)
+      )
+    ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
 
   if (storesLocationFilterSelect) {
     const current = storesLocationFilterSelect.value;

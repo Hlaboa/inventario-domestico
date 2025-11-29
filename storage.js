@@ -229,5 +229,21 @@
     saveProductInstances,
     saveClassifications,
     loadAllData,
+    normalize: {
+      product: normalizeProduct,
+      extraProduct: normalizeExtraProduct,
+      supplier: normalizeSupplier,
+      producer: normalizeProducer,
+      instance: normalizeInstance,
+      classification: normalizeClassification,
+    },
+    keys: {
+      products: STORAGE_KEY,
+      extraProducts: STORAGE_KEY_EXTRA,
+      suppliers: STORAGE_KEY_SUPPLIERS,
+      producers: STORAGE_KEY_PRODUCERS,
+      productInstances: STORAGE_KEY_INSTANCES,
+      classifications: STORAGE_KEY_CLASSIFICATIONS,
+    },
   };
 })();
