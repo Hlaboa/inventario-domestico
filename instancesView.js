@@ -216,6 +216,18 @@
     }
   }
 
+  function persistAndRender(context, list) {
+    const data = context.data || {};
+    if (typeof context.persist === "function") {
+      context.persist(list);
+    }
+    context.data = { ...data, instances: list };
+    render(context);
+    if (typeof context.onAfterSave === "function") {
+      context.onAfterSave(list);
+    }
+  }
+
   function collectRows(context) {
     const refs = context.refs || {};
     const tableBody = refs.tableBody;
@@ -313,22 +325,24 @@
     if (!action) return;
     if (action === "delete-instance") {
       const tr = target.closest("tr");
-      if (tr) tr.remove();
+      if (!tr) return;
+      const id = tr.dataset.id;
+      const current = (getCtx().data?.instances || []).filter(
+        (i) => i.id !== id
+      );
+      persistAndRender(getCtx(), current);
+    } else if (action === "create-product-selection") {
+      if (typeof getCtx().onCreateProduct === "function") {
+        const tr = target.closest("tr");
+        getCtx().onCreateProduct(tr);
+      }
     }
   }
 
   function save(c) {
     const context = getCtx(c);
     const list = collectRows(context);
-    if (typeof context.persist === "function") {
-      context.persist(list);
-    }
-    const data = context.data || {};
-    context.data = { ...data, instances: list };
-    render(context);
-    if (typeof context.onAfterSave === "function") {
-      context.onAfterSave(list);
-    }
+    persistAndRender(context, list);
   }
 
   function bindFilters(context) {

@@ -394,7 +394,6 @@ document.addEventListener("DOMContentLoaded", () => {
   instancesStoreFilterSelect.addEventListener("change", renderInstancesTable);
   addInstanceButton.addEventListener("click", handleAddInstanceRow);
   saveInstancesButton.addEventListener("click", handleSaveInstances);
-  instancesTableBody.addEventListener("click", handleInstancesTableClick);
   if (addQuickProductButton)
     addQuickProductButton.addEventListener("click", handleAddQuickProduct);
   if (addQuickExtraButton)
@@ -534,11 +533,8 @@ document.addEventListener("DOMContentLoaded", () => {
     getStoreNames,
     buildFamilyStripeMap,
     attachMultiSelectToggle,
-    persist: (list) => {
-      productInstances = list;
-      saveProductInstances();
-      cleanupSelectionsWithInstances();
-    },
+    persist: persistInstances,
+    onCreateProduct: openInlineProductCreator,
     onAfterSave: handleInstancesDependencies,
     nowIsoString,
   };
@@ -3943,6 +3939,59 @@ function handleStoresDependencies() {
   renderShoppingList();
 }
 
+function persistInstances(list) {
+  const now = nowIsoString();
+  const allProducts = getAllProductsForAssociationList();
+  const updates = new Map();
+
+  (list || []).forEach((inst) => {
+    const id =
+      inst.id ||
+      (crypto.randomUUID ? crypto.randomUUID() : "inst-" + Date.now()) +
+        "-" +
+        Math.random().toString(36).slice(2);
+    const productName = (inst.productName || "").trim();
+    const lower = productName.toLowerCase();
+    const match =
+      lower &&
+      allProducts.find((p) => (p.name || "").trim().toLowerCase() === lower);
+    const productId = match ? match.id : inst.productId || "";
+    const existing = productInstances.find((i) => i.id === id) || {};
+    const createdAt = existing.createdAt || inst.createdAt || now;
+    updates.set(id, {
+      ...inst,
+      id,
+      productId,
+      productName,
+      storeIds: Array.isArray(inst.storeIds) ? inst.storeIds.filter(Boolean) : [],
+      createdAt,
+      updatedAt: now,
+    });
+  });
+
+  const next = [];
+  const seen = new Set();
+
+  productInstances.forEach((inst) => {
+    if (updates.has(inst.id)) {
+      next.push(updates.get(inst.id));
+      seen.add(inst.id);
+    } else {
+      next.push(inst);
+    }
+  });
+
+  updates.forEach((val, id) => {
+    if (!seen.has(id)) {
+      next.push(val);
+    }
+  });
+
+  productInstances = consolidateInstances(next, now);
+  saveProductInstances();
+  cleanupSelectionsWithInstances();
+}
+
 function handleInstancesDependencies() {
   renderInstancesTable();
   renderProducts();
@@ -4093,6 +4142,7 @@ function filterStoresRows() {
 // ==============================
 
 function renderInstancesTable() {
+  hideProductAutocomplete();
   if (window.InstancesView && typeof window.InstancesView.render === "function") {
     if (instancesViewContext && instancesViewContext.data) {
       instancesViewContext.data.instances = productInstances;
@@ -4126,313 +4176,15 @@ function renderAll() {
 }
 
 function handleAddInstanceRow() {
-  const now = nowIsoString();
-  const id =
-    (crypto.randomUUID ? crypto.randomUUID() : "inst-" + Date.now()) +
-    "-" +
-    Math.random().toString(36).slice(2);
-
-  const inst = {
-    id,
-    productId: "",
-    productName: "",
-    producerId: "",
-    brand: "",
-    storeIds: [],
-    notes: "",
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  if (!instancesTableBody) return;
-
-  const tr = document.createElement("tr");
-  tr.dataset.id = inst.id;
-
-  const makeInput = (field, value = "", type = "text") => {
-    const input = document.createElement("input");
-    input.type = type;
-    input.value = value || "";
-    input.className = "table-input";
-    input.dataset.field = field;
-    return input;
-  };
-
-  let td;
-
-  // Producto (con datalist)
-  td = document.createElement("td");
-  const inputProd = makeInput("productName", inst.productName);
-  inputProd.classList.add("product-name-input");
-  inputProd.setAttribute("autocomplete", "off");
-  inputProd.placeholder = "Escribe para buscar en tu inventario...";
-  td.appendChild(inputProd);
-  const createBtn = document.createElement("button");
-  createBtn.type = "button";
-  createBtn.className = "btn btn-small btn-icon";
-  createBtn.textContent = "+";
-  createBtn.title = "Crear producto en 'Otros productos'";
-  createBtn.dataset.action = "create-product-selection";
-  td.appendChild(createBtn);
-  tr.appendChild(td);
-
-  // Familia (solo lectura)
-  const familyTd = document.createElement("td");
-  familyTd.className = "instances-family-cell";
-  familyTd.textContent = getFamilyForInstance(inst) || "—";
-  tr.appendChild(familyTd);
-  inputProd.addEventListener("input", () => {
-    const known = isKnownProduct(inputProd.value, inst.productId);
-    tr.classList.toggle("instance-missing-product", !known);
-    if (createBtn) {
-      createBtn.style.display = known ? "none" : "inline-flex";
-    }
-    familyTd.textContent = getFamilyByProductName(inputProd.value) || "—";
-  });
-  // Init missing state
-  const knownInit = isKnownProduct(inputProd.value, inst.productId);
-  tr.classList.toggle("instance-missing-product", !knownInit);
-  if (createBtn) {
-    createBtn.style.display = knownInit ? "none" : "inline-flex";
-  }
-
-  // Productor
-  td = document.createElement("td");
-  const selProd = document.createElement("select");
-  selProd.className = "table-input";
-  selProd.dataset.field = "producerId";
-  const optNone = document.createElement("option");
-  optNone.value = "";
-  optNone.textContent = "Sin productor";
-  selProd.appendChild(optNone);
-  producers
-    .slice()
-    .sort((a, b) =>
-      (a.name || "").localeCompare(b.name || "", "es", {
-        sensitivity: "base",
-      })
-    )
-    .forEach((p) => {
-      const o = document.createElement("option");
-      o.value = p.id;
-      o.textContent = p.name || "(sin nombre)";
-      selProd.appendChild(o);
-    });
-  if (
-    instancesProducerFilterSelect &&
-    instancesProducerFilterSelect.value &&
-    producers.some((p) => p.id === instancesProducerFilterSelect.value)
-  ) {
-    selProd.value = instancesProducerFilterSelect.value;
-  }
-  td.appendChild(selProd);
-  const addProdBtn = document.createElement("button");
-  addProdBtn.className = "btn btn-small btn-icon";
-  addProdBtn.textContent = "+";
-  addProdBtn.title = "Añadir productor";
-  addProdBtn.addEventListener("click", () => {
-    const name = prompt("Nombre del productor");
-    addQuickProducer({ name }, selProd);
-  });
-  td.appendChild(addProdBtn);
- tr.appendChild(td);
-
-  // Marca
-  td = document.createElement("td");
-  td.appendChild(makeInput("brand", inst.brand));
-  tr.appendChild(td);
-
-  // Tiendas (multiselect)
-  td = document.createElement("td");
-  const selStores = document.createElement("select");
-  selStores.className = "table-input";
-  selStores.dataset.field = "storeIds";
-  selStores.multiple = true;
-  const chips = document.createElement("div");
-  chips.className = "store-selected-chips";
-  suppliers
-    .slice()
-    .sort((a, b) =>
-      (a.name || "").localeCompare(b.name || "", "es", {
-        sensitivity: "base",
-      })
-    )
-    .forEach((s) => {
-      const o = document.createElement("option");
-      o.value = s.id;
-      o.textContent = s.name || "(sin nombre)";
-      selStores.appendChild(o);
-    });
-  if (
-    instancesProducerFilterSelect &&
-    instancesProducerFilterSelect.value &&
-    producers.some((p) => p.id === instancesProducerFilterSelect.value)
-  ) {
-    selProd.value = instancesProducerFilterSelect.value;
-  }
-  if (
-    instancesStoreFilterSelect &&
-    instancesStoreFilterSelect.value &&
-    suppliers.some((s) => s.id === instancesStoreFilterSelect.value)
-  ) {
-    Array.from(selStores.options).forEach((opt) => {
-      if (opt.value === instancesStoreFilterSelect.value) {
-        opt.selected = true;
-      }
-    });
-  }
-  attachMultiSelectToggle(selStores);
-  const addStoreBtn = document.createElement("button");
-  addStoreBtn.className = "btn btn-small btn-icon";
-  addStoreBtn.textContent = "+";
-  addStoreBtn.title = "Añadir tienda";
-  addStoreBtn.addEventListener("click", () => {
-    const name = prompt("Nombre de la tienda");
-    addQuickStore({ name }, selStores, chips);
-  });
-  selStores.addEventListener("change", () =>
-    updateStoreChips(selStores, chips)
-  );
-  updateStoreChips(selStores, chips);
-  td.appendChild(selStores);
-  td.appendChild(addStoreBtn);
-  td.appendChild(chips);
-  tr.appendChild(td);
-
-  // Notas
-  td = document.createElement("td");
-  td.appendChild(makeInput("notes", inst.notes));
-  tr.appendChild(td);
-
-  // Acciones
-  td = document.createElement("td");
-  const delBtn = document.createElement("button");
-  delBtn.className = "btn btn-small btn-danger";
-  delBtn.dataset.action = "delete-instance";
-  delBtn.dataset.id = inst.id;
-  delBtn.textContent = "✕";
-  td.appendChild(delBtn);
-  tr.appendChild(td);
-
-  instancesTableBody.prepend(tr);
-}
-
-function handleInstancesTableClick(e) {
-  const target = e.target;
-  const action = target.dataset.action;
-  if (!action) return;
-
-  if (action === "delete-instance") {
-    const tr = target.closest("tr");
-    if (tr) {
-      const id = tr.dataset.id;
-      tr.remove();
-      if (id) {
-        productInstances = productInstances.filter((inst) => inst.id !== id);
-        saveProductInstances();
-      }
-      renderInstancesTable();
-    }
-  } else if (action === "create-product-selection") {
-    const tr = target.closest("tr");
-    if (!tr) return;
-    openInlineProductCreator(tr);
+  if (window.InstancesView && typeof window.InstancesView.addRow === "function") {
+    window.InstancesView.addRow(instancesViewContext);
   }
 }
 
 function handleSaveInstances() {
-  if (!instancesTableBody) return;
-  const rows = Array.from(instancesTableBody.querySelectorAll("tr"));
-  const now = nowIsoString();
-
-  const allProducts = getAllProductsForAssociationList();
-  const updates = new Map();
-
-  for (const tr of rows) {
-    const id = tr.dataset.id;
-    if (!id) continue;
-
-    const getField = (selector) => {
-      const el = tr.querySelector(selector);
-      return el ? el.value.trim() : "";
-    };
-
-    const productName = getField('input[data-field="productName"]');
-    const hasName = !!productName;
-
-    const producerId = (tr.querySelector('select[data-field="producerId"]') || {})
-      .value;
-    const brand = getField('input[data-field="brand"]');
-    const notes = getField('input[data-field="notes"]');
-
-    const storeSelect = tr.querySelector('select[data-field="storeIds"]');
-    const storeIds = [];
-    if (storeSelect) {
-      Array.from(storeSelect.options).forEach((opt) => {
-        if (opt.selected && opt.value) storeIds.push(opt.value);
-      });
-    }
-
-    let productId = "";
-    const lower = productName.toLowerCase();
-    const match = allProducts.find(
-      (p) => (p.name || "").toLowerCase() === lower
-    );
-    if (match) {
-      productId = match.id;
-    }
-
-    const existing = productInstances.find((i) => i.id === id) || {};
-    const createdAt = existing.createdAt || now;
-
-    if (!hasName) {
-      // keep existing as-is
-      updates.set(id, existing);
-      continue;
-    }
-
-    updates.set(id, {
-      id,
-      productId,
-      productName,
-      producerId,
-      brand,
-      storeIds,
-      notes,
-      createdAt,
-      updatedAt: now,
-    });
+  if (window.InstancesView && typeof window.InstancesView.save === "function") {
+    window.InstancesView.save(instancesViewContext);
   }
-
-  const next = [];
-  const seen = new Set();
-
-  // preserve existing order, applying updates where available
-  productInstances.forEach((inst) => {
-    if (updates.has(inst.id)) {
-      next.push(updates.get(inst.id));
-      seen.add(inst.id);
-    } else {
-      next.push(inst);
-    }
-  });
-
-  // append new instances (not in existing list)
-  updates.forEach((val, id) => {
-    if (!seen.has(id)) {
-      next.push(val);
-    }
-  });
-
-  productInstances = consolidateInstances(next, now);
-  saveProductInstances();
-  cleanupSelectionsWithInstances();
-
-  renderInstancesTable();
-  renderProducts();
-  renderExtraQuickTable();
-  renderExtraEditTable();
-  renderShoppingList();
 }
 
 function handleAddProductFromSelection() {
