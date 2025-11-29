@@ -475,6 +475,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (snapshot.producers) producers = snapshot.producers;
     if (snapshot.classifications) classifications = snapshot.classifications;
     if (snapshot.productInstances) productInstances = snapshot.productInstances;
+    refreshProductsFromUnified();
   };
 
   if (window.AppState && typeof window.AppState.subscribe === "function") {
@@ -850,30 +851,9 @@ function loadProductInstances() {
 
 function saveProducts() {
   persistUnified(recomputeUnifiedFromDerived());
-  if (window.DataService && typeof window.DataService.setProducts === "function") {
-    products = window.DataService.setProducts(products);
-    return;
-  }
-  if (window.AppStorage && typeof window.AppStorage.saveProducts === "function") {
-    window.AppStorage.saveProducts(products);
-    return;
-  }
-  saveList(STORAGE_KEY, products);
 }
 function saveExtraProducts() {
   persistUnified(recomputeUnifiedFromDerived());
-  if (
-    window.DataService &&
-    typeof window.DataService.setExtraProducts === "function"
-  ) {
-    extraProducts = window.DataService.setExtraProducts(extraProducts);
-    return;
-  }
-  if (window.AppStorage && typeof window.AppStorage.saveExtraProducts === "function") {
-    window.AppStorage.saveExtraProducts(extraProducts);
-    return;
-  }
-  saveList(STORAGE_KEY_EXTRA, extraProducts);
 }
 function saveSuppliers() {
   if (window.DataService && typeof window.DataService.setSuppliers === "function") {
@@ -2634,6 +2614,7 @@ function renderProductsDatalist() {
 
 function renderProducts() {
   refreshProductsFromUnified();
+  products = (unifiedProducts || []).filter((p) => p.scope === "almacen");
   InventoryView.render(getInventoryContext());
 }
 
@@ -3286,6 +3267,7 @@ function filterGridRows() {
 
 function renderExtraQuickTable() {
   refreshProductsFromUnified();
+  const extras = (unifiedProducts || []).filter((p) => p.scope === "otros");
   if (!extraListTableBody) return;
   extraListTableBody.innerHTML = "";
 
@@ -3295,7 +3277,7 @@ function renderExtraQuickTable() {
   const filterStore = extraFilterStoreSelect?.value || "";
   const filterBuy = extraFilterBuySelect?.value || "all";
 
-  const items = extraProducts
+  const items = extras
     .slice()
     .filter((p) => {
       if (filterFamily && (p.block || "") !== filterFamily) return false;
@@ -3520,10 +3502,11 @@ function moveExtraToAlmacen(id) {
 
 function renderExtraEditTable() {
   refreshProductsFromUnified();
+  const extras = (unifiedProducts || []).filter((p) => p.scope === "otros");
   if (!extraTableBody) return;
   extraTableBody.innerHTML = "";
 
-  const items = extraProducts
+  const items = extras
     .slice()
     .sort((a, b) =>
       (a.block || "").localeCompare(b.block || "", "es", {
@@ -4636,6 +4619,7 @@ function handleExportBackup() {
   const data = {
     products,
     extraProducts,
+    unifiedProducts,
     suppliers,
     producers,
     productInstances,
@@ -4670,10 +4654,18 @@ function handleBackupFileChange(e) {
       const text = ev.target.result;
       const data = JSON.parse(text);
 
-      products = Array.isArray(data.products) ? data.products : [];
-      extraProducts = Array.isArray(data.extraProducts)
-        ? data.extraProducts
-        : [];
+      unifiedProducts = Array.isArray(data.unifiedProducts)
+        ? data.unifiedProducts
+        : [
+            ...(Array.isArray(data.products) ? data.products : []).map((p) => ({
+              ...p,
+              scope: "almacen",
+            })),
+            ...(Array.isArray(data.extraProducts) ? data.extraProducts : []).map(
+              (p) => ({ ...p, scope: "otros" })
+            ),
+          ];
+      refreshProductsFromUnified();
       suppliers = Array.isArray(data.suppliers) ? data.suppliers : [];
       producers = Array.isArray(data.producers) ? data.producers : [];
       productInstances = Array.isArray(data.productInstances)
@@ -4683,15 +4675,15 @@ function handleBackupFileChange(e) {
         ? data.classifications
         : [];
 
-      saveProducts();
-      saveExtraProducts();
-      saveSuppliers();
-      saveProducers();
-      saveProductInstances();
-      saveClassifications();
+  persistUnified(unifiedProducts);
+  saveSuppliers();
+  saveProducers();
+  saveProductInstances();
+  saveClassifications();
 
-      loadAllData();
-      renderAll();
+  loadAllData();
+  refreshProductsFromUnified();
+  renderAll();
 
       alert("Copia de seguridad restaurada correctamente.");
     } catch (err) {
@@ -4711,8 +4703,21 @@ function handleExportAlmacenCsv() {
     alert("La librería XLSX no está disponible.");
     return;
   }
-  const rows = products
-    .slice()
+  exportUnifiedCsv("almacen", "almacen.xlsx", "Almacén");
+}
+
+function handleExportOtrosCsv() {
+  if (typeof XLSX === "undefined") {
+    alert("La librería XLSX no está disponible.");
+    return;
+  }
+  exportUnifiedCsv("otros", "otros_productos.xlsx", "Otros productos");
+}
+
+function exportUnifiedCsv(scope, filename, sheetName) {
+  refreshProductsFromUnified();
+  const rows = (unifiedProducts || [])
+    .filter((p) => (scope ? p.scope === scope : true))
     .sort(compareShelfBlockTypeName)
     .map((p) => ({
       Producto: p.name || "",
@@ -4721,46 +4726,17 @@ function handleExportAlmacenCsv() {
       Ubicación: p.shelf || "",
       Cantidad: p.quantity || "",
       Selección: getSelectionLabelForProduct(p),
+      Tiendas: getSelectionStoresForProduct(p),
+      Comprar: p.buy ? "Sí" : "No",
       Tengo: p.have ? "Sí" : "No",
       "F. adquisición": p.acquisitionDate || "",
       Caducidad: p.expiryText || "",
       Notas: p.notes || "",
+      Scope: p.scope || "",
     }));
 
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Almacén");
-  XLSX.writeFile(wb, "almacen.xlsx");
-}
-
-function handleExportOtrosCsv() {
-  if (typeof XLSX === "undefined") {
-    alert("La librería XLSX no está disponible.");
-    return;
-  }
-  const rows = extraProducts
-    .slice()
-    .sort((a, b) =>
-      (a.block || "").localeCompare(b.block || "", "es", {
-        sensitivity: "base",
-      }) || (a.type || "").localeCompare(b.type || "", "es", {
-        sensitivity: "base",
-      }) || (a.name || "").localeCompare(b.name || "", "es", {
-        sensitivity: "base",
-      })
-    )
-    .map((p) => ({
-      Producto: p.name || "",
-      Familia: p.block || "",
-      Tipo: p.type || "",
-      Cantidad: p.quantity || "",
-      Selección: getSelectionLabelForProduct(p),
-      Comprar: p.buy ? "Sí" : "No",
-      Notas: p.notes || "",
-    }));
-
-  const ws = XLSX.utils.json_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Otros productos");
-  XLSX.writeFile(wb, "otros_productos.xlsx");
+  XLSX.utils.book_append_sheet(wb, ws, sheetName || "Productos");
+  XLSX.writeFile(wb, filename || "productos.xlsx");
 }
