@@ -45,9 +45,43 @@ function recomputeUnifiedFromDerived() {
   ];
 }
 
+function applyStateSnapshot(snapshot = {}) {
+  const nextProducts = snapshot.products || products || [];
+  const nextExtras = snapshot.extraProducts || extraProducts || [];
+  const unified = Array.isArray(snapshot.unifiedProducts) && snapshot.unifiedProducts.length > 0
+    ? snapshot.unifiedProducts
+    : [
+        ...nextProducts.map((p) => ({ ...p, scope: "almacen" })),
+        ...nextExtras.map((p) => ({ ...p, scope: "otros" })),
+      ];
+
+  unifiedProducts = unified;
+  suppliers = snapshot.suppliers || suppliers || [];
+  producers = snapshot.producers || producers || [];
+  classifications = snapshot.classifications || classifications || [];
+  productInstances = snapshot.productInstances || productInstances || [];
+
+  refreshProductsFromUnified();
+}
+
+function syncFromAppStore() {
+  if (window.AppStore && typeof window.AppStore.getState === "function") {
+    applyStateSnapshot(window.AppStore.getState());
+  }
+}
+
 function persistUnified(list) {
   unifiedProducts = Array.isArray(list) ? list : [];
   refreshProductsFromUnified();
+  if (
+    window.AppStore &&
+    window.AppStore.actions &&
+    typeof window.AppStore.actions.setUnifiedProducts === "function"
+  ) {
+    window.AppStore.actions.setUnifiedProducts(unifiedProducts);
+    syncFromAppStore();
+    return;
+  }
   if (window.DataService && typeof window.DataService.setUnifiedProducts === "function") {
     unifiedProducts = window.DataService.setUnifiedProducts(unifiedProducts);
     refreshProductsFromUnified();
@@ -477,18 +511,13 @@ document.addEventListener("DOMContentLoaded", () => {
   loadAllData();
 
   const syncFromState = (next) => {
-    const snapshot = next || {};
-    if (snapshot.products) products = snapshot.products;
-    if (snapshot.extraProducts) extraProducts = snapshot.extraProducts;
-    if (snapshot.unifiedProducts) unifiedProducts = snapshot.unifiedProducts;
-    if (snapshot.suppliers) suppliers = snapshot.suppliers;
-    if (snapshot.producers) producers = snapshot.producers;
-    if (snapshot.classifications) classifications = snapshot.classifications;
-    if (snapshot.productInstances) productInstances = snapshot.productInstances;
-    refreshProductsFromUnified();
+    applyStateSnapshot(next || {});
+    renderAll();
   };
 
-  if (window.AppState && typeof window.AppState.subscribe === "function") {
+  if (window.AppStore && window.ViewControllers && typeof window.ViewControllers.create === "function") {
+    window.ViewControllers.create(window.AppStore, { onState: syncFromState });
+  } else if (window.AppState && typeof window.AppState.subscribe === "function") {
     syncFromState(window.AppState.getState());
     window.AppState.subscribe(syncFromState);
   }
@@ -860,12 +889,39 @@ function loadProductInstances() {
 }
 
 function saveProducts() {
+  if (
+    window.AppStore &&
+    window.AppStore.actions &&
+    typeof window.AppStore.actions.setProducts === "function"
+  ) {
+    window.AppStore.actions.setProducts(products);
+    syncFromAppStore();
+    return;
+  }
   persistUnified(recomputeUnifiedFromDerived());
 }
 function saveExtraProducts() {
+  if (
+    window.AppStore &&
+    window.AppStore.actions &&
+    typeof window.AppStore.actions.setExtraProducts === "function"
+  ) {
+    window.AppStore.actions.setExtraProducts(extraProducts);
+    syncFromAppStore();
+    return;
+  }
   persistUnified(recomputeUnifiedFromDerived());
 }
 function saveSuppliers() {
+  if (
+    window.AppStore &&
+    window.AppStore.actions &&
+    typeof window.AppStore.actions.setSuppliers === "function"
+  ) {
+    window.AppStore.actions.setSuppliers(suppliers);
+    syncFromAppStore();
+    return;
+  }
   if (window.DataService && typeof window.DataService.setSuppliers === "function") {
     suppliers = window.DataService.setSuppliers(suppliers);
     return;
@@ -877,6 +933,15 @@ function saveSuppliers() {
   saveList(STORAGE_KEY_SUPPLIERS, suppliers);
 }
 function saveProducers() {
+  if (
+    window.AppStore &&
+    window.AppStore.actions &&
+    typeof window.AppStore.actions.setProducers === "function"
+  ) {
+    window.AppStore.actions.setProducers(producers);
+    syncFromAppStore();
+    return;
+  }
   if (window.DataService && typeof window.DataService.setProducers === "function") {
     producers = window.DataService.setProducers(producers);
     return;
@@ -888,6 +953,15 @@ function saveProducers() {
   saveList(STORAGE_KEY_PRODUCERS, producers);
 }
 function saveProductInstances() {
+  if (
+    window.AppStore &&
+    window.AppStore.actions &&
+    typeof window.AppStore.actions.setProductInstances === "function"
+  ) {
+    window.AppStore.actions.setProductInstances(productInstances);
+    syncFromAppStore();
+    return;
+  }
   if (
     window.DataService &&
     typeof window.DataService.setProductInstances === "function"
@@ -903,6 +977,15 @@ function saveProductInstances() {
 }
 function saveClassifications() {
   if (
+    window.AppStore &&
+    window.AppStore.actions &&
+    typeof window.AppStore.actions.setClassifications === "function"
+  ) {
+    window.AppStore.actions.setClassifications(classifications);
+    syncFromAppStore();
+    return;
+  }
+  if (
     window.DataService &&
     typeof window.DataService.setClassifications === "function"
   ) {
@@ -917,40 +1000,42 @@ function saveClassifications() {
 }
 
 function loadAllData() {
+  if (window.AppStore && typeof window.AppStore.bootstrap === "function") {
+    const snapshot = window.AppStore.bootstrap();
+    applyStateSnapshot(snapshot);
+    return;
+  }
+
   if (
     window.DataService &&
     typeof window.DataService.hydrateFromStorage === "function"
   ) {
     const data = window.DataService.hydrateFromStorage();
-    unifiedProducts = data.unifiedProducts || [];
-    if (!unifiedProducts.length) {
-      unifiedProducts = [
-        ...(data.products || []).map((p) => ({ ...p, scope: "almacen" })),
-        ...(data.extraProducts || []).map((p) => ({ ...p, scope: "otros" })),
-      ];
-    }
-    refreshProductsFromUnified();
-    suppliers = data.suppliers || [];
-    producers = data.producers || [];
-    classifications = data.classifications || [];
-    productInstances = data.productInstances || [];
+    applyStateSnapshot({
+      ...data,
+      unifiedProducts:
+        (data.unifiedProducts && data.unifiedProducts.length > 0
+          ? data.unifiedProducts
+          : [
+              ...(data.products || []).map((p) => ({ ...p, scope: "almacen" })),
+              ...(data.extraProducts || []).map((p) => ({ ...p, scope: "otros" })),
+            ]) || [],
+    });
     return;
   }
 
   if (window.AppStorage && typeof window.AppStorage.loadAllData === "function") {
     const data = window.AppStorage.loadAllData();
-    unifiedProducts = data.unifiedProducts || [];
-    if (!unifiedProducts.length) {
-      unifiedProducts = [
-        ...(data.products || []).map((p) => ({ ...p, scope: "almacen" })),
-        ...(data.extraProducts || []).map((p) => ({ ...p, scope: "otros" })),
-      ];
-    }
-    refreshProductsFromUnified();
-    suppliers = data.suppliers || [];
-    producers = data.producers || [];
-    classifications = data.classifications || [];
-    productInstances = data.productInstances || [];
+    applyStateSnapshot({
+      ...data,
+      unifiedProducts:
+        (data.unifiedProducts && data.unifiedProducts.length > 0
+          ? data.unifiedProducts
+          : [
+              ...(data.products || []).map((p) => ({ ...p, scope: "almacen" })),
+              ...(data.extraProducts || []).map((p) => ({ ...p, scope: "otros" })),
+            ]) || [],
+    });
     return;
   }
 

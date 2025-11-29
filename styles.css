@@ -15,12 +15,19 @@
   --danger: #de8275;
   --app-padding: 1.75rem;
   --top-sticky-offset: 4.6rem;
+  --content-max-width: 1400px;
+  --table-min-width: 980px;
+  --font-sans: "Manrope", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --space-1: 0.35rem;
+  --space-2: 0.65rem;
+  --space-3: 1rem;
+  --focus-ring: 0 0 0 3px rgba(232, 165, 107, 0.28);
 }
 
 body {
   margin: 0;
   padding: var(--top-sticky-offset) 0 1.5rem 0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   background: linear-gradient(180deg, #fbf5ed 0%, #fef9f3 45%, #fdf9f4 100%);
   color: var(--text);
   min-height: 100vh;
@@ -43,7 +50,7 @@ body.lock-scroll {
 .app {
   min-height: 100vh;
   width: 100%;
-  max-width: 100%;
+  max-width: var(--content-max-width);
   margin: 0 auto;
   padding: 0 calc(var(--app-padding) + 18px) 2rem;
   position: relative;
@@ -55,8 +62,8 @@ body.lock-scroll {
 
 .app-main {
   display: grid;
-  grid-template-columns: minmax(820px, 2.8fr) minmax(260px, 0.9fr);
-  gap: 1.25rem;
+  grid-template-columns: minmax(0, 2.4fr) minmax(260px, 1fr);
+  gap: 1.05rem;
   min-height: calc(100vh - var(--top-sticky-offset) - 1rem);
   height: auto;
   overflow: visible;
@@ -263,7 +270,7 @@ body.lock-scroll {
 
 .filters {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 0.35rem 0.5rem;
   margin-bottom: 0.35rem;
   background: var(--surface-2);
@@ -276,7 +283,7 @@ body.lock-scroll {
 
 .filters-edit {
   margin-top: 0.25rem;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   overflow-x: auto;
   align-items: flex-start;
 }
@@ -336,7 +343,7 @@ textarea:focus {
   outline: 2px solid var(--primary);
   outline-offset: 1px;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  box-shadow: var(--focus-ring);
 }
 
 /* Botones */
@@ -352,6 +359,16 @@ textarea:focus {
   justify-content: center;
   gap: 0.3rem;
   transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+
+.btn:focus-visible,
+.tab-button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+  box-shadow: var(--focus-ring);
 }
 
 .btn-small {
@@ -475,7 +492,7 @@ textarea:focus {
 }
 
 .table-wrapper table {
-  min-width: 1100px;
+  min-width: var(--table-min-width);
 }
 
 .product-table {
@@ -503,8 +520,8 @@ textarea:focus {
 }
 
 .product-table th {
-  font-weight: 500;
-  color: var(--muted);
+  font-weight: 600;
+  color: var(--text);
   white-space: nowrap;
 }
 
@@ -536,6 +553,10 @@ textarea:focus {
 
 .product-table tbody tr:hover td {
   background: #f6ecdf;
+}
+
+.product-table tbody tr:focus-within td {
+  background: var(--primary-soft);
 }
 
 .table-wrapper::-webkit-scrollbar {
@@ -1008,6 +1029,7 @@ textarea:focus {
 @media (max-width: 960px) {
   :root {
     --app-padding: 1rem;
+    --table-min-width: 860px;
   }
   .app {
     padding: 1rem;

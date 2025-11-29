@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <title>Gestor de almacén de cocina</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&display=swap"
+    />
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -125,7 +129,7 @@
               </div>
 
               <div class="list-header">
-                <div class="summary" id="summaryInfo">
+                <div class="summary" id="summaryInfo" aria-live="polite">
                   Total: 0 · Tengo: 0 · Faltan: 0
                 </div>
               </div>
@@ -135,18 +139,18 @@
                   <table class="product-table">
                     <thead>
                       <tr>
-                        <th>Producto</th>
-                        <th>Familia</th>
-                        <th>Tipo</th>
-                        <th>Ubicación</th>
-                        <th>Cantidad</th>
-                        <th class="selection-col">Selección</th>
-                        <th>Tiendas</th>
-                        <th>Tengo</th>
-                        <th>F. adquisición</th>
-                        <th>Caducidad</th>
-                        <th>Notas</th>
-                        <th>Retirar</th>
+                        <th scope="col">Producto</th>
+                        <th scope="col">Familia</th>
+                        <th scope="col">Tipo</th>
+                        <th scope="col">Ubicación</th>
+                        <th scope="col">Cantidad</th>
+                        <th scope="col" class="selection-col">Selección</th>
+                        <th scope="col">Tiendas</th>
+                        <th scope="col">Tengo</th>
+                        <th scope="col">F. adquisición</th>
+                        <th scope="col">Caducidad</th>
+                        <th scope="col">Notas</th>
+                        <th scope="col">Retirar</th>
                       </tr>
                     </thead>
                     <tbody id="productTableBody"></tbody>
@@ -222,18 +226,18 @@
                   <table class="product-table">
                     <thead>
                       <tr>
-                        <th>Producto</th>
-                        <th>Familia</th>
-                        <th>Tipo</th>
-                        <th>Ubicación</th>
-                        <th>Cantidad</th>
-                        <th class="selection-col">Selección</th>
-                        <th>Tiendas</th>
-                        <th>Tengo</th>
-                        <th>F. adquisición</th>
-                        <th>Caducidad</th>
-                        <th>Notas</th>
-                        <th>Acciones</th>
+                        <th scope="col">Producto</th>
+                        <th scope="col">Familia</th>
+                        <th scope="col">Tipo</th>
+                        <th scope="col">Ubicación</th>
+                        <th scope="col">Cantidad</th>
+                        <th scope="col" class="selection-col">Selección</th>
+                        <th scope="col">Tiendas</th>
+                        <th scope="col">Tengo</th>
+                        <th scope="col">F. adquisición</th>
+                        <th scope="col">Caducidad</th>
+                        <th scope="col">Notas</th>
+                        <th scope="col">Acciones</th>
                       </tr>
                     </thead>
                     <tbody id="gridTableBody"></tbody>
@@ -277,10 +281,10 @@
                 <table class="product-table">
                   <thead>
                     <tr>
-                      <th>Familia</th>
-                      <th>Tipo</th>
-                      <th>Notas</th>
-                      <th>Eliminar</th>
+                      <th scope="col">Familia</th>
+                      <th scope="col">Tipo</th>
+                      <th scope="col">Notas</th>
+                      <th scope="col">Eliminar</th>
                     </tr>
                   </thead>
                   <tbody id="classificationTableBody"></tbody>
@@ -364,15 +368,15 @@
                   <table class="product-table">
                     <thead>
                       <tr>
-                        <th>Producto</th>
-                        <th>Familia</th>
-                        <th>Tipo</th>
-                        <th>Cantidad</th>
-                        <th class="selection-col">Selección</th>
-                        <th>Tiendas</th>
-                        <th>Comprar</th>
-                        <th>Notas</th>
-                        <th>Mover a almacén</th>
+                        <th scope="col">Producto</th>
+                        <th scope="col">Familia</th>
+                        <th scope="col">Tipo</th>
+                        <th scope="col">Cantidad</th>
+                        <th scope="col" class="selection-col">Selección</th>
+                        <th scope="col">Tiendas</th>
+                        <th scope="col">Comprar</th>
+                        <th scope="col">Notas</th>
+                        <th scope="col">Mover a almacén</th>
                       </tr>
                     </thead>
                     <tbody id="extraListTableBody"></tbody>
@@ -443,15 +447,15 @@
                   <table class="product-table">
                     <thead>
                       <tr>
-                        <th>Producto</th>
-                        <th>Familia</th>
-                        <th>Tipo</th>
-                        <th>Cantidad</th>
-                        <th class="selection-col">Selección</th>
-                        <th>Tiendas</th>
-                        <th>Comprar</th>
-                        <th>Notas</th>
-                        <th>Mover a almacén</th>
+                        <th scope="col">Producto</th>
+                        <th scope="col">Familia</th>
+                        <th scope="col">Tipo</th>
+                        <th scope="col">Cantidad</th>
+                        <th scope="col" class="selection-col">Selección</th>
+                        <th scope="col">Tiendas</th>
+                        <th scope="col">Comprar</th>
+                        <th scope="col">Notas</th>
+                        <th scope="col">Mover a almacén</th>
                       </tr>
                     </thead>
                     <tbody id="extraTableBody"></tbody>
@@ -512,14 +516,14 @@
               <div class="table-wrapper">
                 <div class="table-scroll">
                   <table class="product-table">
-                    <thead>
-                      <tr>
-                        <th>Nombre productor</th>
-                        <th>Localización</th>
-                        <th>Notas</th>
-                        <th>Eliminar</th>
-                      </tr>
-                    </thead>
+                  <thead>
+                    <tr>
+                      <th scope="col">Nombre productor</th>
+                      <th scope="col">Localización</th>
+                      <th scope="col">Notas</th>
+                      <th scope="col">Eliminar</th>
+                    </tr>
+                  </thead>
                     <tbody id="producersTableBody"></tbody>
                   </table>
                 </div>
@@ -581,16 +585,16 @@
               <div class="table-wrapper">
                 <div class="table-scroll">
                   <table class="product-table">
-                    <thead>
-                      <tr>
-                        <th>Nombre tienda</th>
-                        <th>Tipo</th>
-                        <th>Localización</th>
-                        <th>Web / contacto</th>
-                        <th>Notas</th>
-                        <th>Eliminar</th>
-                      </tr>
-                    </thead>
+                  <thead>
+                    <tr>
+                      <th scope="col">Nombre tienda</th>
+                      <th scope="col">Tipo</th>
+                      <th scope="col">Localización</th>
+                      <th scope="col">Web / contacto</th>
+                      <th scope="col">Notas</th>
+                      <th scope="col">Eliminar</th>
+                    </tr>
+                  </thead>
                     <tbody id="storesTableBody"></tbody>
                   </table>
                 </div>
@@ -659,17 +663,17 @@
               <div class="table-wrapper">
                 <div class="table-scroll">
                   <table class="product-table">
-                    <thead>
-                      <tr>
-                        <th>Producto</th>
-                        <th>Familia</th>
-                        <th>Productor</th>
-                        <th>Marca</th>
-                        <th>Tiendas asociadas</th>
-                        <th>Notas</th>
-                        <th>Eliminar</th>
-                      </tr>
-                    </thead>
+                  <thead>
+                    <tr>
+                      <th scope="col">Producto</th>
+                      <th scope="col">Familia</th>
+                      <th scope="col">Productor</th>
+                      <th scope="col">Marca</th>
+                      <th scope="col">Tiendas asociadas</th>
+                      <th scope="col">Notas</th>
+                      <th scope="col">Eliminar</th>
+                    </tr>
+                  </thead>
                     <tbody id="instancesTableBody"></tbody>
                   </table>
                 </div>
@@ -699,7 +703,7 @@
             </div>
           </div>
 
-          <div class="summary" id="shoppingSummary">
+          <div class="summary" id="shoppingSummary" aria-live="polite">
             0 producto(s) · 0 tienda(s)
           </div>
 
@@ -785,6 +789,8 @@
     <script src="storage.js"></script>
     <script src="state.js"></script>
     <script src="dataService.js"></script>
+    <script src="appStore.js"></script>
+    <script src="viewControllers.js"></script>
     <script src="classificationView.js"></script>
     <script src="producersView.js"></script>
     <script src="storesView.js"></script>
