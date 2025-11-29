@@ -43,6 +43,51 @@ function getStateSnapshot() {
   };
 }
 
+function getSuppliersList() {
+  const state = getStateSnapshot();
+  return Array.isArray(state.suppliers) && state.suppliers.length ? state.suppliers : suppliers;
+}
+
+function getProducersList() {
+  const state = getStateSnapshot();
+  return Array.isArray(state.producers) && state.producers.length ? state.producers : producers;
+}
+
+function getClassificationsList() {
+  const state = getStateSnapshot();
+  return Array.isArray(state.classifications) && state.classifications.length
+    ? state.classifications
+    : classifications;
+}
+
+function getInstancesList() {
+  const state = getStateSnapshot();
+  return Array.isArray(state.productInstances) && state.productInstances.length
+    ? state.productInstances
+    : productInstances;
+}
+
+function getStateSnapshot() {
+  if (stateAdapter && typeof stateAdapter.getState === "function") {
+    return stateAdapter.getState() || {};
+  }
+  if (window.AppStore && typeof window.AppStore.getState === "function") {
+    return window.AppStore.getState() || {};
+  }
+  if (window.AppState && typeof window.AppState.getState === "function") {
+    return window.AppState.getState() || {};
+  }
+  return {
+    products,
+    extraProducts,
+    unifiedProducts,
+    suppliers,
+    producers,
+    productInstances,
+    classifications,
+  };
+}
+
 function refreshProductsFromUnified() {
   const state = getStateSnapshot();
   const unified =
@@ -855,9 +900,9 @@ document.addEventListener("DOMContentLoaded", () => {
       saveButton: saveClassificationsButton,
       rowTemplate: classificationRowTemplate,
     },
-    getClassifications: () => classifications,
+    getClassifications: () => getClassificationsList(),
     persist: (list) => {
-      classifications = list;
+      classifications = Array.isArray(list) ? list : [];
       saveClassifications();
     },
     onAfterSave: handleClassificationDependencies,
@@ -877,9 +922,9 @@ document.addEventListener("DOMContentLoaded", () => {
       locationFilter: producersLocationFilterSelect,
       rowTemplate: producersRowTemplate,
     },
-    getProducers: () => producers,
+    getProducers: () => getProducersList(),
     persist: (list) => {
-      producers = list;
+      producers = Array.isArray(list) ? list : [];
       saveProducers();
     },
     onAfterSave: handleProducersDependencies,
@@ -900,9 +945,9 @@ document.addEventListener("DOMContentLoaded", () => {
       locationFilter: storesLocationFilterSelect,
       rowTemplate: storesRowTemplate,
     },
-    getStores: () => suppliers,
+    getStores: () => getSuppliersList(),
     persist: (list) => {
-      suppliers = list;
+      suppliers = Array.isArray(list) ? list : [];
       saveSuppliers();
     },
     onAfterSave: handleStoresDependencies,
@@ -1211,163 +1256,6 @@ function handleToggleShoppingPanel() {
     : "Ocultar lista de la compra";
 }
 
-// ==============================
-//  CARGA / GUARDADO
-// ==============================
-
-function normalizeMultiFields(obj) {
-  const copy = { ...obj };
-  delete copy.store;
-  delete copy.brand;
-  delete copy.supplier;
-  delete copy.producer;
-  return copy;
-}
-
-function normalizeProduct(p) {
-  let res = { ...p };
-  if (!res.expiryText && (res.shelfLifeDays || res.shelfLifeDays === 0)) {
-    res.expiryText = String(res.shelfLifeDays);
-  }
-  res = normalizeMultiFields(res);
-  res.selectionId = res.selectionId || "";
-  res.have = !!res.have;
-  res.quantity = res.quantity || "";
-  res.block = res.block || "";
-  res.type = res.type || "";
-  res.shelf = res.shelf || "";
-  res.notes = res.notes || "";
-  res.createdAt = res.createdAt || nowIsoString();
-  res.updatedAt = res.updatedAt || res.createdAt;
-  return res;
-}
-
-function normalizeExtraProduct(p) {
-  const res = normalizeMultiFields(p);
-  res.selectionId = res.selectionId || "";
-  res.buy = !!res.buy;
-  res.quantity = res.quantity || "";
-  res.block = res.block || "";
-  res.type = res.type || "";
-  res.notes = res.notes || "";
-  res.createdAt = res.createdAt || nowIsoString();
-  res.updatedAt = res.updatedAt || res.createdAt;
-  return res;
-}
-
-function normalizeSupplier(s) {
-  const now = nowIsoString();
-  return {
-    id:
-      s.id ||
-      (crypto.randomUUID
-        ? crypto.randomUUID()
-        : "store-" + Math.random().toString(36).slice(2)),
-    name: s.name || "",
-    type: s.type || "",
-    location: s.location || s.storesText || "",
-    website: s.website || "",
-    notes: s.notes || "",
-    createdAt: s.createdAt || now,
-    updatedAt: s.updatedAt || now,
-  };
-}
-
-function normalizeProducer(p) {
-  const now = nowIsoString();
-  return {
-    id:
-      p.id ||
-      (crypto.randomUUID
-        ? crypto.randomUUID()
-        : "prod-" + Math.random().toString(36).slice(2)),
-    name: p.name || "",
-    location: p.location || p.storesText || "",
-    website: p.website || "",
-    notes: p.notes || "",
-    createdAt: p.createdAt || now,
-    updatedAt: p.updatedAt || now,
-  };
-}
-
-function normalizeInstance(i) {
-  const now = nowIsoString();
-  return {
-    id:
-      i.id ||
-      (crypto.randomUUID
-        ? crypto.randomUUID()
-        : "inst-" + Math.random().toString(36).slice(2)),
-    productId: i.productId || "",
-    productName: i.productName || "",
-    producerId: i.producerId || "",
-    brand: i.brand || "",
-    storeIds: Array.isArray(i.storeIds) ? i.storeIds : [],
-    notes: i.notes || "",
-    createdAt: i.createdAt || now,
-    updatedAt: i.updatedAt || now,
-  };
-}
-
-function normalizeClassification(c) {
-  const now = nowIsoString();
-  return {
-    id:
-      c.id ||
-      (crypto.randomUUID
-        ? crypto.randomUUID()
-        : "cls-" + Math.random().toString(36).slice(2)),
-    block: (c.block || "").trim(),
-    type: (c.type || "").trim(),
-    notes: c.notes || "",
-    createdAt: c.createdAt || now,
-    updatedAt: c.updatedAt || now,
-  };
-}
-
-function loadSuppliers() {
-  suppliers = safeLoadList(STORAGE_KEY_SUPPLIERS, normalizeSupplier);
-}
-
-function loadProducers() {
-  producers = safeLoadList(STORAGE_KEY_PRODUCERS, normalizeProducer);
-}
-
-function loadClassifications() {
-  classifications = safeLoadList(STORAGE_KEY_CLASSIFICATIONS, normalizeClassification);
-
-  // Asegurar combinaciones existentes de productos
-  const combos = new Set(
-    classifications.map((c) => `${c.block}|||${c.type}`)
-  );
-  const now = nowIsoString();
-  [...products, ...extraProducts].forEach((p) => {
-    const block = (p.block || "").trim();
-    const type = (p.type || "").trim();
-    if (!block && !type) return;
-    const key = `${block}|||${type}`;
-    if (!combos.has(key)) {
-      combos.add(key);
-      classifications.push({
-        id:
-          (crypto.randomUUID
-            ? crypto.randomUUID()
-            : "cls-" + Math.random().toString(36).slice(2)),
-        block,
-        type,
-        notes: "",
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
-  });
-  saveClassifications();
-}
-
-function loadProductInstances() {
-  productInstances = safeLoadList(STORAGE_KEY_INSTANCES, normalizeInstance);
-}
-
 function saveProducts() {
   if (
     window.AppStore &&
@@ -1393,44 +1281,46 @@ function saveExtraProducts() {
   persistUnified(recomputeUnifiedFromDerived());
 }
 function saveSuppliers() {
+  const list = getSuppliersList();
   if (
     window.AppStore &&
     window.AppStore.actions &&
     typeof window.AppStore.actions.setSuppliers === "function"
   ) {
-    window.AppStore.actions.setSuppliers(suppliers);
+    window.AppStore.actions.setSuppliers(list);
     syncFromAppStore();
     return;
   }
   if (window.DataService && typeof window.DataService.setSuppliers === "function") {
-    suppliers = window.DataService.setSuppliers(suppliers);
+    suppliers = window.DataService.setSuppliers(list);
     return;
   }
   if (window.AppStorage && typeof window.AppStorage.saveSuppliers === "function") {
-    window.AppStorage.saveSuppliers(suppliers);
+    window.AppStorage.saveSuppliers(list);
     return;
   }
-  saveList(STORAGE_KEY_SUPPLIERS, suppliers);
+  saveList(STORAGE_KEY_SUPPLIERS, list);
 }
 function saveProducers() {
+  const list = getProducersList();
   if (
     window.AppStore &&
     window.AppStore.actions &&
     typeof window.AppStore.actions.setProducers === "function"
   ) {
-    window.AppStore.actions.setProducers(producers);
+    window.AppStore.actions.setProducers(list);
     syncFromAppStore();
     return;
   }
   if (window.DataService && typeof window.DataService.setProducers === "function") {
-    producers = window.DataService.setProducers(producers);
+    producers = window.DataService.setProducers(list);
     return;
   }
   if (window.AppStorage && typeof window.AppStorage.saveProducers === "function") {
-    window.AppStorage.saveProducers(producers);
+    window.AppStorage.saveProducers(list);
     return;
   }
-  saveList(STORAGE_KEY_PRODUCERS, producers);
+  saveList(STORAGE_KEY_PRODUCERS, list);
 }
 function saveProductInstances() {
   if (
@@ -1456,12 +1346,13 @@ function saveProductInstances() {
   saveList(STORAGE_KEY_INSTANCES, productInstances);
 }
 function saveClassifications() {
+  const list = getClassificationsList();
   if (
     window.AppStore &&
     window.AppStore.actions &&
     typeof window.AppStore.actions.setClassifications === "function"
   ) {
-    window.AppStore.actions.setClassifications(classifications);
+    window.AppStore.actions.setClassifications(list);
     syncFromAppStore();
     return;
   }
@@ -1469,17 +1360,24 @@ function saveClassifications() {
     window.DataService &&
     typeof window.DataService.setClassifications === "function"
   ) {
-    classifications = window.DataService.setClassifications(classifications);
+    classifications = window.DataService.setClassifications(list);
     return;
   }
   if (window.AppStorage && typeof window.AppStorage.saveClassifications === "function") {
-    window.AppStorage.saveClassifications(classifications);
+    window.AppStorage.saveClassifications(list);
     return;
   }
-  saveList(STORAGE_KEY_CLASSIFICATIONS, classifications);
+  saveList(STORAGE_KEY_CLASSIFICATIONS, list);
 }
 
 function loadAllData() {
+  if (stateAdapter && typeof stateAdapter.bootstrap === "function") {
+    const snapshot = stateAdapter.bootstrap();
+    applyStateSnapshot(snapshot || {});
+    ensureInstanceFamilies({ persist: false });
+    return;
+  }
+
   if (window.AppStore && typeof window.AppStore.bootstrap === "function") {
     const snapshot = window.AppStore.bootstrap();
     applyStateSnapshot(snapshot);
@@ -1504,12 +1402,9 @@ function loadAllData() {
     return;
   }
 
-  unifiedProducts = [];
+  // Fallback mínimo a almacenamiento local unificado
+  unifiedProducts = safeLoadList("productosCocinaUnificados");
   refreshProductsFromUnified();
-  loadSuppliers();
-  loadProducers();
-  loadClassifications();
-  loadProductInstances();
 }
 
 // ==============================
@@ -1626,12 +1521,12 @@ function isKnownProduct(name, id) {
 // ======= Selecciones (instancias de producto) =======
 
 function getProducerName(id) {
-  const p = producers.find((x) => x.id === id);
+  const p = getProducersList().find((x) => x.id === id);
   return p ? p.name || "" : "";
 }
 
 function getStoreName(id) {
-  const s = suppliers.find((x) => x.id === id);
+  const s = getSuppliersList().find((x) => x.id === id);
   return s ? s.name || "" : "";
 }
 
@@ -1650,16 +1545,17 @@ function getClassificationFamilies() {
     typeof window.DataService.selectors.families === "function"
   ) {
     return window.DataService.selectors.families({
-      products,
-      extraProducts,
-      classifications,
+      products: getPantryProducts(),
+      extraProducts: getOtherProducts(),
+      classifications: getClassificationsList(),
     });
   }
 
-  if (classifications.length === 0) {
+  const cls = getClassificationsList();
+  if (cls.length === 0) {
     return Array.from(
       new Set(
-        [...products, ...extraProducts]
+        [...getPantryProducts(), ...getOtherProducts()]
           .map((p) => (p.block || "").trim())
           .filter(Boolean)
       )
@@ -1667,7 +1563,7 @@ function getClassificationFamilies() {
   }
   return Array.from(
     new Set(
-      classifications
+      cls
         .map((c) => (c.block || "").trim())
         .filter(Boolean)
     )
@@ -1681,19 +1577,20 @@ function getClassificationTypes(family = "") {
     typeof window.DataService.selectors.types === "function"
   ) {
     return window.DataService.selectors.types(
-      { products, extraProducts, classifications },
+      { products: getPantryProducts(), extraProducts: getOtherProducts(), classifications: getClassificationsList() },
       family
     );
   }
 
   const fam = (family || "").trim();
+  const cls = getClassificationsList();
   const source =
-    classifications.length === 0
-      ? [...products, ...extraProducts].map((p) => ({
+    cls.length === 0
+      ? [...getPantryProducts(), ...getOtherProducts()].map((p) => ({
           block: p.block || "",
           type: p.type || "",
         }))
-      : classifications;
+      : cls;
 
   const types = source
     .filter((c) => !fam || (c.block || "").trim() === fam)
