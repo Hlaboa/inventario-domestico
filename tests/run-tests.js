@@ -3,6 +3,7 @@ const fs = require("fs");
 const assert = require("assert");
 
 const modulePath = path.join(__dirname, "..", "appStore.js");
+const dataServicePath = path.join(__dirname, "..", "dataService.js");
 
 function loadStore(stubs = {}) {
   delete require.cache[modulePath];
@@ -39,6 +40,72 @@ function createMemoryStorage() {
     removeItem: (k) => data.delete(k),
     clear: () => data.clear(),
     _data: data,
+  };
+}
+
+function loadDataService(stubs = {}) {
+  delete require.cache[dataServicePath];
+  const previousWindow = global.window;
+  global.window = {
+    localStorage: stubs.localStorage || createMemoryStorage(),
+    ...stubs,
+  };
+  global.localStorage = global.window.localStorage;
+  require(dataServicePath);
+  const ds = global.window.DataService;
+  if (!ds) throw new Error("DataService no inicializado");
+  ds.__cleanup = () => {
+    global.window = previousWindow;
+    delete require.cache[dataServicePath];
+  };
+  return ds;
+}
+
+class StubElement {
+  constructor(tag) {
+    this.tag = tag;
+    this.children = [];
+    this.dataset = {};
+    this.style = {};
+    this.className = "";
+    this.textContent = "";
+    this.value = "";
+    this.checked = false;
+    this.attributes = {};
+    this.classList = {
+      add: () => {},
+      remove: () => {},
+      toggle: () => {},
+    };
+  }
+  appendChild(child) {
+    this.children.push(child);
+    return child;
+  }
+  setAttribute(name, value) {
+    this.attributes[name] = value;
+  }
+  set innerHTML(val) {
+    this.children = [];
+    this._innerHTML = val;
+  }
+  get innerHTML() {
+    return this._innerHTML || "";
+  }
+  addEventListener() {}
+  querySelectorAll(selector) {
+    if (selector === "tr") {
+      return this.children.filter((c) => c.tag === "tr");
+    }
+    return [];
+  }
+}
+
+function createStubDocument() {
+  return {
+    createElement: (tag) => new StubElement(tag),
+    querySelector: () => null,
+    querySelectorAll: () => [],
   };
 }
 
@@ -204,6 +271,171 @@ register("AppStorage migrates unifiedProducts if vacío", () => {
   assert.strictEqual(unified.length, 2, "Debe migrar productos y extras");
   assert.strictEqual(unified[0].scope, "almacen");
   assert.strictEqual(unified[1].scope, "otros");
+});
+
+register("DataService.persistState guarda unifiedProducts y listas separadas", () => {
+  const AppState = {
+    state: {},
+    hydrate(patch) {
+      this.state = { ...this.state, ...(patch || {}) };
+    },
+    getState() {
+      return this.state;
+    },
+    subscribe() {
+      return () => {};
+    },
+  };
+
+  const storageKeys = {
+    products: "inventarioCocinaAlmacen",
+    extraProducts: "otrosProductosCompra",
+    unifiedProducts: "productosCocinaUnificados",
+    suppliers: "proveedoresCocina",
+    producers: "productoresCocina",
+    productInstances: "instanciasProductosCocina",
+    classifications: "clasificacionesProductosCocina",
+  };
+
+  const AppStorage = {
+    keys: storageKeys,
+    normalize: {},
+  };
+
+  const localStorage = createMemoryStorage();
+
+  global.window = { AppState, AppStorage, localStorage };
+  global.localStorage = localStorage;
+  const dsPath = path.join(__dirname, "..", "dataService.js");
+  delete require.cache[dsPath];
+  require(dsPath);
+
+  const state = {
+    products: [{ id: "p1", name: "Prod" }],
+    extraProducts: [{ id: "e1", name: "Extra" }],
+    unifiedProducts: [],
+    suppliers: [{ id: "s1" }],
+    producers: [{ id: "pr1" }],
+    classifications: [{ id: "c1", block: "F", type: "T" }],
+    productInstances: [{ id: "i1", productId: "p1" }],
+  };
+
+  global.window.DataService.persistState(state);
+
+  const unified = JSON.parse(localStorage.getItem(storageKeys.unifiedProducts));
+  const prods = JSON.parse(localStorage.getItem(storageKeys.products));
+  const extras = JSON.parse(localStorage.getItem(storageKeys.extraProducts));
+  assert.strictEqual(unified.length, 2, "Unificados incluye productos y extras");
+  assert.strictEqual(prods.length, 1, "Guarda lista de productos");
+  assert.strictEqual(extras.length, 1, "Guarda lista de extras");
+});
+
+register("DataService.setUnifiedProducts persiste y actualiza AppState", () => {
+  const AppState = {
+    state: {},
+    hydrate(patch) {
+      this.state = { ...this.state, ...(patch || {}) };
+    },
+    getState() {
+      return this.state;
+    },
+    subscribe() {
+      return () => {};
+    },
+  };
+  const localStorage = createMemoryStorage();
+  const ds = loadDataService({ AppState, localStorage });
+
+  const unified = [{ id: "u1", scope: "almacen", name: "Prod" }];
+  ds.setUnifiedProducts(unified);
+
+  const stored = JSON.parse(localStorage.getItem("productosCocinaUnificados"));
+  assert.strictEqual(stored.length, 1, "Guarda unifiedProducts");
+  assert.strictEqual(AppState.state.unifiedProducts.length, 1, "Actualiza AppState");
+
+  ds.__cleanup();
+});
+
+register("InventoryView.render crea filas para productos", () => {
+  delete require.cache[path.join(__dirname, "..", "inventoryView.js")];
+  const productTableBody = new StubElement("tbody");
+  const refs = {
+    productTableBody,
+    filterSearchInput: { value: "" },
+    filterShelfSelect: { value: "" },
+    filterBlockSelect: { value: "" },
+    filterTypeSelect: { value: "" },
+    filterStoreSelect: { value: "" },
+    filterStatusSelect: { value: "all" },
+    summaryInfo: { textContent: "" },
+  };
+  const stubDocument = createStubDocument();
+  global.window = { document: stubDocument };
+  global.document = stubDocument;
+  require(path.join(__dirname, "..", "inventoryView.js"));
+
+  const products = [{ id: "p1", name: "Arroz", block: "Granos", type: "Blanco", shelf: "A", quantity: "1", have: true }];
+  const productDrafts = [{ id: "d1", name: "Draft" }];
+  const helpers = {
+    compareShelfBlockTypeName: () => 0,
+    buildFamilyStripeMap: () => ({}),
+    createFamilySelect: () => new StubElement("select"),
+    createTypeSelect: () => new StubElement("select"),
+    createTableInput: () => new StubElement("input"),
+    createTableTextarea: () => new StubElement("textarea"),
+    linkFamilyTypeSelects: () => {},
+    productMatchesStore: () => true,
+    getSelectionLabelForProduct: () => "",
+    getSelectionStoresForProduct: () => "",
+    createSelectionButton: () => new StubElement("button"),
+    handleInventoryTableClick: () => {},
+  };
+
+  global.window.InventoryView.render({ refs, state: { products, productDrafts }, helpers });
+
+  const rows = productTableBody.querySelectorAll("tr");
+  if (rows.length !== 2) {
+    throw new Error(`Se esperaban 2 filas (1 draft + 1 producto), hay ${rows.length}`);
+  }
+});
+
+register("InstancesView.render crea filas para instancias", () => {
+  delete require.cache[path.join(__dirname, "..", "instancesView.js")];
+  const tableBody = new StubElement("tbody");
+  const refs = {
+    tableBody,
+    searchInput: { value: "" },
+    familyFilter: { value: "" },
+    producerFilter: { value: "" },
+    storeFilter: { value: "" },
+  };
+  const stubDocument = createStubDocument();
+  global.window = { document: stubDocument };
+  global.document = stubDocument;
+  require(path.join(__dirname, "..", "instancesView.js"));
+
+  const inst = {
+    id: "i1",
+    productName: "Arroz",
+    producerId: "",
+    brand: "Marca",
+    storeIds: [],
+    notes: "",
+  };
+  const context = {
+    refs,
+    data: { instances: [inst], producers: [], stores: [] },
+    getFamilyForInstance: () => "Granos",
+    getProducerName: () => "",
+    getStoreNames: () => "",
+    buildFamilyStripeMap: () => ({}),
+  };
+
+  global.window.InstancesView.render(context);
+  const rows = tableBody.querySelectorAll("tr");
+  if (rows.length !== 1) {
+    throw new Error(`Se esperaba 1 fila de instancia, hay ${rows.length}`);
+  }
 });
 
 (function run() {

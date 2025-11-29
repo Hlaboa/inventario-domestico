@@ -193,6 +193,12 @@ let classificationViewContext;
 let producersViewContext;
 let storesViewContext;
 let instancesViewContext;
+let inventoryController;
+let extraController;
+let instancesController;
+let classificationController;
+let producersController;
+let storesController;
 
 // Tabs tiendas/productores
 let producersPanel;
@@ -512,7 +518,34 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const syncFromState = (next) => {
     applyStateSnapshot(next || {});
-    renderAll();
+    renderShelfOptions();
+    renderBlockOptions();
+    renderTypeOptions();
+    renderStoreOptions();
+    updateProducerFilterOptions();
+    updateStoreFilterOptions();
+    updateInstanceFilterOptions();
+    renderProductsDatalist();
+
+    if (inventoryController) {
+      inventoryController.setDrafts(productDrafts);
+      inventoryController.render();
+    } else {
+      renderProducts();
+    }
+    renderGridRows();
+    renderExtraQuickTable();
+    renderExtraEditTable();
+    renderProducersTable();
+    renderStoresTable();
+    renderClassificationTable();
+    if (instancesController) {
+      instancesController.render();
+    } else {
+      renderInstancesTable();
+    }
+    renderShoppingList();
+    initResizableTables();
   };
 
   if (window.AppStore && window.ViewControllers && typeof window.ViewControllers.create === "function") {
@@ -614,7 +647,7 @@ document.addEventListener("DOMContentLoaded", () => {
     window.InstancesView.init(instancesViewContext);
   }
 
-  const inventoryController =
+  inventoryController =
     window.InventoryController && window.InventoryController.create
       ? window.InventoryController.create({
           store: window.AppStore || window.AppState,
@@ -651,7 +684,66 @@ document.addEventListener("DOMContentLoaded", () => {
     inventoryController.render();
   }
 
-  renderAll();
+  extraController =
+    window.ExtraController && window.ExtraController.create
+      ? window.ExtraController.create({
+          store: window.AppStore || window.AppState,
+          onRender: () => {
+            renderExtraQuickTable();
+            renderExtraEditTable();
+            renderShoppingList();
+          },
+        })
+      : null;
+
+  instancesController =
+    window.InstancesController && window.InstancesController.create
+      ? window.InstancesController.create({
+          store: window.AppStore || window.AppState,
+          view: window.InstancesView,
+          context: instancesViewContext,
+        })
+      : null;
+
+  classificationController =
+    window.ClassificationController && window.ClassificationController.create
+      ? window.ClassificationController.create({
+          store: window.AppStore || window.AppState,
+          onRender: renderClassificationTable,
+        })
+      : null;
+
+  producersController =
+    window.ProducersController && window.ProducersController.create
+      ? window.ProducersController.create({
+          store: window.AppStore || window.AppState,
+          onRender: () => {
+            renderProducersTable();
+            updateProducerFilterOptions();
+          },
+        })
+      : null;
+
+  storesController =
+    window.StoresController && window.StoresController.create
+      ? window.StoresController.create({
+          store: window.AppStore || window.AppState,
+          onRender: () => {
+            renderStoresTable();
+            updateStoreFilterOptions();
+            renderStoreOptions();
+            renderShoppingList();
+          },
+        })
+      : null;
+
+  const currentState =
+    (window.AppStore && typeof window.AppStore.getState === "function"
+      ? window.AppStore.getState()
+      : window.AppState && typeof window.AppState.getState === "function"
+      ? window.AppState.getState()
+      : {});
+  syncFromState(currentState);
   document.addEventListener("keydown", handleGlobalSaveShortcut);
   document.addEventListener("keydown", handleGlobalEscape);
 
