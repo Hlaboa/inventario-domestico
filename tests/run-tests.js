@@ -596,6 +596,26 @@ register("InstancesView.handleClick elimina instancia con delete-instance", () =
   }
 });
 
+register("AppStore.selectors.shoppingSummary suma items y tiendas", () => {
+  const AppState = {
+    state: {},
+    hydrate() {},
+    getState() {
+      return this.state;
+    },
+    subscribe() {
+      return () => {};
+    },
+  };
+  const store = loadStore({ AppState });
+  const summary = store.selectors.shoppingSummary({
+    products: [{ id: "p1", name: "A", have: false, storeName: "T1" }],
+    extraProducts: [{ id: "e1", name: "B", buy: true, storeName: "T2" }],
+  });
+  assert.strictEqual(summary.totalItems, 2, "Debe contar 2 items");
+  assert.strictEqual(summary.totalStores, 2, "Debe contar 2 tiendas");
+});
+
 (function run() {
   const results = [];
   tests.forEach(({ name, fn }) => {

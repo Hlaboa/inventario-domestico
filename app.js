@@ -4670,92 +4670,75 @@ function renderShoppingList() {
   if (!shoppingListContainer || !shoppingSummary) return;
   shoppingListContainer.innerHTML = "";
 
-  const groups = {};
+  const summary =
+    (window.AppStore &&
+      window.AppStore.selectors &&
+      window.AppStore.selectors.shoppingSummary &&
+      window.AppStore.selectors.shoppingSummary({ products, extraProducts })) || {
+      stores: [],
+      totalItems: 0,
+      totalStores: 0,
+    };
 
-  function addItem(storeName, item) {
-    if (!groups[storeName]) groups[storeName] = [];
-    groups[storeName].push(item);
+  if (summary.stores.length === 0) {
+    shoppingSummary.textContent = "0 producto(s) · 0 tienda(s)";
+    const empty = document.createElement("div");
+    empty.className = "shopping-empty";
+    empty.textContent = "No hay productos pendientes.";
+    shoppingListContainer.appendChild(empty);
+    return;
   }
 
-  products.forEach((p) => {
-    if (p.have) return;
-    const storeName = getSelectionMainStoreName(p);
-    addItem(storeName, {
-      name: p.name || "",
-      quantity: p.quantity || "",
-      notes: p.notes || "",
-      source: "almacén",
-    });
-  });
+  summary.stores
+    .slice()
+    .sort((a, b) => a.store.localeCompare(b.store, "es", { sensitivity: "base" }))
+    .forEach(({ store, items }) => {
+      const block = document.createElement("div");
+      block.className = "shopping-store-block";
+      block.dataset.store = store;
 
-  extraProducts.forEach((p) => {
-    if (!p.buy) return;
-    const storeName = getSelectionMainStoreName(p);
-    addItem(storeName, {
-      name: p.name || "",
-      quantity: p.quantity || "",
-      notes: p.notes || "",
-      source: "otros",
-    });
-  });
+      const header = document.createElement("div");
+      header.className = "shopping-store-header";
+      const title = document.createElement("span");
+      title.textContent = store;
+      const count = document.createElement("span");
+      count.className = "shopping-store-count";
+      count.textContent = `${items.length} producto(s)`;
+      header.appendChild(title);
+      header.appendChild(count);
+      block.appendChild(header);
 
-  const storeNames = Object.keys(groups).sort((a, b) =>
-    a.localeCompare(b, "es", { sensitivity: "base" })
-  );
+      const list = document.createElement("ul");
+      list.className = "shopping-store-items";
 
-  let totalItems = 0;
+      items.forEach(({ product, source }) => {
+        const li = document.createElement("li");
+        const line = document.createElement("div");
+        line.className = "shopping-item-main";
+        line.textContent = product.quantity
+          ? `${product.name || ""} — ${product.quantity}`
+          : product.name || "";
+        li.appendChild(line);
 
-  storeNames.forEach((storeName) => {
-    const items = groups[storeName];
-    totalItems += items.length;
+        if (product.notes || source) {
+          const meta = document.createElement("div");
+          meta.className = "shopping-item-meta";
+          const parts = [];
+          if (source === "almacén") parts.push("Almacén");
+          else if (source === "otros") parts.push("Otros productos");
+          if (product.notes) parts.push(product.notes);
+          meta.textContent = parts.join(" · ");
+          li.appendChild(meta);
+        }
 
-    const block = document.createElement("div");
-    block.className = "shopping-store-block";
-    block.dataset.store = storeName;
+        list.appendChild(li);
+      });
 
-    const header = document.createElement("div");
-    header.className = "shopping-store-header";
-    const title = document.createElement("span");
-    title.textContent = storeName;
-    const count = document.createElement("span");
-    count.className = "shopping-store-count";
-    count.textContent = `${items.length} producto(s)`;
-    header.appendChild(title);
-    header.appendChild(count);
-    block.appendChild(header);
-
-    const list = document.createElement("ul");
-    list.className = "shopping-store-items";
-
-    items.forEach((it) => {
-      const li = document.createElement("li");
-      const line = document.createElement("div");
-      line.className = "shopping-item-main";
-      line.textContent = it.quantity
-        ? `${it.name} — ${it.quantity}`
-        : it.name;
-      li.appendChild(line);
-
-      if (it.notes || it.source) {
-        const meta = document.createElement("div");
-        meta.className = "shopping-item-meta";
-        const parts = [];
-        if (it.source === "almacén") parts.push("Almacén");
-        else if (it.source === "otros") parts.push("Otros productos");
-        if (it.notes) parts.push(it.notes);
-        meta.textContent = parts.join(" · ");
-        li.appendChild(meta);
-      }
-
-      list.appendChild(li);
+      block.appendChild(list);
+      shoppingListContainer.appendChild(block);
     });
 
-    block.appendChild(list);
-    shoppingListContainer.appendChild(block);
-  });
-
-  const storeCount = storeNames.length;
-  shoppingSummary.textContent = `${totalItems} producto(s) · ${storeCount} tienda(s)`;
+  shoppingSummary.textContent = `${summary.totalItems} producto(s) · ${summary.totalStores} tienda(s)`;
 }
 
 function handleShoppingListClick(e) {

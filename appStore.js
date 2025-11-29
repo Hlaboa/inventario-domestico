@@ -12,6 +12,9 @@
    *
    * @typedef {BaseEntity & {name:string, block?:string, type?:string, shelf?:string, quantity?:string, have?:boolean, buy?:boolean, selectionId?:string, notes?:string, scope?:("almacen"|"otros")}} Product
    * @typedef {BaseEntity & {productId?:string, productName?:string, producerId?:string, brand?:string, storeIds?:string[], notes?:string}} Instance
+   * @typedef {BaseEntity & {name:string, type?:string, location?:string, website?:string, notes?:string}} Supplier
+   * @typedef {BaseEntity & {name:string, location?:string, website?:string, notes?:string}} Producer
+   * @typedef {BaseEntity & {block:string, type:string, notes?:string}} Classification
    */
 
   const nowIso = () => new Date().toISOString();
@@ -19,6 +22,103 @@
     val && String(val).trim().length > 0
       ? val
       : (crypto?.randomUUID ? crypto.randomUUID() : `${prefix}-${Math.random().toString(36).slice(2)}`);
+
+  /**
+   * @param {Partial<Product>} p
+   * @returns {Product}
+   */
+  function validateProduct(p) {
+    const scope = p.scope === "otros" ? "otros" : "almacen";
+    const now = nowIso();
+    const trimmedName = (p.name || "").trim();
+    return {
+      id: ensureId(p.id, scope === "otros" ? "extra" : "prod"),
+      name: trimmedName,
+      block: (p.block || "").trim(),
+      type: (p.type || "").trim(),
+      shelf: (p.shelf || "").trim(),
+      quantity: p.quantity || "",
+      have: !!p.have,
+      buy: !!p.buy,
+      selectionId: p.selectionId || "",
+      storeName: (p.storeName || "").trim(),
+      notes: p.notes || "",
+      scope,
+      createdAt: p.createdAt || now,
+      updatedAt: p.updatedAt || p.createdAt || now,
+    };
+  }
+
+  /**
+   * @param {Partial<Instance>} inst
+   * @returns {Instance}
+   */
+  function validateInstance(inst) {
+    const now = nowIso();
+    return {
+      id: ensureId(inst.id, "inst"),
+      productId: inst.productId || "",
+      productName: (inst.productName || "").trim(),
+      producerId: inst.producerId || "",
+      brand: (inst.brand || "").trim(),
+      storeIds: Array.isArray(inst.storeIds) ? inst.storeIds.filter(Boolean) : [],
+      storeNames: Array.isArray(inst.storeNames) ? inst.storeNames.filter(Boolean) : [],
+      notes: inst.notes || "",
+      createdAt: inst.createdAt || now,
+      updatedAt: inst.updatedAt || inst.createdAt || now,
+    };
+  }
+
+  /**
+   * @param {Partial<Supplier>} s
+   * @returns {Supplier}
+   */
+  function validateSupplier(s) {
+    const now = nowIso();
+    return {
+      id: ensureId(s.id, "store"),
+      name: (s.name || "").trim(),
+      type: (s.type || "").trim(),
+      location: (s.location || "").trim(),
+      website: (s.website || "").trim(),
+      notes: s.notes || "",
+      createdAt: s.createdAt || now,
+      updatedAt: s.updatedAt || s.createdAt || now,
+    };
+  }
+
+  /**
+   * @param {Partial<Producer>} p
+   * @returns {Producer}
+   */
+  function validateProducer(p) {
+    const now = nowIso();
+    return {
+      id: ensureId(p.id, "producer"),
+      name: (p.name || "").trim(),
+      location: (p.location || "").trim(),
+      website: (p.website || "").trim(),
+      notes: p.notes || "",
+      createdAt: p.createdAt || now,
+      updatedAt: p.updatedAt || p.createdAt || now,
+    };
+  }
+
+  /**
+   * @param {Partial<Classification>} c
+   * @returns {Classification}
+   */
+  function validateClassification(c) {
+    const now = nowIso();
+    return {
+      id: ensureId(c.id, "cls"),
+      block: (c.block || "").trim(),
+      type: (c.type || "").trim(),
+      notes: c.notes || "",
+      createdAt: c.createdAt || now,
+      updatedAt: c.updatedAt || c.createdAt || now,
+    };
+  }
 
   const initialState = {
     products: [],
@@ -33,14 +133,8 @@
   function normalizeUnifiedList(list) {
     if (!Array.isArray(list)) return [];
     return list.map((p) => {
-      const scope = p.scope === "otros" ? "otros" : "almacen";
-      return {
-        ...p,
-        scope,
-        id: ensureId(p.id, scope === "otros" ? "extra" : "prod"),
-        createdAt: p.createdAt || nowIso(),
-        updatedAt: p.updatedAt || p.createdAt || nowIso(),
-      };
+      const prod = validateProduct(p);
+      return prod;
     });
   }
 
@@ -175,11 +269,11 @@
       const current = state || {};
       const originalProducts = name === "products" ? (Array.isArray(list) ? list : []) : current.products || [];
       const originalExtras = name === "extraProducts" ? (Array.isArray(list) ? list : []) : current.extraProducts || [];
-      const products = originalProducts.map((p) => ({ ...p }));
-      const extras = originalExtras.map((p) => ({ ...p }));
+      const products = originalProducts.map((p) => validateProduct({ ...p, scope: "almacen" }));
+      const extras = originalExtras.map((p) => validateProduct({ ...p, scope: "otros" }));
       const unified = normalizeUnifiedList([
-        ...products.map((p) => ({ ...p, scope: "almacen" })),
-        ...extras.map((p) => ({ ...p, scope: "otros" })),
+        ...products,
+        ...extras,
       ]);
       const nextState = ensureStateShape({ ...current, unifiedProducts: unified });
       captureState(nextState);
@@ -207,7 +301,18 @@
       return nextState.unifiedProducts;
     }
 
-    const normalized = Array.isArray(list) ? list : [];
+    const normalizersByEntity = {
+      suppliers: validateSupplier,
+      producers: validateProducer,
+      classifications: validateClassification,
+      productInstances: validateInstance,
+    };
+    const normalizer = normalizersByEntity[name];
+    const normalized = Array.isArray(list)
+      ? normalizer
+        ? list.map((item) => normalizer(item))
+        : list
+      : [];
     const nextState = ensureStateShape({ ...state, [name]: normalized });
     captureState(nextState);
     appState?.hydrate?.({ [name]: normalized });
@@ -252,6 +357,39 @@
       (dataService?.selectors?.storeLocations
         ? dataService.selectors.storeLocations(s || state)
         : selectorFallback.storeLocations(s || state)),
+    shoppingSummary: (s) => {
+      const current = s || state;
+      const groups = new Map();
+
+      const add = (store, item) => {
+        const key = store && store.trim().length ? store : "Sin tienda";
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(item);
+      };
+
+      (current.products || []).forEach((p) => {
+        if (p.have) return;
+        add(p.storeName || "", { source: "almacén", product: p });
+      });
+
+      (current.extraProducts || []).forEach((p) => {
+        if (!p.buy) return;
+        add(p.storeName || "", { source: "otros", product: p });
+      });
+
+      let totalItems = 0;
+      const stores = [];
+      groups.forEach((items, store) => {
+        totalItems += items.length;
+        stores.push({ store, count: items.length, items });
+      });
+
+      return {
+        totalStores: stores.length,
+        totalItems,
+        stores,
+      };
+    },
   };
 
   window.AppStore = {

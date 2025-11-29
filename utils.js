@@ -71,6 +71,16 @@
     }
   }
 
+  /**
+   * Valida que el valor sea un objeto plano; devuelve {} en caso contrario.
+   * @param {unknown} value
+   * @returns {Record<string, any>}
+   */
+  function ensureObject(value) {
+    if (value && typeof value === "object" && !Array.isArray(value)) return value;
+    return {};
+  }
+
   window.AppUtils = {
     nowIsoString,
     safeLoadList,
@@ -78,5 +88,6 @@
     createTableInput,
     createTableTextarea,
     setSelectOptions,
+    ensureObject,
   };
 })();

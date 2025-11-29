@@ -24,6 +24,11 @@
       res.expiryText = String(res.shelfLifeDays);
     }
     res = normalizeMultiFields(res);
+    res.id =
+      res.id ||
+      (crypto.randomUUID
+        ? crypto.randomUUID()
+        : "prod-" + Math.random().toString(36).slice(2));
     res.selectionId = res.selectionId || "";
     res.have = !!res.have;
     res.quantity = res.quantity || "";
@@ -46,6 +51,11 @@
 
   function normalizeExtraProduct(p) {
     const res = normalizeMultiFields(p);
+    res.id =
+      res.id ||
+      (crypto.randomUUID
+        ? crypto.randomUUID()
+        : "extra-" + Math.random().toString(36).slice(2));
     res.selectionId = res.selectionId || "";
     res.buy = !!res.buy;
     res.quantity = res.quantity || "";
@@ -65,10 +75,10 @@
         (crypto.randomUUID
           ? crypto.randomUUID()
           : "store-" + Math.random().toString(36).slice(2)),
-      name: s.name || "",
-      type: s.type || "",
-      location: s.location || s.storesText || "",
-      website: s.website || "",
+      name: (s.name || "").trim(),
+      type: (s.type || "").trim(),
+      location: (s.location || s.storesText || "").trim(),
+      website: (s.website || "").trim(),
       notes: s.notes || "",
       createdAt: s.createdAt || now,
       updatedAt: s.updatedAt || now,
@@ -83,9 +93,9 @@
         (crypto.randomUUID
           ? crypto.randomUUID()
           : "prod-" + Math.random().toString(36).slice(2)),
-      name: p.name || "",
-      location: p.location || p.storesText || "",
-      website: p.website || "",
+      name: (p.name || "").trim(),
+      location: (p.location || p.storesText || "").trim(),
+      website: (p.website || "").trim(),
       notes: p.notes || "",
       createdAt: p.createdAt || now,
       updatedAt: p.updatedAt || now,
@@ -101,10 +111,10 @@
           ? crypto.randomUUID()
           : "inst-" + Math.random().toString(36).slice(2)),
       productId: i.productId || "",
-      productName: i.productName || "",
+      productName: (i.productName || "").trim(),
       producerId: i.producerId || "",
-      brand: i.brand || "",
-      storeIds: Array.isArray(i.storeIds) ? i.storeIds : [],
+      brand: (i.brand || "").trim(),
+      storeIds: Array.isArray(i.storeIds) ? i.storeIds.filter(Boolean) : [],
       notes: i.notes || "",
       createdAt: i.createdAt || now,
       updatedAt: i.updatedAt || now,
