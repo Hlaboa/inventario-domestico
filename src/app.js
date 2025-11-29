@@ -961,7 +961,7 @@ document.addEventListener("DOMContentLoaded", () => {
     },
     getClassifications: () => getClassificationsList(),
     persist: (list) => {
-      classifications = Array.isArray(list) ? list : [];
+      setClassificationsList(Array.isArray(list) ? list : []);
       saveClassifications();
     },
     onAfterSave: handleClassificationDependencies,
@@ -983,7 +983,7 @@ document.addEventListener("DOMContentLoaded", () => {
     },
     getProducers: () => getProducersList(),
     persist: (list) => {
-      producers = Array.isArray(list) ? list : [];
+      setProducersList(Array.isArray(list) ? list : []);
       saveProducers();
     },
     onAfterSave: handleProducersDependencies,
@@ -1009,7 +1009,7 @@ document.addEventListener("DOMContentLoaded", () => {
     },
     getStores: () => getSuppliersList(),
     persist: (list) => {
-      suppliers = Array.isArray(list) ? list : [];
+      setSuppliersList(Array.isArray(list) ? list : []);
       saveSuppliers();
     },
     onAfterSave: handleStoresDependencies,
@@ -1035,9 +1035,9 @@ document.addEventListener("DOMContentLoaded", () => {
       rowTemplate: instancesRowTemplate,
     },
     data: {
-      instances: productInstances,
-      producers,
-      stores: suppliers,
+      instances: getInstancesList(),
+      producers: getProducersList(),
+      stores: getSuppliersList(),
     },
     getAllProducts: () => getAllProductsForAssociationList(),
     getFamilyForInstance,
@@ -1194,6 +1194,29 @@ document.addEventListener("DOMContentLoaded", () => {
       : null;
   if (instancesController && typeof instancesController.render === "function") {
     instancesController.render();
+  } else if (window.InstancesFeature && typeof window.InstancesFeature.init === "function") {
+    window.InstancesFeature.init({
+      refs: {
+        tableBody: instancesTableBody,
+        addButton: addInstanceButton,
+        saveButton: saveInstancesButton,
+      },
+      getContext: () => instancesViewContext,
+      getInstances: () => getInstancesList(),
+      actions: {
+        delete: (id) => removeInstanceById(id),
+        updateField: (id, field, value) => {
+          const list = getInstancesList().map((inst) =>
+            inst.id === id ? { ...inst, [field]: value, updatedAt: nowIsoString() } : inst
+          );
+          setInstancesList(list);
+          saveProductInstances();
+        },
+        add: () => handleAddInstance && handleAddInstance(),
+        save: () => handleSaveInstances && handleSaveInstances(),
+      },
+    });
+    window.InstancesFeature.render();
   }
 
   if (window.InventoryView && typeof window.InventoryView.init === "function") {
@@ -3563,6 +3586,19 @@ function persistInstances(list, options = {}) {
   cleanupSelectionsWithInstances();
 }
 
+function removeInstanceById(id) {
+  const list = getInstancesList();
+  const filtered = list.filter((i) => i.id !== id);
+  if (filtered.length === list.length) return;
+  setInstancesList(filtered);
+  saveProductInstances();
+  cleanupSelectionsWithInstances();
+  renderInstancesTable();
+  renderProducts();
+  renderExtraQuickTable();
+  renderExtraEditTable();
+}
+
 function handleInstancesDependencies() {
   renderInstancesTable();
   renderProducts();
@@ -3717,9 +3753,9 @@ function renderInstancesTable() {
   hideProductAutocomplete();
   if (window.InstancesView && typeof window.InstancesView.render === "function") {
     if (instancesViewContext && instancesViewContext.data) {
-      instancesViewContext.data.instances = productInstances;
-      instancesViewContext.data.producers = producers;
-      instancesViewContext.data.stores = suppliers;
+      instancesViewContext.data.instances = getInstancesList();
+      instancesViewContext.data.producers = getProducersList();
+      instancesViewContext.data.stores = getSuppliersList();
     }
     window.InstancesView.render(instancesViewContext);
   }
