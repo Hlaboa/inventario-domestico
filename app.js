@@ -197,6 +197,9 @@ let classificationViewContext;
 let producersViewContext;
 let storesViewContext;
 let instancesViewContext;
+let inventoryEditViewContext;
+let extraEditViewContext;
+let extrasViewContext;
 let inventoryController;
 let inventoryEditRowTemplate;
 let extraEditRowTemplate;
@@ -553,65 +556,6 @@ document.addEventListener("DOMContentLoaded", () => {
   almacenEditModeButton.addEventListener("click", toggleAlmacenEditMode);
   otrosEditModeButton.addEventListener("click", toggleOtrosEditMode);
 
-  // Edición almacén
-  saveGridButton.addEventListener("click", handleSaveGrid);
-  addGridRowButton.addEventListener("click", handleAddGridRow);
-  gridTableBody.addEventListener("click", handleGridClick);
-
-  editFilterSearchInput.addEventListener("input", filterGridRows);
-  editFilterFamilySelect.addEventListener("change", filterGridRows);
-  editFilterTypeSelect.addEventListener("change", filterGridRows);
-  editFilterShelfSelect.addEventListener("change", filterGridRows);
-  editFilterStoreSelect.addEventListener("change", filterGridRows);
-
-  // Otros productos
-  extraListTableBody.addEventListener("click", handleExtraListClick);
-
-  const debouncedRenderExtras =
-    (window.AppUtils && window.AppUtils.debounce
-      ? window.AppUtils.debounce(renderExtraQuickTable, 150)
-      : renderExtraQuickTable);
-  const debouncedRenderInventory =
-    (window.AppUtils && window.AppUtils.debounce
-      ? window.AppUtils.debounce(() => renderProducts(), 150)
-      : () => renderProducts());
-  const debouncedRenderInstances =
-    (window.AppUtils && window.AppUtils.debounce
-      ? window.AppUtils.debounce(() => {
-          if (instancesController && typeof instancesController.render === "function") {
-            instancesController.render();
-          } else {
-            renderInstancesTable();
-          }
-        }, 150)
-      : () => {
-          if (instancesController && typeof instancesController.render === "function") {
-            instancesController.render();
-          } else {
-            renderInstancesTable();
-          }
-        });
-
-  if (extraFilterSearchInput)
-    extraFilterSearchInput.addEventListener("input", debouncedRenderExtras);
-  if (extraFilterFamilySelect)
-    extraFilterFamilySelect.addEventListener("change", debouncedRenderExtras);
-  if (extraFilterTypeSelect)
-    extraFilterTypeSelect.addEventListener("change", debouncedRenderExtras);
-  if (extraFilterStoreSelect)
-    extraFilterStoreSelect.addEventListener("change", debouncedRenderExtras);
-  if (extraFilterBuySelect)
-    extraFilterBuySelect.addEventListener("change", debouncedRenderExtras);
-
-  addExtraRowButton.addEventListener("click", handleAddExtraRow);
-  saveExtraButton.addEventListener("click", handleSaveExtra);
-  extraTableBody.addEventListener("click", handleExtraEditClick);
-
-  extraEditFilterSearchInput.addEventListener("input", filterExtraEditRows);
-  extraEditFilterFamilySelect.addEventListener("change", filterExtraEditRows);
-  extraEditFilterTypeSelect.addEventListener("change", filterExtraEditRows);
-  extraEditFilterStoreSelect.addEventListener("change", filterExtraEditRows);
-
   // Productores
   // Selección de productos
   instancesSearchInput.addEventListener("input", renderInstancesTable);
@@ -621,7 +565,6 @@ document.addEventListener("DOMContentLoaded", () => {
     renderInstancesTable
   );
   instancesStoreFilterSelect.addEventListener("change", renderInstancesTable);
-  addInstanceButton.addEventListener("click", handleAddInstanceRow);
   saveInstancesButton.addEventListener("click", handleSaveInstances);
   if (addQuickProductButton)
     addQuickProductButton.addEventListener("click", handleAddQuickProduct);
@@ -715,6 +658,169 @@ document.addEventListener("DOMContentLoaded", () => {
   } else if (window.AppState && typeof window.AppState.subscribe === "function") {
     syncFromState(window.AppState.getState());
     window.AppState.subscribe(syncFromState);
+  }
+
+  extrasViewContext = {
+    refs: {
+      tableBody: extraListTableBody,
+      searchInput: extraFilterSearchInput,
+      familyFilter: extraFilterFamilySelect,
+      typeFilter: extraFilterTypeSelect,
+      storeFilter: extraFilterStoreSelect,
+      buyFilter: extraFilterBuySelect,
+      rowTemplate: extraQuickRowTemplate,
+    },
+    getExtras: () => getOtherProducts(),
+    getDrafts: () => extraDrafts,
+    buildFamilyStripeMap,
+    helpers: {
+      createTableInput,
+      createTableTextarea,
+      createFamilySelect,
+      createTypeSelect,
+      linkFamilyTypeSelects,
+      createSelectionButton,
+      getSelectionLabelForProduct,
+      getSelectionStoresForProduct,
+    },
+    getSelectionInstanceForProduct,
+    getStoreNames,
+    onToggleBuy: (id, checked) => {
+      const p = extraProducts.find((x) => x.id === id);
+      if (!p) return;
+      p.buy = checked;
+      saveExtraProducts();
+      renderShoppingList();
+    },
+    onMoveToAlmacen: (id) => moveExtraToAlmacen(id),
+    onSelectSelection: (id) => openSelectionPopupForProduct(id),
+    onDelete: (id) => removeExtraById(id),
+    onCancelDraft: (id) => {
+      if (!id) return;
+      extraDrafts = extraDrafts.filter((d) => d.id !== id);
+      renderExtraQuickTable();
+    },
+  };
+
+  if (window.ExtrasView && typeof window.ExtrasView.init === "function") {
+    window.ExtrasView.init(extrasViewContext);
+  }
+
+  extraEditViewContext = {
+    refs: {
+      tableBody: extraTableBody,
+      addButton: addExtraRowButton,
+      saveButton: saveExtraButton,
+      searchInput: extraEditFilterSearchInput,
+      familyFilter: extraEditFilterFamilySelect,
+      typeFilter: extraEditFilterTypeSelect,
+      storeFilter: extraEditFilterStoreSelect,
+      rowTemplate: extraEditRowTemplate,
+    },
+    getProducts: () => getOtherProducts(),
+    findById: (id) => extraProducts.find((p) => p.id === id),
+    buildFamilyStripeMap,
+    sorter: (a, b) =>
+      (a.block || "").localeCompare(b.block || "", "es", { sensitivity: "base" }) ||
+      (a.type || "").localeCompare(b.type || "", "es", { sensitivity: "base" }) ||
+      (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" }),
+    matchesStore: (id, storeId) => {
+      if (!storeId) return true;
+      const product = extraProducts.find((p) => p.id === id);
+      if (!product) return true;
+      const inst = getSelectionInstanceForProduct(product);
+      return !!(inst && Array.isArray(inst.storeIds) && inst.storeIds.includes(storeId));
+    },
+    helpers: {
+      createTableInput,
+      createTableTextarea,
+      createFamilySelect,
+      createTypeSelect,
+      linkFamilyTypeSelects,
+      createSelectionButton,
+      getSelectionLabelForProduct,
+      getSelectionStoresForProduct,
+    },
+    persist: (list) => {
+      extraProducts = list;
+      saveExtraProducts();
+    },
+    onAfterSave: () => {
+      renderBlockOptions();
+      renderTypeOptions();
+      updateInstanceFilterOptions();
+      renderProductsDatalist();
+      renderExtraQuickTable();
+      renderShoppingList();
+      setOtrosMode(false);
+      showToast("Otros productos guardados");
+    },
+    onMoveToAlmacen: (id) => moveExtraToAlmacen(id),
+    onSelectSelection: (id) => openSelectionPopupForProduct(id),
+    onDelete: (id) => removeExtraById(id),
+    nowIsoString,
+  };
+
+  if (window.ExtraEditView && typeof window.ExtraEditView.init === "function") {
+    window.ExtraEditView.init(extraEditViewContext);
+  }
+
+  inventoryEditViewContext = {
+    refs: {
+      tableBody: gridTableBody,
+      addButton: addGridRowButton,
+      saveButton: saveGridButton,
+      searchInput: editFilterSearchInput,
+      familyFilter: editFilterFamilySelect,
+      typeFilter: editFilterTypeSelect,
+      shelfFilter: editFilterShelfSelect,
+      storeFilter: editFilterStoreSelect,
+      rowTemplate: inventoryEditRowTemplate,
+    },
+    getProducts: () => getPantryProducts(),
+    findById: (id) => products.find((p) => p.id === id),
+    buildFamilyStripeMap,
+    sorter: compareShelfBlockTypeName,
+    matchesStore: (id, storeId) => {
+      if (!storeId) return true;
+      const product = products.find((p) => p.id === id);
+      if (!product) return true;
+      const inst = getSelectionInstanceForProduct(product);
+      return !!(inst && Array.isArray(inst.storeIds) && inst.storeIds.includes(storeId));
+    },
+    helpers: {
+      createTableInput,
+      createTableTextarea,
+      createFamilySelect,
+      createTypeSelect,
+      linkFamilyTypeSelects,
+      createSelectionButton,
+      getSelectionLabelForProduct,
+      getSelectionStoresForProduct,
+    },
+    persist: (list) => {
+      products = list;
+      saveProducts();
+    },
+    onAfterSave: () => {
+      renderShelfOptions();
+      renderBlockOptions();
+      renderTypeOptions();
+      updateInstanceFilterOptions();
+      renderProductsDatalist();
+      renderProducts();
+      renderShoppingList();
+      setAlmacenMode(false);
+      showToast("Inventario guardado");
+    },
+    onMoveToExtra: (id) => moveProductToExtra(id),
+    onSelectSelection: (id) => openSelectionPopupForProduct(id),
+    onDelete: (id) => removeProductById(id),
+    nowIsoString,
+  };
+
+  if (window.InventoryEditView && typeof window.InventoryEditView.init === "function") {
+    window.InventoryEditView.init(inventoryEditViewContext);
   }
 
   classificationViewContext = {
@@ -3147,14 +3253,18 @@ function handleAddQuickExtra() {
     (crypto.randomUUID ? crypto.randomUUID() : "draft-extra-" + Date.now()) +
     "-" +
     Math.random().toString(36).slice(2);
+  const defBlock = extraFilterFamilySelect?.value || "";
+  const defType = extraFilterTypeSelect?.value || "";
+  const defBuy =
+    extraFilterBuySelect && extraFilterBuySelect.value === "yes" ? true : false;
   extraDrafts.unshift({
     id,
     name: "",
-    block: "",
-    type: "",
+    block: defBlock,
+    type: defType,
     quantity: "",
     notes: "",
-    buy: false,
+    buy: defBuy,
   });
   renderExtraQuickTable();
   highlightTopRow(extraListTableBody);
@@ -3165,14 +3275,19 @@ function handleAddQuickProduct() {
     (crypto.randomUUID ? crypto.randomUUID() : "draft-prod-" + Date.now()) +
     "-" +
     Math.random().toString(36).slice(2);
+  const defBlock = filterBlockSelect?.value || "";
+  const defType = filterTypeSelect?.value || "";
+  const defShelf = filterShelfSelect?.value || "";
+  const status = filterStatusSelect?.value || "all";
+  const defHave = status === "have" ? true : status === "missing" ? false : false;
   productDrafts.unshift({
     id,
     name: "",
-    block: "",
-    type: "",
-    shelf: "",
+    block: defBlock,
+    type: defType,
+    shelf: defShelf,
     quantity: "",
-    have: false,
+    have: defHave,
     acquisitionDate: "",
     expiryText: "",
     notes: "",
@@ -3323,395 +3438,19 @@ function commitDraftExtras() {
 //  ALMACÉN: EDICIÓN
 // ==============================
 
-function createInventoryEditRow(p, stripe = 0) {
-  const components = window.AppComponents || {};
-  const hasTemplate =
-    inventoryEditRowTemplate &&
-    typeof components.cloneRowFromTemplate === "function" &&
-    typeof components.hydrateRow === "function";
-
-  const famSel = createFamilySelect(p.block || "");
-  const typeSel = createTypeSelect(p.block || "", p.type || "");
-  linkFamilyTypeSelects(famSel, typeSel);
-
-  const selectionBtn = createSelectionButton(p.selectionId, p.id);
-  const haveCheckbox = document.createElement("input");
-  haveCheckbox.type = "checkbox";
-  haveCheckbox.dataset.field = "have";
-  haveCheckbox.checked = !!p.have;
-
-  const adqInput = document.createElement("input");
-  adqInput.type = "date";
-  adqInput.className = "table-input";
-  adqInput.dataset.field = "acquisitionDate";
-  adqInput.value = p.acquisitionDate || "";
-
-  if (hasTemplate) {
-    const row = components.cloneRowFromTemplate(inventoryEditRowTemplate);
-    if (!row) return null;
-    components.hydrateRow(row, {
-      dataset: { id: p.id },
-      classes: [`family-stripe-${stripe}`],
-      text: {
-        "[data-field='selectionText']": getSelectionLabelForProduct(p),
-        "[data-field='stores']": getSelectionStoresForProduct(p),
-      },
-      actions: {
-        "[data-role='selection-btn']": { action: "select-selection", id: p.id },
-        "[data-role='move']": { action: "move-to-extra", id: p.id },
-        "[data-role='delete']": { action: "delete", id: p.id },
-      },
-      replacements: {
-        "[data-slot='name']": createTableInput("name", p.name),
-        "[data-slot='block']": famSel,
-        "[data-slot='type']": typeSel,
-        "[data-slot='shelf']": createTableInput("shelf", p.shelf),
-        "[data-slot='quantity']": createTableInput("quantity", p.quantity),
-        "[data-slot='have']": haveCheckbox,
-        "[data-slot='acquisitionDate']": adqInput,
-        "[data-slot='expiryText']": createTableInput("expiryText", p.expiryText),
-        "[data-slot='notes']": createTableTextarea("notes", p.notes || ""),
-        "[data-role='selection-btn']": selectionBtn,
-      },
-    });
-    return row;
-  }
-
-  const tr = document.createElement("tr");
-  tr.dataset.id = p.id;
-  tr.classList.add(`family-stripe-${stripe}`);
-  tr.classList.add(`family-stripe-${stripe}`);
-
-  let td;
-
-  td = document.createElement("td");
-  td.appendChild(createTableInput("name", p.name));
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  td.appendChild(famSel);
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  td.appendChild(typeSel);
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  td.appendChild(createTableInput("shelf", p.shelf));
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  td.appendChild(createTableInput("quantity", p.quantity));
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  td.className = "selection-td";
-  const selCell = document.createElement("div");
-  selCell.className = "selection-cell";
-  const spanSel = document.createElement("span");
-  spanSel.className = "selection-text";
-  spanSel.textContent = getSelectionLabelForProduct(p);
-  selCell.appendChild(spanSel);
-  selCell.appendChild(selectionBtn);
-  td.appendChild(selCell);
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  const spanStores = document.createElement("span");
-  spanStores.textContent = getSelectionStoresForProduct(p);
-  td.appendChild(spanStores);
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  td.appendChild(haveCheckbox);
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  td.appendChild(adqInput);
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  td.appendChild(createTableInput("expiryText", p.expiryText));
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  td.appendChild(createTableTextarea("notes", p.notes || ""));
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  const moveBtn = document.createElement("button");
-  moveBtn.className = "btn btn-small btn-icon";
-  moveBtn.textContent = "→";
-  moveBtn.dataset.action = "move-to-extra";
-  moveBtn.dataset.id = p.id;
-  td.appendChild(moveBtn);
-
-  const delBtn = document.createElement("button");
-  delBtn.className = "btn btn-small btn-danger";
-  delBtn.textContent = "✕";
-  delBtn.dataset.action = "delete";
-  delBtn.dataset.id = p.id;
-  td.appendChild(delBtn);
-
-  tr.appendChild(td);
-  return tr;
-}
-
 function renderGridRows() {
-  refreshProductsFromUnified();
-  if (!gridTableBody) return;
-  gridTableBody.innerHTML = "";
-
-  const items = getPantryProducts().slice().sort(compareShelfBlockTypeName);
-  const stripeMap = buildFamilyStripeMap(items);
-  const components = window.AppComponents || {};
-  const hasTemplate =
-    inventoryEditRowTemplate &&
-    typeof components.cloneRowFromTemplate === "function" &&
-    typeof components.hydrateRow === "function";
-
-  if (items.length === 0) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 12;
-    td.textContent =
-      "No hay productos todavía. Usa 'Añadir producto' para crear uno nuevo.";
-    tr.appendChild(td);
-    gridTableBody.appendChild(tr);
-    return;
-  }
-
-  if (hasTemplate && typeof components.renderTable === "function") {
-    components.renderTable(gridTableBody, items, {
-      template: inventoryEditRowTemplate,
-      emptyMessage:
-        "No hay productos todavía. Usa 'Añadir producto' para crear uno nuevo.",
-      emptyColSpan: 12,
-      createRow: (item) => {
-        const stripe = stripeMap[(item.block || "").trim() || "__none__"] || 0;
-        return createInventoryEditRow(item, stripe);
-      },
-    });
-  } else {
-    const frag = document.createDocumentFragment();
-    items.forEach((p) => {
-      const stripe = stripeMap[(p.block || "").trim() || "__none__"] || 0;
-      const row = createInventoryEditRow(p, stripe);
-      if (row) frag.appendChild(row);
-    });
-    gridTableBody.appendChild(frag);
-  }
-
-  filterGridRows();
-}
-
-function handleAddGridRow() {
-  if (!gridTableBody) return;
-
   if (
-    gridTableBody.children.length === 1 &&
-    !gridTableBody.children[0].dataset.id
+    window.InventoryEditView &&
+    typeof window.InventoryEditView.render === "function"
   ) {
-    gridTableBody.innerHTML = "";
-  }
-
-  const id =
-    (crypto.randomUUID ? crypto.randomUUID() : "prod-" + Date.now()) +
-    "-" +
-    Math.random().toString(36).slice(2);
-
-  const defBlock = editFilterFamilySelect.value || "";
-  const defType = editFilterTypeSelect.value || "";
-  const defShelf = editFilterShelfSelect.value || "";
-
-  const product = {
-    id,
-    name: "",
-    block: defBlock,
-    type: defType,
-    shelf: defShelf,
-    quantity: "",
-    have: false,
-    acquisitionDate: "",
-    expiryText: "",
-    notes: "",
-    selectionId: "",
-  };
-
-  const row = createInventoryEditRow(product, 0);
-  if (row) gridTableBody.prepend(row);
-}
-
-function handleGridClick(e) {
-  const target = e.target.closest("button,[data-action],[data-role]") || e.target;
-  const roleActionMap = {
-    "selection-btn": "select-selection",
-    move: "move-to-extra",
-    delete: "delete",
-  };
-  let action = target.dataset.action || roleActionMap[target.dataset.role];
-  if (!action && target.closest("button")) {
-    const text = target.closest("button").textContent.trim();
-    if (text === "✕") action = "delete";
-    if (text === "→") action = "move-to-extra";
-  }
-  if (!action) return;
-
-  if (action === "delete") {
-    const tr = target.closest("tr");
-    const id = tr?.dataset.id || target.dataset.id;
-    if (id) {
-      removeProductById(id);
-    } else if (tr) {
-      tr.remove();
-    }
-  } else if (action === "move-to-extra") {
-    const tr = target.closest("tr");
-    if (!tr) return;
-    const id = tr.dataset.id || target.dataset.id;
-    moveProductToExtra(id);
-  } else if (action === "select-selection") {
-    const tr = target.closest("tr");
-    if (!tr) return;
-    const id = tr.dataset.id || target.dataset.id;
-    if (!id) return;
-    const product = products.find((p) => p.id === id);
-    if (!product) return;
-    openSelectionPopupForProduct(id);
+    window.InventoryEditView.render(inventoryEditViewContext);
   }
 }
 
 function handleSaveGrid() {
-  if (!gridTableBody) return;
-  const rows = Array.from(gridTableBody.querySelectorAll("tr"));
-  const newProducts = [];
-
-  const now = nowIsoString();
-
-  for (const tr of rows) {
-    const id = tr.dataset.id;
-    if (!id) continue;
-
-    const getField = (field) => {
-      const el = tr.querySelector(`[data-field="${field}"]`);
-      if (!el) return "";
-      if (el.type === "checkbox") return el.checked;
-      return el.value.trim();
-    };
-
-    const name = getField("name");
-    if (!name) continue;
-
-    const block = getField("block");
-    const type = getField("type");
-    const shelf = getField("shelf");
-    const quantity = getField("quantity");
-    const acquisitionDate = getField("acquisitionDate");
-    const expiryText = getField("expiryText");
-    const notes = (tr.querySelector('textarea[data-field="notes"]') || {})
-      .value;
-
-    const have = !!getField("have");
-
-    const existing = products.find((p) => p.id === id) || {};
-    const createdAt = existing.createdAt || now;
-    const selectionId = existing.selectionId || "";
-
-    newProducts.push({
-      id,
-      name,
-      block,
-      type,
-      shelf,
-      quantity,
-      have,
-      acquisitionDate,
-      expiryText,
-      notes,
-      selectionId,
-      createdAt,
-      updatedAt: now,
-    });
+  if (window.InventoryEditView && typeof window.InventoryEditView.save === "function") {
+    window.InventoryEditView.save(inventoryEditViewContext);
   }
-
-  newProducts.sort(compareShelfBlockTypeName);
-  products = newProducts;
-  const hasStore = isStoreActive() && window.AppStore && window.AppStore.actions && typeof window.AppStore.actions.setProducts === "function";
-  saveProducts();
-  renderShelfOptions();
-  renderBlockOptions();
-  renderTypeOptions();
-  updateInstanceFilterOptions();
-  renderProductsDatalist();
-  renderProducts();
-  renderShoppingList();
-  // Sal de modo edición aunque haya store activo
-  setAlmacenMode(false);
-  showToast("Inventario guardado");
-}
-
-function filterGridRows() {
-  refreshProductsFromUnified();
-  if (!gridTableBody) return;
-  const search = (editFilterSearchInput.value || "").toLowerCase();
-  const filterBlock = editFilterFamilySelect.value || "";
-  const filterType = editFilterTypeSelect.value || "";
-  const filterShelf = editFilterShelfSelect.value || "";
-  const filterStoreId = editFilterStoreSelect.value || "";
-
-  const rows = Array.from(gridTableBody.querySelectorAll("tr"));
-  rows.forEach((tr) => {
-    const id = tr.dataset.id;
-    if (!id) {
-      tr.style.display = "";
-      return;
-    }
-    const nameEl = tr.querySelector('input[data-field="name"]');
-    const blockEl = tr.querySelector('[data-field="block"]');
-    const typeEl = tr.querySelector('[data-field="type"]');
-    const shelfEl = tr.querySelector('input[data-field="shelf"]');
-    const notesEl = tr.querySelector('textarea[data-field="notes"]');
-
-    const name = (nameEl && nameEl.value) || "";
-    const block = (blockEl && blockEl.value) || "";
-    const type = (typeEl && typeEl.value) || "";
-    const shelf = (shelfEl && shelfEl.value) || "";
-    const notes = (notesEl && notesEl.value) || "";
-
-    if (filterBlock && block !== filterBlock) {
-      tr.style.display = "none";
-      return;
-    }
-    if (filterType && type !== filterType) {
-      tr.style.display = "none";
-      return;
-    }
-    if (filterShelf && shelf !== filterShelf) {
-      tr.style.display = "none";
-      return;
-    }
-
-    if (filterStoreId) {
-      const product = products.find((p) => p.id === id);
-      if (product) {
-        const inst = getSelectionInstanceForProduct(product);
-        if (!inst || !inst.storeIds || !inst.storeIds.includes(filterStoreId)) {
-          tr.style.display = "none";
-          return;
-        }
-      }
-    }
-
-    if (search) {
-      const haystack = `${name} ${block} ${type} ${shelf} ${notes}`.toLowerCase();
-      if (!haystack.includes(search)) {
-        tr.style.display = "none";
-        return;
-      }
-    }
-
-    tr.style.display = "";
-  });
 }
 
 // ==============================
@@ -3719,264 +3458,8 @@ function filterGridRows() {
 // ==============================
 
 function renderExtraQuickTable() {
-  refreshProductsFromUnified();
-  const extras = getOtherProducts();
-  if (!extraListTableBody) return;
-  extraListTableBody.innerHTML = "";
-
-  const search = (extraFilterSearchInput?.value || "").toLowerCase();
-  const filterFamily = extraFilterFamilySelect?.value || "";
-  const filterType = extraFilterTypeSelect?.value || "";
-  const filterStore = extraFilterStoreSelect?.value || "";
-  const filterBuy = extraFilterBuySelect?.value || "all";
-
-  const items = extras
-    .slice()
-    .filter((p) => {
-      if (filterFamily && (p.block || "") !== filterFamily) return false;
-      if (filterType && (p.type || "") !== filterType) return false;
-      if (filterStore) {
-        const inst = getSelectionInstanceForProduct(p);
-        const hasStore =
-          inst &&
-          Array.isArray(inst.storeIds) &&
-          inst.storeIds.includes(filterStore);
-        if (!hasStore) return false;
-      }
-      if (filterBuy !== "all") {
-        const buyVal = filterBuy === "yes";
-        if (!!p.buy !== buyVal) return false;
-      }
-      if (search) {
-        const inst = getSelectionInstanceForProduct(p);
-        const stores = inst ? getStoreNames(inst.storeIds) : "";
-        const haystack = `${p.name || ""} ${p.block || ""} ${p.type || ""} ${
-          p.notes || ""
-        } ${stores || ""}`.toLowerCase();
-        if (!haystack.includes(search)) return false;
-      }
-      return true;
-    })
-    .sort((a, b) =>
-      (a.block || "").localeCompare(b.block || "", "es", {
-        sensitivity: "base",
-      }) || (a.type || "").localeCompare(b.type || "", "es", {
-        sensitivity: "base",
-      }) || (a.name || "").localeCompare(b.name || "", "es", {
-        sensitivity: "base",
-      })
-    );
-  const stripeMap = buildFamilyStripeMap(items);
-
-  // Drafts
-  extraDrafts.forEach((d) => {
-    const tr = document.createElement("tr");
-    tr.className = "extra-draft-row";
-    tr.dataset.draftId = d.id;
-
-    let td = document.createElement("td");
-    td.appendChild(createTableInput("name", d.name || ""));
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    const famSel = createFamilySelect(d.block || "");
-    famSel.dataset.field = "block";
-    td.appendChild(famSel);
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    const typeSel = createTypeSelect(d.block || "", d.type || "");
-    typeSel.dataset.field = "type";
-    linkFamilyTypeSelects(famSel, typeSel);
-    td.appendChild(typeSel);
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    td.appendChild(createTableInput("quantity", d.quantity || ""));
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    td.textContent = "—";
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    td.textContent = "—";
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    const buyChk = createTableInput("buy", d.buy ? "on" : "", "checkbox");
-    buyChk.checked = !!d.buy;
-    td.appendChild(buyChk);
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    td.appendChild(createTableTextarea("notes", d.notes || ""));
-    tr.appendChild(td);
-
-    td = document.createElement("td");
-    const cancelBtn = document.createElement("button");
-    cancelBtn.className = "btn btn-small btn-danger";
-    cancelBtn.dataset.action = "cancel-draft-extra";
-    cancelBtn.dataset.id = d.id;
-    cancelBtn.textContent = "✕";
-    td.appendChild(cancelBtn);
-    tr.appendChild(td);
-
-    extraListTableBody.appendChild(tr);
-  });
-
-  if (items.length === 0 && extraDrafts.length === 0) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 9;
-    td.textContent =
-      "No hay otros productos. Usa 'Editar lista' para añadir algunos.";
-    tr.appendChild(td);
-    extraListTableBody.appendChild(tr);
-    return;
-  }
-
-  const frag = document.createDocumentFragment();
-  items.forEach((p) => {
-    const stripe = stripeMap[(p.block || "").trim() || "__none__"] || 0;
-    const row = cloneExtraQuickRow(p, stripe);
-    if (row) frag.appendChild(row);
-  });
-  extraListTableBody.appendChild(frag);
-}
-
-// Fila para tabla de "Otros" usando template o fallback imperativo
-function cloneExtraQuickRow(product, stripe = 0) {
-  let tr = null;
-  const components = window.AppComponents || {};
-  const canUseTemplate =
-    extraQuickRowTemplate &&
-    typeof components.cloneRowFromTemplate === "function" &&
-    typeof components.hydrateRow === "function";
-
-  if (canUseTemplate) {
-    tr = components.cloneRowFromTemplate(extraQuickRowTemplate);
-    if (tr) {
-      const selectionBtn = createSelectionButton(product.selectionId, product.id);
-      components.hydrateRow(tr, {
-        dataset: { id: product.id },
-        classes: [`family-stripe-${stripe}`],
-        text: {
-          "[data-field='name']": product.name,
-          "[data-field='block']": product.block,
-          "[data-field='type']": product.type,
-          "[data-field='quantity']": product.quantity,
-          "[data-field='notes']": product.notes,
-          "[data-field='stores']": getSelectionStoresForProduct(product),
-          "[data-field='selectionText']": getSelectionLabelForProduct(product),
-        },
-        checkboxes: {
-          'input[data-field="buy"]': !!product.buy,
-        },
-        attributes: {
-          'input[data-field="buy"]': { dataset: { id: product.id } },
-        },
-        actions: {
-          "[data-role='move']": { action: "move-to-almacen", id: product.id },
-        },
-        replacements: {
-          "[data-role='selection-btn']": selectionBtn,
-        },
-      });
-      return tr;
-    }
-  }
-
-  // Fallback imperativo
-  tr = document.createElement("tr");
-  tr.dataset.id = product.id;
-  tr.classList.add(`family-stripe-${stripe}`);
-
-  const addCellText = (t) => {
-    const td = document.createElement("td");
-    td.textContent = t || "";
-    tr.appendChild(td);
-  };
-
-  addCellText(product.name || "");
-  addCellText(product.block || "");
-  addCellText(product.type || "");
-  addCellText(product.quantity || "");
-  const selTd = document.createElement("td");
-  selTd.className = "selection-td";
-  const selCell = document.createElement("div");
-  selCell.className = "selection-cell";
-  const selBtn = createSelectionButton(product.selectionId, product.id);
-  selCell.appendChild(selBtn);
-  const selText = document.createElement("div");
-  selText.className = "selection-text";
-  selText.textContent = getSelectionLabelForProduct(product);
-  selCell.appendChild(selText);
-  selTd.appendChild(selCell);
-  tr.appendChild(selTd);
-  addCellText(getSelectionStoresForProduct(product));
-
-  let td = document.createElement("td");
-  const chk = document.createElement("input");
-  chk.type = "checkbox";
-  chk.checked = !!product.buy;
-  chk.dataset.field = "buy";
-  chk.dataset.id = product.id;
-  td.appendChild(chk);
-  tr.appendChild(td);
-
-  addCellText(product.notes || "");
-
-  td = document.createElement("td");
-  const moveBtn = document.createElement("button");
-  moveBtn.className = "btn btn-small btn-icon";
-  moveBtn.textContent = "→";
-  moveBtn.dataset.action = "move-to-almacen";
-  moveBtn.dataset.id = product.id;
-  td.appendChild(moveBtn);
-
-  tr.appendChild(td);
-  return tr;
-}
-
-function handleExtraListClick(e) {
-  const target = e.target.closest("button,[data-action],[data-role]") || e.target;
-  const roleActionMap = {
-    "selection-btn": "select-selection",
-    move: "move-to-almacen",
-    delete: "delete",
-  };
-  let action = target.dataset.action || roleActionMap[target.dataset.role];
-  if (!action && target.closest("button")) {
-    const text = target.closest("button").textContent.trim();
-    if (text === "✕") action = "delete";
-    if (text === "→") action = "move-to-almacen";
-  }
-
-  if (target.dataset.action === "cancel-draft-extra") {
-    const id = target.dataset.id;
-    extraDrafts = extraDrafts.filter((d) => d.id !== id);
-    renderExtraQuickTable();
-    return;
-  }
-
-  if (target.matches('input[type="checkbox"][data-field="buy"]')) {
-    const id = target.dataset.id;
-    const p = extraProducts.find((x) => x.id === id);
-    if (!p) return;
-    p.buy = target.checked;
-    saveExtraProducts();
-    renderShoppingList();
-    return;
-  }
-
-  if (!action) return;
-  const id = target.dataset.id || target.closest("tr")?.dataset.id;
-
-  if (action === "move-to-almacen") {
-    moveExtraToAlmacen(id);
-  } else if (action === "select-selection") {
-    openSelectionPopupForProduct(id);
+  if (window.ExtrasView && typeof window.ExtrasView.render === "function") {
+    window.ExtrasView.render(extrasViewContext);
   }
 }
 
@@ -4040,369 +3523,16 @@ function removeProductById(id) {
 //  OTROS PRODUCTOS: EDICIÓN
 // ==============================
 
-function createExtraEditRow(p, stripe = 0) {
-  const components = window.AppComponents || {};
-  const hasTemplate =
-    extraEditRowTemplate &&
-    typeof components.cloneRowFromTemplate === "function" &&
-    typeof components.hydrateRow === "function";
-
-  const famSel = createFamilySelect(p.block || "");
-  const typeSel = createTypeSelect(p.block || "", p.type || "");
-  linkFamilyTypeSelects(famSel, typeSel);
-  const selectionBtn = createSelectionButton(p.selectionId, p.id);
-  const buyCheckbox = document.createElement("input");
-  buyCheckbox.type = "checkbox";
-  buyCheckbox.dataset.field = "buy";
-  buyCheckbox.checked = !!p.buy;
-
-  if (hasTemplate) {
-    const row = components.cloneRowFromTemplate(extraEditRowTemplate);
-    if (!row) return null;
-    components.hydrateRow(row, {
-      dataset: { id: p.id },
-      classes: [`family-stripe-${stripe}`],
-      text: {
-        "[data-field='selectionText']": getSelectionLabelForProduct(p),
-        "[data-field='stores']": getSelectionStoresForProduct(p),
-      },
-      actions: {
-        "[data-role='selection-btn']": { action: "select-selection", id: p.id },
-        "[data-role='move']": { action: "move-to-almacen", id: p.id },
-        "[data-role='delete']": { action: "delete", id: p.id },
-      },
-      replacements: {
-        "[data-slot='name']": createTableInput("name", p.name),
-        "[data-slot='block']": famSel,
-        "[data-slot='type']": typeSel,
-        "[data-slot='quantity']": createTableInput("quantity", p.quantity),
-        "[data-slot='buy']": buyCheckbox,
-        "[data-slot='notes']": createTableTextarea("notes", p.notes || ""),
-        "[data-role='selection-btn']": selectionBtn,
-      },
-    });
-    return row;
-  }
-
-  const tr = document.createElement("tr");
-  tr.dataset.id = p.id;
-
-  let td;
-
-  td = document.createElement("td");
-  td.appendChild(createTableInput("name", p.name));
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  td.appendChild(famSel);
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  td.appendChild(typeSel);
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  td.appendChild(createTableInput("quantity", p.quantity));
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  td.className = "selection-td";
-  const selCell = document.createElement("div");
-  selCell.className = "selection-cell";
-  const spanSel = document.createElement("span");
-  spanSel.className = "selection-text";
-  spanSel.textContent = getSelectionLabelForProduct(p);
-  selCell.appendChild(spanSel);
-  selCell.appendChild(selectionBtn);
-  td.appendChild(selCell);
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  const spanStores = document.createElement("span");
-  spanStores.textContent = getSelectionStoresForProduct(p);
-  td.appendChild(spanStores);
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  td.appendChild(buyCheckbox);
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  td.appendChild(createTableTextarea("notes", p.notes || ""));
-  tr.appendChild(td);
-
-  td = document.createElement("td");
-  const moveBtn = document.createElement("button");
-  moveBtn.className = "btn btn-small btn-icon";
-  moveBtn.textContent = "→";
-  moveBtn.dataset.action = "move-to-almacen";
-  moveBtn.dataset.id = p.id;
-  td.appendChild(moveBtn);
-
-  const delBtn = document.createElement("button");
-  delBtn.className = "btn btn-small btn-danger";
-  delBtn.textContent = "✕";
-  delBtn.dataset.action = "delete";
-  delBtn.dataset.id = p.id;
-  td.appendChild(delBtn);
-  tr.appendChild(td);
-
-  return tr;
-}
-
 function renderExtraEditTable() {
-  refreshProductsFromUnified();
-  const extras = getOtherProducts();
-  if (!extraTableBody) return;
-  extraTableBody.innerHTML = "";
-
-  const items = extras
-    .slice()
-    .sort((a, b) =>
-      (a.block || "").localeCompare(b.block || "", "es", {
-        sensitivity: "base",
-      }) || (a.type || "").localeCompare(b.type || "", "es", {
-        sensitivity: "base",
-      }) || (a.name || "").localeCompare(b.name || "", "es", {
-        sensitivity: "base",
-      })
-    );
-  const stripeMap = buildFamilyStripeMap(items);
-
-  if (
-    extraEditRowTemplate &&
-    window.AppComponents &&
-    typeof window.AppComponents.renderTable === "function"
-  ) {
-    window.AppComponents.renderTable(extraTableBody, items, {
-      template: extraEditRowTemplate,
-      emptyMessage:
-        "No hay otros productos todavía. Usa 'Añadir producto' para crear uno.",
-      emptyColSpan: 9,
-      createRow: (item) => {
-        const stripe = stripeMap[(item.block || "").trim() || "__none__"] || 0;
-        return createExtraEditRow(item, stripe);
-      },
-    });
-  } else {
-    if (items.length === 0) {
-      const tr = document.createElement("tr");
-      const td = document.createElement("td");
-      td.colSpan = 9;
-      td.textContent =
-        "No hay otros productos todavía. Usa 'Añadir producto' para crear uno.";
-      tr.appendChild(td);
-      extraTableBody.appendChild(tr);
-      return;
-    }
-
-    const frag = document.createDocumentFragment();
-    items.forEach((p) => {
-      const stripe = stripeMap[(p.block || "").trim() || "__none__"] || 0;
-      const row = createExtraEditRow(p, stripe);
-      if (row) frag.appendChild(row);
-    });
-    extraTableBody.appendChild(frag);
-  }
-
-  filterExtraEditRows();
-}
-
-function handleAddExtraRow() {
-  refreshProductsFromUnified();
-  if (!extraTableBody) return;
-
-  if (
-    extraTableBody.children.length === 1 &&
-    !extraTableBody.children[0].dataset.id
-  ) {
-    extraTableBody.innerHTML = "";
-  }
-
-  const id =
-    (crypto.randomUUID ? crypto.randomUUID() : "extra-" + Date.now()) +
-    "-" +
-    Math.random().toString(36).slice(2);
-
-  const defBlock = extraEditFilterFamilySelect.value || "";
-  const defType = extraEditFilterTypeSelect.value || "";
-
-  const product = {
-    id,
-    name: "",
-    block: defBlock,
-    type: defType,
-    quantity: "",
-    notes: "",
-    buy: false,
-    selectionId: "",
-  };
-
-  const row = createExtraEditRow(product, 0);
-  if (row) extraTableBody.prepend(row);
-}
-
-function handleExtraEditClick(e) {
-  const target = e.target.closest("button,[data-action],[data-role]") || e.target;
-  const roleActionMap = {
-    "selection-btn": "select-selection",
-    move: "move-to-almacen",
-    delete: "delete",
-  };
-  let action = target.dataset.action || roleActionMap[target.dataset.role];
-  if (!action && target.closest("button")) {
-    const text = target.closest("button").textContent.trim();
-    if (text === "✕") action = "delete";
-    if (text === "→") action = "move-to-almacen";
-  }
-  if (!action) return;
-
-  if (action === "delete") {
-    const tr = target.closest("tr");
-    const id = tr?.dataset.id || target.dataset.id;
-    if (id) {
-      removeExtraById(id);
-    } else if (tr) {
-      tr.remove();
-    }
-  } else if (action === "move-to-almacen") {
-    const tr = target.closest("tr");
-    if (!tr) return;
-    const id = tr.dataset.id || target.dataset.id;
-    moveExtraToAlmacen(id);
-  } else if (action === "select-selection") {
-    const tr = target.closest("tr");
-    if (!tr) return;
-    const id = tr.dataset.id || target.dataset.id;
-    if (!id) return;
-    const product = extraProducts.find((p) => p.id === id);
-    if (!product) return;
-    openSelectionPopupForProduct(id);
+  if (window.ExtraEditView && typeof window.ExtraEditView.render === "function") {
+    window.ExtraEditView.render(extraEditViewContext);
   }
 }
 
 function handleSaveExtra() {
-  if (!extraTableBody) return;
-  const rows = Array.from(extraTableBody.querySelectorAll("tr"));
-  const newExtra = [];
-  const now = nowIsoString();
-
-  for (const tr of rows) {
-    const id = tr.dataset.id;
-    if (!id) continue;
-
-    const getField = (field) => {
-      const el = tr.querySelector(`[data-field="${field}"]`);
-      if (!el) return "";
-      if (el.type === "checkbox") return el.checked;
-      return el.value.trim();
-    };
-
-    const name = getField("name");
-    if (!name) continue;
-
-    const block = getField("block");
-    const type = getField("type");
-    const quantity = getField("quantity");
-    const notes = (tr.querySelector('textarea[data-field="notes"]') || {})
-      .value;
-
-    const buy = !!getField("buy");
-
-    const existing = extraProducts.find((p) => p.id === id) || {};
-    const createdAt = existing.createdAt || now;
-    const selectionId = existing.selectionId || "";
-
-    newExtra.push({
-      id,
-      name,
-      block,
-      type,
-      quantity,
-      notes,
-      buy,
-      selectionId,
-      createdAt,
-      updatedAt: now,
-    });
+  if (window.ExtraEditView && typeof window.ExtraEditView.save === "function") {
+    window.ExtraEditView.save(extraEditViewContext);
   }
-
-  newExtra.sort((a, b) =>
-    (a.block || "").localeCompare(b.block || "", "es", {
-      sensitivity: "base",
-    }) || (a.type || "").localeCompare(b.type || "", "es", {
-      sensitivity: "base",
-    }) || (a.name || "").localeCompare(b.name || "", "es", {
-      sensitivity: "base",
-    })
-  );
-
-  extraProducts = newExtra;
-  saveExtraProducts();
-  renderBlockOptions();
-  renderTypeOptions();
-  updateInstanceFilterOptions();
-  renderProductsDatalist();
-  renderExtraQuickTable();
-  renderShoppingList();
-  setOtrosMode(false);
-  showToast("Otros productos guardados");
-}
-
-function filterExtraEditRows() {
-  if (!extraTableBody) return;
-  const search = (extraEditFilterSearchInput.value || "").toLowerCase();
-  const filterBlock = extraEditFilterFamilySelect.value || "";
-  const filterType = extraEditFilterTypeSelect.value || "";
-  const filterStoreId = extraEditFilterStoreSelect.value || "";
-
-  const rows = Array.from(extraTableBody.querySelectorAll("tr"));
-  rows.forEach((tr) => {
-    const id = tr.dataset.id;
-    if (!id) {
-      tr.style.display = "";
-      return;
-    }
-    const nameEl = tr.querySelector('input[data-field="name"]');
-    const blockEl = tr.querySelector('[data-field="block"]');
-    const typeEl = tr.querySelector('[data-field="type"]');
-    const notesEl = tr.querySelector('textarea[data-field="notes"]');
-
-    const name = (nameEl && nameEl.value) || "";
-    const block = (blockEl && blockEl.value) || "";
-    const type = (typeEl && typeEl.value) || "";
-    const notes = (notesEl && notesEl.value) || "";
-
-    if (filterBlock && block !== filterBlock) {
-      tr.style.display = "none";
-      return;
-    }
-    if (filterType && type !== filterType) {
-      tr.style.display = "none";
-      return;
-    }
-
-    if (filterStoreId) {
-      const product = extraProducts.find((p) => p.id === id);
-      if (product) {
-        const inst = getSelectionInstanceForProduct(product);
-        if (!inst || !inst.storeIds || !inst.storeIds.includes(filterStoreId)) {
-          tr.style.display = "none";
-          return;
-        }
-      }
-    }
-
-    if (search) {
-      const haystack = `${name} ${block} ${type} ${notes}`.toLowerCase();
-      if (!haystack.includes(search)) {
-        tr.style.display = "none";
-        return;
-      }
-    }
-
-    tr.style.display = "";
-  });
 }
 
 // ==============================
@@ -4798,6 +3928,9 @@ function openInlineProductCreator(row) {
   const lblFam = document.createElement("label");
   lblFam.textContent = "Familia";
   const selFam = createFamilySelect();
+  if (instancesFamilyFilterSelect && instancesFamilyFilterSelect.value) {
+    selFam.value = instancesFamilyFilterSelect.value;
+  }
   fgFam.appendChild(lblFam);
   fgFam.appendChild(selFam);
 

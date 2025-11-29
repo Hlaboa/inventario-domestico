@@ -47,20 +47,13 @@
 
     tableBody.innerHTML = "";
 
-    const components = window.AppComponents || {};
-    const canUseTemplate =
-      rowTemplate &&
-      typeof components.cloneRowFromTemplate === "function" &&
-      typeof components.hydrateRow === "function";
-
     const buildRow = (p) => {
       const nameInput = makeInput("name", p.name);
       const locInput = makeInput("location", p.location);
       const notesInput = makeTextarea("notes", p.notes || "");
-      if (canUseTemplate) {
-        const row = components.cloneRowFromTemplate(rowTemplate);
-        if (!row) return null;
-        components.hydrateRow(row, {
+      if (rowTemplate && window.AppComponents && typeof window.AppComponents.buildRowWithTemplate === "function") {
+        const row = window.AppComponents.buildRowWithTemplate({
+          template: rowTemplate,
           dataset: { id: p.id },
           replacements: {
             "[data-slot='name']": nameInput,
@@ -71,7 +64,7 @@
             "[data-role='delete']": { action: "delete", id: p.id },
           },
         });
-        return row;
+        if (row) return row;
       }
 
       const tr = document.createElement("tr");
@@ -113,8 +106,8 @@
           })
       );
 
-    if (canUseTemplate && typeof components.renderTable === "function") {
-      components.renderTable(tableBody, items, {
+    if (rowTemplate && window.AppComponents && typeof window.AppComponents.renderTable === "function") {
+      window.AppComponents.renderTable(tableBody, items, {
         template: rowTemplate,
         emptyMessage:
           "No hay productores todavía. Usa 'Añadir productor' para crear uno.",
@@ -166,21 +159,21 @@
     if (
       rowTemplate &&
       window.AppComponents &&
-      typeof window.AppComponents.cloneRowFromTemplate === "function"
+      typeof window.AppComponents.buildRowWithTemplate === "function"
     ) {
-      const row = window.AppComponents.cloneRowFromTemplate(rowTemplate);
+      const row = window.AppComponents.buildRowWithTemplate({
+        template: rowTemplate,
+        dataset: { id },
+        replacements: {
+          "[data-slot='name']": makeInput("name", ""),
+          "[data-slot='location']": makeInput("location", ""),
+          "[data-slot='notes']": makeTextarea("notes", ""),
+        },
+        actions: {
+          "[data-role='delete']": { action: "delete", id },
+        },
+      });
       if (row) {
-        window.AppComponents.hydrateRow(row, {
-          dataset: { id },
-          replacements: {
-            "[data-slot='name']": makeInput("name", ""),
-            "[data-slot='location']": makeInput("location", ""),
-            "[data-slot='notes']": makeTextarea("notes", ""),
-          },
-          actions: {
-            "[data-role='delete']": { action: "delete", id },
-          },
-        });
         tableBody.prepend(row);
         return;
       }

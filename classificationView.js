@@ -40,10 +40,9 @@
       const blockInput = makeInput("block", c.block);
       const typeInput = makeInput("type", c.type);
       const notesInput = makeInput("notes", c.notes);
-      if (canUseTemplate) {
-        const row = components.cloneRowFromTemplate(rowTemplate);
-        if (!row) return null;
-        components.hydrateRow(row, {
+      if (rowTemplate && window.AppComponents && typeof window.AppComponents.buildRowWithTemplate === "function") {
+        const row = window.AppComponents.buildRowWithTemplate({
+          template: rowTemplate,
           dataset: { id: c.id },
           replacements: {
             "[data-slot='block']": blockInput,
@@ -57,7 +56,7 @@
             },
           },
         });
-        return row;
+        if (row) return row;
       }
 
       const tr = document.createElement("tr");
@@ -87,8 +86,8 @@
       return tr;
     };
 
-    if (canUseTemplate && typeof components.renderTable === "function") {
-      components.renderTable(tableBody, list, {
+    if (rowTemplate && window.AppComponents && typeof window.AppComponents.renderTable === "function") {
+      window.AppComponents.renderTable(tableBody, list, {
         template: rowTemplate,
         emptyMessage:
           "No hay combinaciones todavía. Añade una familia/tipo para empezar.",
@@ -128,26 +127,24 @@
       Math.random().toString(36).slice(2);
 
     const row =
-      rowTemplate && window.AppComponents
-        ? (() => {
-            const base = window.AppComponents.cloneRowFromTemplate(rowTemplate);
-            if (!base) return null;
-            window.AppComponents.hydrateRow(base, {
-              dataset: { id },
-              replacements: {
-                "[data-slot='block']": makeInput("block", ""),
-                "[data-slot='type']": makeInput("type", ""),
-                "[data-slot='notes']": makeInput("notes", ""),
+      rowTemplate &&
+      window.AppComponents &&
+      typeof window.AppComponents.buildRowWithTemplate === "function"
+        ? window.AppComponents.buildRowWithTemplate({
+            template: rowTemplate,
+            dataset: { id },
+            replacements: {
+              "[data-slot='block']": makeInput("block", ""),
+              "[data-slot='type']": makeInput("type", ""),
+              "[data-slot='notes']": makeInput("notes", ""),
+            },
+            actions: {
+              "[data-role='delete']": {
+                action: "delete-classification",
+                id,
               },
-              actions: {
-                "[data-role='delete']": {
-                  action: "delete-classification",
-                  id,
-                },
-              },
-            });
-            return base;
-          })()
+            },
+          })
         : null;
 
     if (row) {

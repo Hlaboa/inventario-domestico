@@ -126,9 +126,57 @@
     target.appendChild(frag);
   }
 
+  function buildRowWithTemplate({
+    template,
+    stripe,
+    dataset = {},
+    text = {},
+    actions = {},
+    replacements = {},
+    classes = [],
+    fallback,
+  }) {
+    const row = cloneRowFromTemplate(template);
+    if (row) {
+      const extraClasses = Array.isArray(classes) ? classes : [classes];
+      const stripeClasses =
+        typeof stripe === "number" ? [`family-stripe-${stripe}`] : [];
+      hydrateRow(row, {
+        dataset,
+        classes: [...extraClasses.filter(Boolean), ...stripeClasses],
+        text,
+        actions,
+        replacements,
+      });
+      return row;
+    }
+    return typeof fallback === "function" ? fallback() : null;
+  }
+
+  /**
+   * Aplica predicados a un conjunto de filas de tabla para mostrarlas u ocultarlas.
+   * Cada predicado debe devolver true para dejar la fila visible.
+   */
+  function filterRowsByPredicates(rows, predicates = []) {
+    const list = Array.isArray(rows) ? rows : Array.from(rows || []);
+    const checks = (Array.isArray(predicates) ? predicates : []).filter(Boolean);
+    list.forEach((row) => {
+      const visible = checks.every((fn) => {
+        try {
+          return fn(row) !== false;
+        } catch {
+          return false;
+        }
+      });
+      row.style.display = visible ? "" : "none";
+    });
+  }
+
   window.AppComponents = {
     cloneRowFromTemplate,
     hydrateRow,
     renderTable,
+    buildRowWithTemplate,
+    filterRowsByPredicates,
   };
 })();

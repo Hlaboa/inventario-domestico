@@ -45,12 +45,6 @@
 
     tableBody.innerHTML = "";
 
-    const components = window.AppComponents || {};
-    const canUseTemplate =
-      rowTemplate &&
-      typeof components.cloneRowFromTemplate === "function" &&
-      typeof components.hydrateRow === "function";
-
     const buildRow = (s) => {
       const nameInput = makeInput("name", s.name);
       const sel = document.createElement("select");
@@ -69,10 +63,9 @@
       const webInput = makeInput("website", s.website);
       const notesInput = makeTextarea("notes", s.notes || "");
 
-      if (canUseTemplate) {
-        const row = components.cloneRowFromTemplate(rowTemplate);
-        if (!row) return null;
-        components.hydrateRow(row, {
+      if (rowTemplate && window.AppComponents && typeof window.AppComponents.buildRowWithTemplate === "function") {
+        const row = window.AppComponents.buildRowWithTemplate({
+          template: rowTemplate,
           dataset: { id: s.id },
           replacements: {
             "[data-slot='name']": nameInput,
@@ -85,7 +78,7 @@
             "[data-role='delete']": { action: "delete", id: s.id },
           },
         });
-        return row;
+        if (row) return row;
       }
 
       const tr = document.createElement("tr");
@@ -135,8 +128,8 @@
           })
       );
 
-    if (canUseTemplate && typeof components.renderTable === "function") {
-      components.renderTable(tableBody, items, {
+    if (rowTemplate && window.AppComponents && typeof window.AppComponents.renderTable === "function") {
+      window.AppComponents.renderTable(tableBody, items, {
         template: rowTemplate,
         emptyMessage:
           "No hay tiendas todavía. Usa 'Añadir tienda' para crear una.",
@@ -188,36 +181,36 @@
     if (
       rowTemplate &&
       window.AppComponents &&
-      typeof window.AppComponents.cloneRowFromTemplate === "function"
+      typeof window.AppComponents.buildRowWithTemplate === "function"
     ) {
-      const row = window.AppComponents.cloneRowFromTemplate(rowTemplate);
+      const row = window.AppComponents.buildRowWithTemplate({
+        template: rowTemplate,
+        dataset: { id },
+        replacements: {
+          "[data-slot='name']": makeInput("name", ""),
+          "[data-slot='type']": (() => {
+            const sel = document.createElement("select");
+            sel.className = "table-input";
+            sel.dataset.field = "type";
+            ["", "fisico", "online"].forEach((val) => {
+              const o = document.createElement("option");
+              o.value = val;
+              if (val === "") o.textContent = "—";
+              else if (val === "fisico") o.textContent = "Físico";
+              else if (val === "online") o.textContent = "Online";
+              sel.appendChild(o);
+            });
+            return sel;
+          })(),
+          "[data-slot='location']": makeInput("location", ""),
+          "[data-slot='website']": makeInput("website", ""),
+          "[data-slot='notes']": makeTextarea("notes", ""),
+        },
+        actions: {
+          "[data-role='delete']": { action: "delete", id },
+        },
+      });
       if (row) {
-        window.AppComponents.hydrateRow(row, {
-          dataset: { id },
-          replacements: {
-            "[data-slot='name']": makeInput("name", ""),
-            "[data-slot='type']": (() => {
-              const sel = document.createElement("select");
-              sel.className = "table-input";
-              sel.dataset.field = "type";
-              ["", "fisico", "online"].forEach((val) => {
-                const o = document.createElement("option");
-                o.value = val;
-                if (val === "") o.textContent = "—";
-                else if (val === "fisico") o.textContent = "Físico";
-                else if (val === "online") o.textContent = "Online";
-                sel.appendChild(o);
-              });
-              return sel;
-            })(),
-            "[data-slot='location']": makeInput("location", ""),
-            "[data-slot='website']": makeInput("website", ""),
-            "[data-slot='notes']": makeTextarea("notes", ""),
-          },
-          actions: {
-            "[data-role='delete']": { action: "delete", id },
-          },
-        });
         tableBody.prepend(row);
         return;
       }

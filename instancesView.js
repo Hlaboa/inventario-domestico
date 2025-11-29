@@ -26,6 +26,15 @@
       (typeof context.getAllProducts === "function" && context.getAllProducts()) ||
       context.data?.allProducts ||
       [];
+    const productById = new Map();
+    const productByName = new Map();
+    allProducts.forEach((p) => {
+      if (p.id) productById.set(p.id, p);
+      const lower = (p.name || "").trim().toLowerCase();
+      if (lower && !productByName.has(lower)) {
+        productByName.set(lower, p);
+      }
+    });
 
     const producerNameFor = (id) => {
       if (typeof context.getProducerName === "function") {
@@ -69,21 +78,14 @@
 
     // Enriquecer con familia calculada (y actualizar instancia en memoria)
     items = items.map((inst) => {
+      const lower = (inst.productName || "").trim().toLowerCase();
+      const matchById = inst.productId ? productById.get(inst.productId) : null;
+      const matchByName = lower ? productByName.get(lower) : null;
       const family =
-        getFamilyForInstance(inst) ||
         inst.block ||
-        (() => {
-          const lower = (inst.productName || "").trim().toLowerCase();
-          if (!lower) return "";
-          const match =
-            allProducts.find((p) => p.id && p.id === inst.productId) ||
-            allProducts.find((p) => (p.name || "").trim().toLowerCase() === lower) ||
-            allProducts.find((p) => {
-              const n = (p.name || "").trim().toLowerCase();
-              return n && (n.includes(lower) || lower.includes(n));
-            });
-          return match ? match.block || "" : "";
-        })();
+        (matchById && matchById.block) ||
+        (matchByName && matchByName.block) ||
+        getFamilyForInstance(inst);
       if (family && !inst.block) inst.block = family;
       return { ...inst, block: family };
     });
@@ -123,12 +125,6 @@
             }))
           )
         : {};
-
-    const components = window.AppComponents || {};
-    const canUseTemplate =
-      rowTemplate &&
-      typeof components.cloneRowFromTemplate === "function" &&
-      typeof components.hydrateRow === "function";
 
     const makeInput = (field, value = "", type = "text") => {
       if (window.AppUtils && typeof window.AppUtils.createTableInput === "function") {
@@ -226,37 +222,35 @@
       const notesArea = makeTextarea("notes", inst.notes || "");
 
       let row = null;
-      if (canUseTemplate) {
-        row = components.cloneRowFromTemplate(rowTemplate);
-        if (row) {
-          components.hydrateRow(row, {
-            dataset: { id: inst.id },
-            classes: [`family-stripe-${stripe}`],
-            text: {
-              "[data-field='family']": family || "—",
+      if (rowTemplate && window.AppComponents && typeof window.AppComponents.buildRowWithTemplate === "function") {
+        row = window.AppComponents.buildRowWithTemplate({
+          template: rowTemplate,
+          stripe,
+          dataset: { id: inst.id },
+          text: {
+            "[data-field='family']": family || "—",
+          },
+          actions: {
+            "[data-role='delete']": { action: "delete-instance", id: inst.id },
+            "[data-action='create-product-selection']": {
+              action: "create-product-selection",
+              id: inst.id,
             },
-            actions: {
-              "[data-role='delete']": { action: "delete-instance", id: inst.id },
-              "[data-action='create-product-selection']": {
-                action: "create-product-selection",
-                id: inst.id,
-              },
-            },
-            replacements: {
-              "[data-slot='productName']": (() => {
-                const wrap = document.createElement("div");
-                wrap.className = "instances-product-cell";
-                wrap.appendChild(inputName);
-                wrap.appendChild(createBtn);
-                return wrap;
-              })(),
-              "[data-slot='producer']": selProducer,
-              "[data-slot='brand']": brandInput,
-              "[data-slot='stores']": selStores,
-              "[data-slot='notes']": notesArea,
-            },
-          });
-        }
+          },
+          replacements: {
+            "[data-slot='productName']": (() => {
+              const wrap = document.createElement("div");
+              wrap.className = "instances-product-cell";
+              wrap.appendChild(inputName);
+              wrap.appendChild(createBtn);
+              return wrap;
+            })(),
+            "[data-slot='producer']": selProducer,
+            "[data-slot='brand']": brandInput,
+            "[data-slot='stores']": selStores,
+            "[data-slot='notes']": notesArea,
+          },
+        });
       }
 
       if (!row) {
@@ -359,9 +353,12 @@
     const tableBody = refs.tableBody;
     if (!tableBody) return [];
     const rows = Array.from(tableBody.querySelectorAll("tr"));
-    const list = [];
     const now = getNow(context);
     const existing = context.data?.instances || [];
+    const byId = new Map();
+    existing.forEach((inst) => {
+      if (inst && inst.id) byId.set(inst.id, inst);
+    });
 
     for (const tr of rows) {
       const id = tr.dataset.id;
@@ -379,20 +376,30 @@
           .filter(Boolean);
       };
 
-      const productName = getField('input[data-field="productName"]');
-      const producerId = getField('select[data-field="producerId"]');
-      const brand = getField('input[data-field="brand"]');
-      const storeIds = getStoreIds();
-      const notes = getField('textarea[data-field="notes"]');
+    const productName = getField('input[data-field="productName"]');
+    const producerId = getField('select[data-field="producerId"]');
+    const brand = getField('input[data-field="brand"]');
+    const storeIds = getStoreIds();
+    const notes = getField('textarea[data-field="notes"]');
+    const filterFamily = refs.familyFilter?.value || "";
+    const block = prev.block || filterFamily;
 
-      if (!productName && !producerId && !brand && storeIds.length === 0 && !notes) {
+      // Si la fila está vacía y ya existía, la conservamos intacta.
+      if (
+        !productName &&
+        !producerId &&
+        !brand &&
+        storeIds.length === 0 &&
+        !notes &&
+        byId.has(id)
+      ) {
         continue;
       }
 
-      const prev = existing.find((i) => i.id === id) || {};
+      const prev = byId.get(id) || {};
       const createdAt = prev.createdAt || now;
 
-      list.push({
+      byId.set(id, {
         id,
         productId: prev.productId || "",
         productName,
@@ -400,12 +407,29 @@
         brand,
         storeIds,
         notes,
+        block,
         createdAt,
         updatedAt: now,
       });
     }
 
-    return list;
+    // Reconstruir la lista manteniendo el orden previo y agregando nuevos al frente.
+    const ordered = [];
+    existing.forEach((inst) => {
+      const updated = byId.get(inst.id);
+      if (updated) {
+        ordered.push(updated);
+        byId.delete(inst.id);
+      }
+    });
+    // Nuevos (no estaban antes): al principio para que se vean arriba.
+    Array.from(byId.values()).forEach((inst) => {
+      if (!existing.find((e) => e.id === inst.id)) {
+        ordered.unshift(inst);
+      }
+    });
+
+    return ordered;
   }
 
   function addRow(c) {
@@ -431,10 +455,11 @@
       id,
       productId: "",
       productName: "",
-      producerId: "",
+      producerId: refs.producerFilter?.value || "",
       brand: "",
-      storeIds: [],
+      storeIds: refs.storeFilter?.value ? [refs.storeFilter.value] : [],
       notes: "",
+      block: refs.familyFilter?.value || "",
       createdAt: now,
       updatedAt: now,
     };
