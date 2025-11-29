@@ -11,17 +11,18 @@ const STORAGE_KEY_CLASSIFICATIONS = "clasificacionesProductosCocina"; // Familia
 //  ESTADO
 // ==============================
 
-let products = []; // almacén
-let extraProducts = []; // otros productos
-let unifiedProducts = []; // listado unificado con scope
-let suppliers = []; // tiendas
-let producers = []; // productores
-let productInstances = []; // selección producto+productor+marca+tiendas
-let classifications = []; // combinaciones familia/tipo
+let products = []; // almacén (cache derivada)
+let extraProducts = []; // otros productos (cache derivada)
+let unifiedProducts = []; // listado unificado con scope (cache)
+let suppliers = []; // tiendas (cache)
+let producers = []; // productores (cache)
+let productInstances = []; // selección producto+productor+marca+tiendas (cache)
+let classifications = []; // combinaciones familia/tipo (cache)
 let productDrafts = [];
 let extraDrafts = [];
 const stateAdapter = window.StateAdapter || null;
 let isSyncingFromStore = false;
+let isPersistingUnified = false;
 
 function getStateSnapshot() {
   if (stateAdapter && typeof stateAdapter.getState === "function") {
@@ -256,18 +257,38 @@ function syncFromAppStore() {
 function persistUnified(list) {
   unifiedProducts = Array.isArray(list) ? list : [];
   refreshProductsFromUnified();
-  // Persist directly to storage to evitar bucles con AppStore durante el refactor
-  if (window.AppStorage && typeof window.AppStorage.saveUnifiedProducts === "function") {
-    window.AppStorage.saveUnifiedProducts(unifiedProducts);
-  } else if (window.DataService && typeof window.DataService.setUnifiedProducts === "function") {
+  if (isSyncingFromStore || isPersistingUnified) return;
+  isPersistingUnified = true;
+  if (stateAdapter && typeof stateAdapter.setEntity === "function") {
+    stateAdapter.setEntity("unifiedProducts", unifiedProducts);
+    isPersistingUnified = false;
+    return;
+  }
+  if (
+    window.AppStore &&
+    window.AppStore.actions &&
+    typeof window.AppStore.actions.setUnifiedProducts === "function"
+  ) {
+    window.AppStore.actions.setUnifiedProducts(unifiedProducts);
+    isPersistingUnified = false;
+    return;
+  }
+  if (window.DataService && typeof window.DataService.setUnifiedProducts === "function") {
     try {
       window.DataService.setUnifiedProducts(unifiedProducts);
     } catch {}
-  } else {
-    try {
-      localStorage.setItem("productosCocinaUnificados", JSON.stringify(unifiedProducts));
-    } catch {}
+    isPersistingUnified = false;
+    return;
   }
+  if (window.AppStorage && typeof window.AppStorage.saveUnifiedProducts === "function") {
+    window.AppStorage.saveUnifiedProducts(unifiedProducts);
+    isPersistingUnified = false;
+    return;
+  }
+  try {
+    localStorage.setItem("productosCocinaUnificados", JSON.stringify(unifiedProducts));
+  } catch {}
+  isPersistingUnified = false;
 }
 
 // ==============================
@@ -971,6 +992,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (window.ProducersView && typeof window.ProducersView.init === "function") {
     window.ProducersView.init(producersViewContext);
+  } else if (window.ProducersFeature && typeof window.ProducersFeature.init === "function") {
+    window.ProducersFeature.init({ context: producersViewContext });
+    window.ProducersFeature.render();
   }
 
   storesViewContext = {
@@ -994,6 +1018,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (window.StoresView && typeof window.StoresView.init === "function") {
     window.StoresView.init(storesViewContext);
+  } else if (window.StoresFeature && typeof window.StoresFeature.init === "function") {
+    window.StoresFeature.init({ context: storesViewContext });
+    window.StoresFeature.render();
   }
 
   instancesViewContext = {
@@ -1116,6 +1143,45 @@ document.addEventListener("DOMContentLoaded", () => {
       : null;
   if (extraController && typeof extraController.render === "function") {
     extraController.render();
+  } else if (window.ExtrasFeature && typeof window.ExtrasFeature.init === "function") {
+    window.ExtrasFeature.init({
+      refs: { tableBody: extraListTableBody },
+      getExtras: () => getOtherProducts(),
+      getDrafts: () => extraDrafts,
+      buildFamilyStripeMap,
+      helpers: {
+        createTableInput,
+        createTableTextarea,
+        createFamilySelect,
+        createTypeSelect,
+        linkFamilyTypeSelects,
+        createSelectionButton,
+        getSelectionLabelForProduct,
+        getSelectionStoresForProduct,
+      },
+      getSelectionInstanceForProduct,
+      getStoreNames,
+      actions: {
+        toggleBuy: (id, checked) => {
+          const list = getOtherProducts().map((p) =>
+            p.id === id ? { ...p, buy: checked } : p
+          );
+          updateUnifiedWithExtras(list);
+          saveExtraProducts();
+          renderShoppingList();
+        },
+        moveToAlmacen: (id) => moveExtraToAlmacen(id),
+        selectSelection: (id) => openSelectionPopupForProduct(id),
+        delete: (id) => removeExtraById(id),
+        cancelDraft: (id) => {
+          if (!id) return;
+          extraDrafts = extraDrafts.filter((d) => d.id !== id);
+          renderExtraQuickTable();
+        },
+      },
+      getContext: () => extrasViewContext,
+    });
+    window.ExtrasFeature.render();
   }
 
   instancesController =
