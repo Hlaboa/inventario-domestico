@@ -2664,6 +2664,123 @@ function openSelectionPopupForProduct(productId) {
   ensureSelectionPopupInit();
   lastSelectionTrigger = document.activeElement;
 
+  let inlineSelectionEditId = "";
+  let inlineSelectionSaveBtn = null;
+  let inlineSelectionCancelBtn = null;
+  let inlineSelectionBrandInput = null;
+  let inlineSelectionProducerSel = null;
+  let inlineSelectionStoresSel = null;
+
+  const setInlineStoresSelection = (storeIds) => {
+    if (!inlineSelectionStoresSel) return;
+    const ids = Array.isArray(storeIds) ? storeIds : [];
+    ids.forEach((id) => {
+      const exists = Array.from(inlineSelectionStoresSel.options).some(
+        (o) => o.value === id
+      );
+      if (!exists && id) {
+        const opt = document.createElement("option");
+        opt.value = id;
+        opt.textContent = getStoreName(id) || "(tienda no disponible)";
+        inlineSelectionStoresSel.appendChild(opt);
+      }
+    });
+    Array.from(inlineSelectionStoresSel.options).forEach((opt) => {
+      opt.selected = ids.includes(opt.value);
+    });
+    inlineSelectionStoresSel.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+
+  const updateInlineSelectionUi = (inst) => {
+    const editing = !!inlineSelectionEditId;
+    if (inlineSelectionSaveBtn) {
+      inlineSelectionSaveBtn.title = editing
+        ? "Guardar cambios"
+        : "Crear selección y aplicar";
+      inlineSelectionSaveBtn.setAttribute(
+        "aria-label",
+        editing ? "Guardar cambios" : "Crear selección y aplicar"
+      );
+    }
+    if (inlineSelectionCancelBtn) {
+      inlineSelectionCancelBtn.style.display = editing ? "inline-flex" : "none";
+    }
+  };
+
+  const resetInlineSelectionForm = () => {
+    inlineSelectionEditId = "";
+    if (inlineSelectionProducerSel) inlineSelectionProducerSel.value = "";
+    if (inlineSelectionBrandInput) inlineSelectionBrandInput.value = "";
+    setInlineStoresSelection([]);
+    updateInlineSelectionUi();
+  };
+
+  const startInlineSelectionEdit = (inst) => {
+    if (!inst) return;
+    inlineSelectionEditId = inst.id || "";
+    if (inlineSelectionProducerSel) {
+      const exists = Array.from(inlineSelectionProducerSel.options).some(
+        (o) => o.value === inst.producerId
+      );
+      if (!exists && inst.producerId) {
+        const opt = document.createElement("option");
+        opt.value = inst.producerId;
+        opt.textContent = getProducerName(inst.producerId) || "(productor no disponible)";
+        inlineSelectionProducerSel.appendChild(opt);
+      }
+      inlineSelectionProducerSel.value = inst.producerId || "";
+    }
+    if (inlineSelectionBrandInput) {
+      inlineSelectionBrandInput.value = inst.brand || "";
+    }
+    setInlineStoresSelection(inst.storeIds);
+    updateInlineSelectionUi(inst);
+    if (inlineSelectionBrandInput) {
+      inlineSelectionBrandInput.focus();
+      const len = inlineSelectionBrandInput.value.length;
+      try {
+        inlineSelectionBrandInput.setSelectionRange(len, len);
+      } catch {}
+    }
+    const form = document.getElementById("inlineSelectionForm");
+    if (form) form.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  };
+
+  const saveInlineSelectionEdit = () => {
+    if (!inlineSelectionEditId) {
+      createAndApplySelection(productId);
+      return;
+    }
+    const list = getInstancesList();
+    const idx = list.findIndex((i) => i.id === inlineSelectionEditId);
+    if (idx === -1) {
+      showToast("No se encontró la selección a editar", "error");
+      resetInlineSelectionForm();
+      return;
+    }
+    const now = nowIsoString();
+    const updated = {
+      ...list[idx],
+      producerId: inlineSelectionProducerSel ? inlineSelectionProducerSel.value : "",
+      brand: inlineSelectionBrandInput ? inlineSelectionBrandInput.value.trim() : "",
+      storeIds: inlineSelectionStoresSel
+        ? Array.from(inlineSelectionStoresSel.selectedOptions)
+            .map((o) => o.value)
+            .filter(Boolean)
+        : list[idx].storeIds || [],
+      updatedAt: now,
+    };
+    persistInstances(list.map((i) => (i.id === inlineSelectionEditId ? updated : i)));
+    renderInstancesTable();
+    renderProducts();
+    renderExtraQuickTable();
+    renderExtraEditTable();
+    renderShoppingList();
+    showToast("Selección actualizada", "success");
+    resetInlineSelectionForm();
+    openSelectionPopupForProduct(productId);
+  };
+
   const product = findProductById(productId);
   if (!product) return;
   const currentSelectionId = product.selectionId || "";
@@ -2771,6 +2888,19 @@ function openSelectionPopupForProduct(productId) {
 
         li.appendChild(idxSpan);
         li.appendChild(content);
+        const actions = document.createElement("div");
+        actions.className = "selection-item-actions";
+        const editBtn = document.createElement("button");
+        editBtn.type = "button";
+        editBtn.className = "btn btn-icon btn-ghost selection-edit-btn";
+        editBtn.title = "Editar esta selección";
+        editBtn.textContent = "✎";
+        editBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          startInlineSelectionEdit(inst);
+        });
+        actions.appendChild(editBtn);
+        li.appendChild(actions);
 
         li.addEventListener("click", () => {
           applySelectionToProduct(productId, inst.id);
@@ -2869,13 +2999,14 @@ function openSelectionPopupForProduct(productId) {
     brandWrap.appendChild(brandInput);
 
     const storesWrap = document.createElement("div");
+    storesWrap.className = "inline-stores-block";
     const storesLabel = document.createElement("label");
     storesLabel.textContent = "Tiendas";
     const storesSel = document.createElement("select");
     storesSel.id = "inlineStoresSelect";
     storesSel.multiple = true;
-    storesSel.size = 6;
-    storesSel.className = "inline-stores-select";
+    storesSel.size = 12;
+    storesSel.className = "inline-stores-select visually-hidden";
     getSuppliersList()
       .slice()
       .sort((a, b) =>
@@ -2893,22 +3024,77 @@ function openSelectionPopupForProduct(productId) {
     storesWrap.appendChild(storesSel);
     inlineProducerSelect = producerSel;
     inlineStoresSelect = storesSel;
+    inlineSelectionBrandInput = brandInput;
+    inlineSelectionProducerSel = producerSel;
+    inlineSelectionStoresSel = storesSel;
     attachMultiSelectToggle(storesSel);
+    const storeChips = document.createElement("div");
+    storeChips.className = "inline-store-chips";
+    const renderStoreChips = () => {
+      const selectedIds = new Set(
+        Array.from(storesSel.selectedOptions).map((o) => o.value)
+      );
+      storeChips.innerHTML = "";
+      getSuppliersList()
+        .slice()
+        .sort((a, b) =>
+          (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" })
+        )
+        .forEach((s) => {
+          const chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "store-chip-toggle";
+          chip.textContent = s.name || "(sin nombre)";
+          chip.dataset.id = s.id;
+          const isSelected = selectedIds.has(s.id);
+          chip.classList.toggle("selected", isSelected);
+          chip.addEventListener("click", () => {
+            const opt = Array.from(storesSel.options).find((o) => o.value === s.id);
+            if (opt) {
+              opt.selected = !opt.selected;
+              storesSel.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+          });
+          storeChips.appendChild(chip);
+        });
+    };
+    storesSel.addEventListener("change", renderStoreChips);
+    renderStoreChips();
+    storesWrap.appendChild(storeChips);
 
-    const inlineActions = document.createElement("div");
-    inlineActions.className = "selection-inline-actions";
+  const inlineActions = document.createElement("div");
+  inlineActions.className = "selection-inline-actions";
     const createApply = document.createElement("button");
-    createApply.className = "btn btn-primary btn-small";
-    createApply.textContent = "Crear selección y aplicar";
+    createApply.className = "btn btn-small btn-success";
+    createApply.textContent = "✓";
+    createApply.title = "Guardar selección";
+    createApply.setAttribute("aria-label", "Guardar selección");
+    inlineSelectionSaveBtn = createApply;
     createApply.addEventListener("click", () => {
-      createAndApplySelection(productId);
+      if (inlineSelectionEditId) {
+        saveInlineSelectionEdit();
+      } else {
+        createAndApplySelection(productId);
+      }
     });
     inlineActions.appendChild(createApply);
+    const cancelInlineEdit = document.createElement("button");
+    cancelInlineEdit.className = "btn btn-small btn-danger";
+    cancelInlineEdit.textContent = "✕";
+    cancelInlineEdit.title = "Cancelar edición";
+    cancelInlineEdit.setAttribute("aria-label", "Cancelar edición");
+    cancelInlineEdit.style.display = "none";
+    inlineSelectionCancelBtn = cancelInlineEdit;
+    cancelInlineEdit.addEventListener("click", () => {
+      resetInlineSelectionForm();
+    });
+    inlineActions.appendChild(cancelInlineEdit);
 
     inline.appendChild(producerWrap);
     inline.appendChild(brandWrap);
     inline.appendChild(storesWrap);
     inline.appendChild(inlineActions);
+    resetInlineSelectionForm();
 
     selectionPopupBody.appendChild(inline);
 
