@@ -431,9 +431,11 @@
                     <button
                       type="button"
                       class="btn btn-small btn-icon"
-                      data-role="move"
+                      data-role="edit"
+                      aria-label="Editar producto"
+                      title="Editar producto"
                     >
-                      →
+                      ✎
                     </button>
                   </td>
                 </tr>
@@ -486,6 +488,12 @@
                 </div>
               </div>
 
+              <div class="list-header panel-header panel-header-compact">
+                <div class="summary" id="extraSummaryInfo" aria-live="polite">
+                  Total: 0 · Comprar: 0
+                </div>
+              </div>
+
               <div class="table-wrapper">
                 <div class="table-scroll">
                   <template id="extraEditRowTemplate">
@@ -513,13 +521,12 @@
                       <td>
                         <button
                           class="btn btn-small btn-icon"
-                          data-role="move"
-                          aria-label="Mover a almacén"
-                          title="Mover a almacén"
+                          data-role="edit"
+                          aria-label="Editar producto"
+                          title="Editar producto"
                         >
-                          →
+                          ✎
                         </button>
-                        <button class="btn btn-small btn-danger" data-role="delete" aria-label="Eliminar">✕</button>
                       </td>
                     </tr>
                   </template>
@@ -540,13 +547,13 @@
                         <th scope="col">Producto</th>
                         <th scope="col">Familia</th>
                         <th scope="col">Tipo</th>
-                        <th scope="col">Cantidad</th>
-                        <th scope="col" class="selection-col">Selección</th>
-                        <th scope="col">Tiendas</th>
-                        <th scope="col">Comprar</th>
-                        <th scope="col">Notas</th>
-                        <th scope="col">Mover a almacén</th>
-                      </tr>
+                      <th scope="col">Cantidad</th>
+                      <th scope="col" class="selection-col">Selección</th>
+                      <th scope="col">Tiendas</th>
+                      <th scope="col">Comprar</th>
+                      <th scope="col">Notas</th>
+                      <th scope="col" aria-label="Acciones"></th>
+                    </tr>
                     </thead>
                     <tbody id="extraListTableBody"></tbody>
                   </table>

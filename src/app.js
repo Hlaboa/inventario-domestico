@@ -522,6 +522,7 @@ function persistUnified(list) {
 // ==============================
 
 let summaryInfo;
+let extraSummaryInfo;
 
 // Navegación principal
 let mainAlmacenButton;
@@ -730,6 +731,7 @@ let memoInstanceFamilies = [];
 let memoProducerFilterOptions = "";
 let memoProductsDatalistKey = "";
 let saveShortcutBound = false;
+let lastDuplicateToast = { name: "", ts: 0 };
 
 let filtersDefaultsApplied = false;
 let selectionDragCleanup = null;
@@ -746,6 +748,16 @@ function showToast(message, timeout = 1800) {
   toast.textContent = message;
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), timeout + 400);
+}
+
+function shouldShowDuplicateToast(name) {
+  const now = Date.now();
+  const key = (name || "").trim().toLowerCase();
+  if (key && lastDuplicateToast.name === key && now - lastDuplicateToast.ts < 800) {
+    return false;
+  }
+  lastDuplicateToast = { name: key, ts: now };
+  return true;
 }
 
 const renderProductsDebounced = debounce(() => {
@@ -814,6 +826,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   ({
     summaryInfo,
+    extraSummaryInfo,
     mainAlmacenButton,
     mainOtrosButton,
     mainSelectionButton,
@@ -917,6 +930,10 @@ document.addEventListener("DOMContentLoaded", () => {
   if (shoppingSummary && !shoppingSummary.getAttribute("aria-live")) {
     shoppingSummary.setAttribute("aria-live", "polite");
     shoppingSummary.setAttribute("role", "status");
+  }
+  if (extraSummaryInfo && !extraSummaryInfo.getAttribute("aria-live")) {
+    extraSummaryInfo.setAttribute("aria-live", "polite");
+    extraSummaryInfo.setAttribute("role", "status");
   }
   if (summaryInfo && !summaryInfo.getAttribute("aria-live")) {
     summaryInfo.setAttribute("aria-live", "polite");
@@ -1116,17 +1133,32 @@ document.addEventListener("DOMContentLoaded", () => {
       renderProductsDatalist();
     },
     onSelectSelection: (id) => openSelectionPopupForProduct(id),
+    onEdit: (id) => startEditExtra(id),
+    onSaveDraft: (id) => commitDraftExtras(id ? [id] : null),
     onMoveToAlmacen: (id) => {
       const acts = getExtrasActions();
       if (acts && typeof acts.moveToAlmacen === "function") {
         acts.moveToAlmacen(id);
       }
+      // Limpia borradores asociados y refresca vistas
+      extraDrafts = extraDrafts.filter((d) => d.originalId !== id && d.id !== id);
+      renderExtraQuickTable();
+      renderExtraEditTable();
+      renderProducts();
+      renderGridRows();
+      renderShoppingList();
     },
     onDelete: (id) => {
       const acts = getExtrasActions();
       if (acts && typeof acts.delete === "function") {
         acts.delete(id);
       }
+      extraDrafts = extraDrafts.filter((d) => d.originalId !== id && d.id !== id);
+      renderExtraQuickTable();
+      renderExtraEditTable();
+      renderProducts();
+      renderGridRows();
+      renderShoppingList();
     },
     onCancelDraft: (id) => {
       if (!id) return;
@@ -1199,6 +1231,13 @@ document.addEventListener("DOMContentLoaded", () => {
       if (acts && typeof acts.moveToAlmacen === "function") {
         acts.moveToAlmacen(id);
       }
+      // Limpia borradores asociados y refresca vistas
+      extraDrafts = extraDrafts.filter((d) => d.originalId !== id && d.id !== id);
+      renderExtraQuickTable();
+      renderExtraEditTable();
+      renderProducts();
+      renderGridRows();
+      renderShoppingList();
     },
     onDelete: (id) => {
       const acts = getExtrasActions();
@@ -1536,6 +1575,8 @@ document.addEventListener("DOMContentLoaded", () => {
           updateExtraBuyFlag(id, checked);
         },
         selectSelection: (id) => openSelectionPopupForProduct(id),
+        startEdit: (id) => startEditExtra(id),
+        saveDraft: (id) => commitDraftExtras(id ? [id] : null),
         cancelDraft: (id) => {
           if (!id) return;
           extraDrafts = extraDrafts.filter((d) => d.id !== id);
@@ -3630,6 +3671,30 @@ function handleAddQuickExtra() {
   highlightTopRow(extraListTableBody);
 }
 
+function startEditExtra(id) {
+  if (!id) return;
+  const list = getOtherProducts();
+  const prod = list.find((p) => p.id === id);
+  if (!prod) return;
+  extraDrafts = extraDrafts.filter((d) => d.originalId !== id && d.id !== id);
+  const draftId =
+    (crypto.randomUUID ? crypto.randomUUID() : "draft-extra-edit-" + Date.now()) +
+    "-" +
+    Math.random().toString(36).slice(2);
+  extraDrafts.unshift({
+    id: draftId,
+    originalId: id,
+    name: prod.name || "",
+    block: prod.block || "",
+    type: prod.type || "",
+    quantity: prod.quantity || "",
+    notes: prod.notes || "",
+    buy: !!prod.buy,
+  });
+  renderExtraQuickTable();
+  highlightTopRow(extraListTableBody);
+}
+
 function handleAddQuickProduct() {
   const id =
     (crypto.randomUUID ? crypto.randomUUID() : "draft-prod-" + Date.now()) +
@@ -3685,7 +3750,7 @@ function startEditProduct(id) {
 
 function deleteProduct(id) {
   if (!id) return;
-  const ok = confirm("¿Eliminar este producto del almacén?");
+  const ok = confirm("¿Eliminar este producto?");
   if (!ok) return;
   productDrafts = productDrafts.filter((d) => d.originalId !== id && d.id !== id);
   removeProductById(id);
@@ -3721,6 +3786,12 @@ function commitDraftProducts(ids) {
     allowedIds: Array.isArray(ids) ? ids : null,
     nowIsoString,
   });
+  if (res && Array.isArray(res.duplicates) && res.duplicates.length) {
+    if (shouldShowDuplicateToast(res.duplicates[0])) {
+      showToast(`Ya existe un producto con ese nombre: ${res.duplicates[0]}`);
+    }
+    return;
+  }
   if (!res || !res.unified) return;
   productDrafts = res.drafts || [];
   renderProducts();
@@ -3743,6 +3814,12 @@ function commitDraftExtras(ids) {
     allowedIds: Array.isArray(ids) ? ids : null,
     nowIsoString,
   });
+  if (res && Array.isArray(res.duplicates) && res.duplicates.length) {
+    if (shouldShowDuplicateToast(res.duplicates[0])) {
+      showToast(`Ya existe un producto con ese nombre: ${res.duplicates[0]}`);
+    }
+    return;
+  }
   if (!res || !res.unified) return;
   extraDrafts = res.drafts || [];
   renderExtraQuickTable();
@@ -3779,11 +3856,13 @@ function handleSaveGrid() {
 function renderExtraQuickTable() {
   if (window.ExtrasFeature && typeof window.ExtrasFeature.render === "function") {
     window.ExtrasFeature.render();
+    renderExtraSummary();
     return;
   }
   if (window.ExtrasView && typeof window.ExtrasView.render === "function") {
     window.ExtrasView.render(extrasViewContext);
   }
+  renderExtraSummary();
 }
 
 function removeProductById(id) {
@@ -4476,6 +4555,16 @@ function renderShoppingList() {
     });
 
   shoppingSummary.textContent = `${summary.totalItems} producto(s) · ${summary.totalStores} tienda(s)`;
+}
+
+function renderExtraSummary() {
+  if (!extraSummaryInfo || !extraListTableBody) return;
+  const rows = Array.from(extraListTableBody.querySelectorAll("tr[data-id]")).filter(
+    (tr) => tr.style.display !== "none"
+  );
+  const total = rows.length;
+  const buyCount = rows.filter((tr) => tr.dataset.buy === "1").length;
+  extraSummaryInfo.textContent = `Total: ${total} · Comprar: ${buyCount}`;
 }
 
 function handleShoppingListClick(e) {

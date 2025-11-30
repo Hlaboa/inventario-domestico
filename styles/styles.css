@@ -652,6 +652,10 @@ textarea:focus-visible {
   font-weight: 700;
 }
 
+.table-extra-edit tbody td:first-child {
+  font-weight: 700;
+}
+
 .table-inventory-edit col:nth-child(1) {
   width: 18%;
 }

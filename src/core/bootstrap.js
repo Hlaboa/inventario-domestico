@@ -23,6 +23,7 @@
       almacenEditPanel: document.getElementById("almacenEditPanel"),
       otrosListPanel: document.getElementById("otrosListPanel"),
       otrosEditPanel: document.getElementById("otrosEditPanel"),
+      extraSummaryInfo: document.getElementById("extraSummaryInfo"),
 
       // Almacén (vista)
       filterSearchInput: document.getElementById("filterSearch"),

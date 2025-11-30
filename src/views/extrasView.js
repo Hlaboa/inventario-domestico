@@ -151,6 +151,7 @@
           'input[data-field="buy"]': { dataset: { id: item.id } },
         },
         actions: {
+          "[data-role='edit']": { action: "edit-extra", id: item.id },
           "[data-role='move']": { action: "move-to-almacen", id: item.id },
         },
         replacements: {
@@ -206,13 +207,22 @@
     addCellText(item.notes || "");
 
   td = document.createElement("td");
-  const moveBtn = document.createElement("button");
-  moveBtn.className = "btn btn-small btn-icon";
-  moveBtn.textContent = "→";
-  moveBtn.title = "Mover a almacén";
-  moveBtn.setAttribute("aria-label", "Mover a almacén");
-  moveBtn.dataset.action = "move-to-almacen";
-  moveBtn.dataset.id = item.id;
+  const editBtn = document.createElement("button");
+  editBtn.className = "btn btn-small btn-icon";
+  editBtn.textContent = "✎";
+  editBtn.title = "Editar producto";
+  editBtn.setAttribute("aria-label", "Editar producto");
+  editBtn.dataset.action = "edit-extra";
+  editBtn.dataset.id = item.id;
+    td.appendChild(editBtn);
+
+    const moveBtn = document.createElement("button");
+    moveBtn.className = "btn btn-small btn-icon";
+    moveBtn.textContent = "→";
+    moveBtn.title = "Mover a almacén";
+    moveBtn.setAttribute("aria-label", "Mover a almacén");
+    moveBtn.dataset.action = "move-to-almacen";
+    moveBtn.dataset.id = item.id;
     td.appendChild(moveBtn);
 
     tr.appendChild(td);
@@ -255,14 +265,16 @@
     );
   }
 
-  function renderDrafts(context, tableBody) {
+  function renderDrafts(context, tableBody, drafts = null) {
     const helpers = context.helpers || {};
-    const drafts =
-      (typeof context.getDrafts === "function" ? context.getDrafts() : []) || [];
-    drafts.forEach((d) => {
+    const list =
+      drafts ||
+      ((typeof context.getDrafts === "function" ? context.getDrafts() : []) || []);
+    list.forEach((d) => {
       const tr = document.createElement("tr");
       tr.className = "extra-draft-row";
       tr.dataset.draftId = d.id;
+      if (d.originalId) tr.dataset.originalId = d.originalId;
 
       let td = document.createElement("td");
       td.appendChild(makeInput(helpers, "name", d.name || ""));
@@ -302,6 +314,12 @@
       td = document.createElement("td");
       const buyChk = makeInput(helpers, "buy", d.buy ? "on" : "", "checkbox");
       buyChk.checked = !!d.buy;
+      buyChk.dataset.id = d.originalId || d.id;
+      buyChk.addEventListener("change", () => {
+        if (typeof context.onToggleBuy === "function") {
+          context.onToggleBuy(d.originalId || d.id, buyChk.checked);
+        }
+      });
       td.appendChild(buyChk);
       tr.appendChild(td);
 
@@ -310,17 +328,47 @@
       tr.appendChild(td);
 
       td = document.createElement("td");
+      const saveBtn = document.createElement("button");
+      saveBtn.className = "btn btn-small btn-success";
+      saveBtn.dataset.action = "save-draft-extra";
+      saveBtn.dataset.id = d.id;
+      saveBtn.title = "Guardar producto";
+      saveBtn.setAttribute("aria-label", "Guardar producto");
+      saveBtn.textContent = "✓";
+      td.appendChild(saveBtn);
+
       const cancelBtn = document.createElement("button");
       cancelBtn.className = "btn btn-small btn-danger";
       cancelBtn.dataset.action = "cancel-draft-extra";
       cancelBtn.dataset.id = d.id;
       cancelBtn.textContent = "✕";
       td.appendChild(cancelBtn);
+
+      if (d.originalId) {
+        const moveBtn = document.createElement("button");
+        moveBtn.className = "btn btn-small btn-icon";
+        moveBtn.dataset.action = "move-to-almacen";
+        moveBtn.dataset.id = d.originalId;
+        moveBtn.title = "Mover a almacén";
+        moveBtn.setAttribute("aria-label", "Mover a almacén");
+        moveBtn.textContent = "→";
+        td.appendChild(moveBtn);
+
+        const delBtn = document.createElement("button");
+        delBtn.className = "btn btn-small btn-danger btn-trash";
+        delBtn.dataset.action = "delete";
+        delBtn.dataset.id = d.originalId;
+        delBtn.textContent = "🗑";
+        delBtn.title = "Eliminar producto";
+        delBtn.setAttribute("aria-label", "Eliminar producto");
+        td.appendChild(delBtn);
+      }
+
       tr.appendChild(td);
 
       tableBody.appendChild(tr);
     });
-    return drafts.length;
+    return list.length;
   }
 
   function render(c) {
@@ -329,11 +377,15 @@
     const tableBody = refs.tableBody;
     if (!tableBody) return;
 
+    const drafts =
+      (typeof context.getDrafts === "function" ? context.getDrafts() : []) || [];
     const extras =
       (typeof context.getExtras === "function"
         ? context.getExtras()
         : []) || [];
-    const sorted = extras.slice().sort(defaultSort);
+    const editingIds = new Set(drafts.map((d) => d && d.originalId).filter(Boolean));
+    const filteredExtras = extras.filter((p) => !editingIds.has(p.id));
+    const sorted = filteredExtras.slice().sort(defaultSort);
     const stripeMap = getStripeMap(context, sorted);
 
     selectionLabelCache.clear();
@@ -352,7 +404,7 @@
     const frag = document.createDocumentFragment();
     const nextRowMap = new Map();
     const nextHashMap = new Map();
-    const draftsCount = renderDrafts(context, frag);
+    const draftsCount = renderDrafts(context, frag, drafts);
 
     sorted.forEach((p) => {
       const stripe = stripeMap[(p.block || "").trim() || "__none__"] || 0;
@@ -436,6 +488,8 @@
       "selection-btn": "select-selection",
       move: "move-to-almacen",
       delete: "delete",
+      edit: "edit-extra",
+      "save-draft-extra": "save-draft-extra",
     };
     let action = target.dataset.action || roleActionMap[target.dataset.role];
     if (!action && target.closest("button")) {
@@ -475,8 +529,22 @@
     if (!id) return;
 
     if (action === "move-to-almacen") {
+      const ok = typeof window.confirm === "function" ? window.confirm("¿Mover este producto a almacén?") : true;
+      if (!ok) return;
       if (typeof context.onMoveToAlmacen === "function") {
         context.onMoveToAlmacen(id);
+      }
+      return;
+    }
+    if (action === "edit-extra") {
+      if (typeof context.onEdit === "function") {
+        context.onEdit(id);
+      }
+      return;
+    }
+    if (action === "save-draft-extra") {
+      if (typeof context.onSaveDraft === "function") {
+        context.onSaveDraft(id);
       }
       return;
     }
@@ -487,6 +555,8 @@
       return;
     }
     if (action === "delete" && typeof context.onDelete === "function") {
+      const ok = typeof window.confirm === "function" ? window.confirm("¿Eliminar este producto?") : true;
+      if (!ok) return;
       context.onDelete(id);
     }
   }

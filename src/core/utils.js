@@ -109,8 +109,14 @@
       ...getOtherProducts().map((p) => ({ ...p, scope: "otros" })),
     ];
     const existingById = new Map(unified.map((p) => [String(p.id), p]));
+    const nameToId = new Map();
+    unified.forEach((p) => {
+      const n = (p.name || "").trim().toLowerCase();
+      if (n) nameToId.set(n, String(p.id));
+    });
     let updatedDrafts = drafts.slice();
     let added = false;
+    const duplicates = [];
 
     rows.forEach((tr) => {
       const draftId = tr.dataset.draftId;
@@ -141,6 +147,12 @@
         (crypto.randomUUID ? crypto.randomUUID() : "prod-" + Date.now()) +
           "-" +
           Math.random().toString(36).slice(2);
+      const lowerName = name.trim().toLowerCase();
+      const existingIdForName = nameToId.get(lowerName);
+      if (existingIdForName && existingIdForName !== id) {
+        duplicates.push(name.trim());
+        return;
+      }
       const newProd = {
         ...(base || {}),
         id,
@@ -162,15 +174,18 @@
         unified = unified.filter((p) => String(p.id) !== originalId);
       }
       unified = [newProd, ...unified.filter(Boolean)];
+      if (lowerName) nameToId.set(lowerName, id);
       updatedDrafts = updatedDrafts.filter((d) => d.id !== draftId);
       added = true;
     });
 
-    if (added) {
-      persistUnified(unified);
+    if (!added) {
+      return { drafts, unified: null, duplicates };
     }
 
-    return { drafts: updatedDrafts, unified };
+    persistUnified(unified);
+
+    return { drafts: updatedDrafts, unified, duplicates };
   }
 
   function commitDraftExtras({
@@ -192,8 +207,15 @@
       ...getPantryProducts().map((p) => ({ ...p, scope: "almacen" })),
       ...getOtherProducts().map((p) => ({ ...p, scope: "otros" })),
     ];
+    const existingById = new Map(unified.map((p) => [String(p.id), p]));
+    const nameToId = new Map();
+    unified.forEach((p) => {
+      const n = (p.name || "").trim().toLowerCase();
+      if (n) nameToId.set(n, String(p.id));
+    });
     let updatedDrafts = drafts.slice();
     let added = false;
+    const duplicates = [];
 
     rows.forEach((tr) => {
       const draftId = tr.dataset.draftId;
@@ -214,33 +236,50 @@
       const buy = !!getField("buy");
       const notes = (tr.querySelector('textarea[data-field="notes"]') || {}).value;
       const now = nowFn();
-      const newExtra = {
-        id:
-          (crypto.randomUUID ? crypto.randomUUID() : "extra-" + Date.now()) +
+      const originalId = (tr.dataset.originalId || "").trim();
+      const base = originalId ? existingById.get(originalId) : null;
+      const id =
+        originalId ||
+        (crypto.randomUUID ? crypto.randomUUID() : "extra-" + Date.now()) +
           "-" +
-          Math.random().toString(36).slice(2),
+          Math.random().toString(36).slice(2);
+      const lowerName = name.trim().toLowerCase();
+      const existingIdForName = nameToId.get(lowerName);
+      if (existingIdForName && existingIdForName !== id) {
+        duplicates.push(name.trim());
+        return;
+      }
+      const newExtra = {
+        ...(base || {}),
+        id,
         name,
         block,
         type,
         quantity,
         notes,
         buy,
-        have: !buy,
+        have: buy ? false : !!(base && base.have),
         scope: "otros",
-        selectionId: "",
-        createdAt: now,
+        selectionId: base?.selectionId || "",
+        createdAt: base?.createdAt || now,
         updatedAt: now,
       };
-      unified = [newExtra, ...unified];
+      if (originalId) {
+        unified = unified.filter((p) => String(p.id) !== originalId);
+      }
+      unified = [newExtra, ...unified.filter(Boolean)];
+      if (lowerName) nameToId.set(lowerName, id);
       updatedDrafts = updatedDrafts.filter((d) => d.id !== draftId);
       added = true;
     });
 
-    if (added) {
-      persistUnified(unified);
+    if (!added) {
+      return { drafts, unified: null, duplicates };
     }
 
-    return { drafts: updatedDrafts, unified };
+    persistUnified(unified);
+
+    return { drafts: updatedDrafts, unified, duplicates };
   }
 
   window.AppUtils = {

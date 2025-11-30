@@ -50,6 +50,8 @@
       "selection-btn": "select-selection",
       move: "move-to-almacen",
       delete: "delete",
+      edit: "edit-extra",
+      "save-draft-extra": "save-draft-extra",
     };
     let action = target.dataset.action || roleActionMap[target.dataset.role];
     if (!action && target.closest("button")) {
@@ -70,6 +72,14 @@
 
     if (action === "move-to-almacen") {
       actions.moveToAlmacen?.(id);
+      return;
+    }
+    if (action === "edit-extra") {
+      actions.startEdit?.(id);
+      return;
+    }
+    if (action === "save-draft-extra") {
+      actions.saveDraft?.(id);
       return;
     }
     if (action === "select-selection") {
@@ -145,6 +155,8 @@
       },
       selectSelection: options.actions?.selectSelection,
       cancelDraft: options.actions?.cancelDraft,
+      startEdit: options.actions?.startEdit,
+      saveDraft: options.actions?.saveDraft,
     };
   }
 
