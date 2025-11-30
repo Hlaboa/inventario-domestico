@@ -523,6 +523,13 @@ function persistUnified(list) {
 
 let summaryInfo;
 let extraSummaryInfo;
+let producersSummaryInfo;
+let storesSummaryInfo;
+let instancesSummaryInfo;
+let classificationSummaryInfo;
+let classificationSearchInput;
+let classificationFamilyFilterSelect;
+let classificationTypeFilterSelect;
 
 // Navegación principal
 let mainAlmacenButton;
@@ -531,9 +538,14 @@ let mainSelectionButton;
 let mainClassificationButton;
 let mainProducersButton;
 let mainStoresButton;
+let mainBackupButton;
+let mainShoppingButton;
 let almacenSection;
 let otrosSection;
 let classificationSection;
+let backupSection;
+let shoppingSection;
+let activeSidePanel = "";
 let proveedoresSection;
 
 // Modo edición
@@ -827,15 +839,26 @@ document.addEventListener("DOMContentLoaded", () => {
   ({
     summaryInfo,
     extraSummaryInfo,
+    classificationSummaryInfo,
+    producersSummaryInfo,
+    storesSummaryInfo,
+    instancesSummaryInfo,
+    classificationSearchInput,
+    classificationFamilyFilterSelect,
+    classificationTypeFilterSelect,
     mainAlmacenButton,
     mainOtrosButton,
     mainSelectionButton,
-    mainClassificationButton,
-    mainProducersButton,
-    mainStoresButton,
+  mainClassificationButton,
+  mainProducersButton,
+  mainStoresButton,
+  mainBackupButton,
+  mainShoppingButton,
     almacenSection,
     otrosSection,
     classificationSection,
+    backupSection,
+    shoppingSection,
     proveedoresSection,
     almacenEditModeButton,
     otrosEditModeButton,
@@ -1077,6 +1100,14 @@ document.addEventListener("DOMContentLoaded", () => {
           instancesFamilyFilterSelect,
           instancesProducerFilterSelect,
           instancesStoreFilterSelect,
+          storesSearchInput,
+          storesTypeFilterSelect,
+          storesLocationFilterSelect,
+          producersSearchInput,
+          producersLocationFilterSelect,
+          classificationSearchInput,
+          classificationFamilyFilterSelect,
+          classificationTypeFilterSelect,
         });
       }
       renderProducts();
@@ -1322,6 +1353,10 @@ document.addEventListener("DOMContentLoaded", () => {
       addButton: addClassificationButton,
       saveButton: saveClassificationsButton,
       rowTemplate: classificationRowTemplate,
+      summary: classificationSummaryInfo,
+      searchInput: classificationSearchInput,
+      familyFilter: classificationFamilyFilterSelect,
+      typeFilter: classificationTypeFilterSelect,
     },
     getClassifications: () => getClassificationsList(),
     persist: (list) => {
@@ -1334,6 +1369,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (window.ClassificationView && typeof window.ClassificationView.init === "function") {
     window.ClassificationView.init(classificationViewContext);
   }
+  updateClassificationFilterOptions();
 
   producersViewContext = {
     refs: {
@@ -1343,6 +1379,7 @@ document.addEventListener("DOMContentLoaded", () => {
       searchInput: producersSearchInput,
       locationFilter: producersLocationFilterSelect,
       rowTemplate: producersRowTemplate,
+      summary: producersSummaryInfo,
     },
     getProducers: () => getProducersList(),
     persist: (list) => {
@@ -1374,6 +1411,7 @@ document.addEventListener("DOMContentLoaded", () => {
       typeFilter: storesTypeFilterSelect,
       locationFilter: storesLocationFilterSelect,
       rowTemplate: storesRowTemplate,
+      summary: storesSummaryInfo,
     },
     getStores: () => getSuppliersList(),
     persist: (list) => {
@@ -1406,6 +1444,7 @@ document.addEventListener("DOMContentLoaded", () => {
       producerFilter: instancesProducerFilterSelect,
       storeFilter: instancesStoreFilterSelect,
       rowTemplate: instancesRowTemplate,
+      summary: instancesSummaryInfo,
     },
     data: {
       instances: getInstancesList(),
@@ -1752,11 +1791,49 @@ function setMainSection(section) {
   if (classificationSection)
     classificationSection.classList.toggle("active", isClassification);
   proveedoresSection.classList.toggle("active", isProveedores);
+  if (backupSection && activeSidePanel === "backup") {
+    backupSection.classList.add("active");
+  }
+  if (shoppingSection && activeSidePanel === "shopping") {
+    shoppingSection.classList.add("active");
+  }
 
   if (isSelection) setProveedoresTab("instances");
   if (isProd) setProveedoresTab("producers");
   if (isStores) setProveedoresTab("stores");
 }
+
+
+function setSidePanel(panel) {
+  const normalized = panel === activeSidePanel ? "" : panel;
+  activeSidePanel = normalized;
+  const backupActive = normalized === "backup";
+  const shoppingActive = normalized === "shopping";
+
+  if (backupSection) backupSection.classList.toggle("active", backupActive);
+  if (shoppingSection) shoppingSection.classList.toggle("active", shoppingActive);
+
+  if (mainBackupButton) {
+    mainBackupButton.classList.toggle("active", backupActive);
+    if (backupActive) mainBackupButton.setAttribute("aria-current", "page");
+    else mainBackupButton.removeAttribute("aria-current");
+  }
+  if (mainShoppingButton) {
+    mainShoppingButton.classList.toggle("active", shoppingActive);
+    if (shoppingActive) mainShoppingButton.setAttribute("aria-current", "page");
+    else mainShoppingButton.removeAttribute("aria-current");
+  }
+  const main = document.querySelector(".app-main");
+  if (main) {
+    if (backupActive || shoppingActive) {
+      main.classList.add("side-panel-open");
+    } else {
+      main.classList.remove("side-panel-open");
+    }
+  }
+}
+
+window.setSidePanel = setSidePanel;
 
 function setAlmacenMode(editMode) {
   if (editMode) {
@@ -2165,6 +2242,46 @@ function getClassificationTypes(family = "") {
   return Array.from(new Set(types)).sort((a, b) =>
     a.localeCompare(b, "es", { sensitivity: "base" })
   );
+}
+
+function updateClassificationFilterOptions() {
+  if (!classificationFamilyFilterSelect || !classificationTypeFilterSelect) return;
+  const families = getClassificationFamilies();
+  const currentFamily = classificationFamilyFilterSelect.value;
+  classificationFamilyFilterSelect.innerHTML = "";
+  const optAll = document.createElement("option");
+  optAll.value = "";
+  optAll.textContent = "Todas";
+  classificationFamilyFilterSelect.appendChild(optAll);
+  families.forEach((fam) => {
+    const o = document.createElement("option");
+    o.value = fam;
+    o.textContent = fam;
+    classificationFamilyFilterSelect.appendChild(o);
+  });
+  if (families.includes(currentFamily)) {
+    classificationFamilyFilterSelect.value = currentFamily;
+  }
+
+  const selectedFamily = classificationFamilyFilterSelect.value;
+  const types = selectedFamily
+    ? getClassificationTypes(selectedFamily)
+    : getClassificationTypes();
+  const currentType = classificationTypeFilterSelect.value;
+  classificationTypeFilterSelect.innerHTML = "";
+  const optAllType = document.createElement("option");
+  optAllType.value = "";
+  optAllType.textContent = "Todos";
+  classificationTypeFilterSelect.appendChild(optAllType);
+  types.forEach((t) => {
+    const o = document.createElement("option");
+    o.value = t;
+    o.textContent = t;
+    classificationTypeFilterSelect.appendChild(o);
+  });
+  if (types.includes(currentType)) {
+    classificationTypeFilterSelect.value = currentType;
+  }
 }
 
 function createFamilySelect(selected = "") {
@@ -2900,6 +3017,19 @@ function openSelectionPopupForProduct(productId) {
           startInlineSelectionEdit(inst);
         });
         actions.appendChild(editBtn);
+        const deleteBtn = document.createElement("button");
+        deleteBtn.type = "button";
+        deleteBtn.className = "btn btn-icon btn-danger btn-trash selection-delete-btn";
+        deleteBtn.title = "Eliminar esta selección";
+        deleteBtn.textContent = "🗑";
+        deleteBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const ok = window.confirm("¿Eliminar esta selección?");
+          if (!ok) return;
+          removeInstanceById(inst.id);
+          openSelectionPopupForProduct(productId);
+        });
+        actions.appendChild(deleteBtn);
         li.appendChild(actions);
 
         li.addEventListener("click", () => {
@@ -3187,17 +3317,6 @@ function openSelectionPopupForProduct(productId) {
     storeSub.content.appendChild(storeActions);
     selectionPopupBody.appendChild(storeSub.wrapper);
 
-    const actions = document.createElement("div");
-    actions.className = "selection-popup-actions";
-    const createTableBtn = document.createElement("button");
-    createTableBtn.className = "btn btn-secondary btn-small";
-    createTableBtn.textContent = "Abrir en tabla";
-    createTableBtn.addEventListener("click", () => {
-      startCreateSelectionForProduct(productId);
-      closeSelectionPopup();
-    });
-    actions.appendChild(createTableBtn);
-    selectionPopupList.insertAdjacentElement("afterend", actions);
   }
 
   // Mostrar overlay
@@ -4083,6 +4202,7 @@ function renderClassificationTable() {
     window.ClassificationView &&
     typeof window.ClassificationView.render === "function"
   ) {
+    updateClassificationFilterOptions();
     window.ClassificationView.render(classificationViewContext);
   }
 }
@@ -4120,6 +4240,10 @@ function handleClassificationDependencies() {
     renderExtraEditTable();
   }
   renderGridRows();
+  updateClassificationFilterOptions();
+  if (window.ClassificationView && typeof window.ClassificationView.filterRows === "function") {
+    window.ClassificationView.filterRows(classificationViewContext);
+  }
 }
 
 function handleProducersDependencies() {
@@ -4669,7 +4793,7 @@ function renderShoppingList() {
   if (!shoppingListContainer || !shoppingSummary) return;
   shoppingListContainer.innerHTML = "";
 
-  const summary =
+  const baseSummary =
     (window.AppStore &&
       window.AppStore.selectors &&
       window.AppStore.selectors.shoppingSummary &&
@@ -4678,6 +4802,33 @@ function renderShoppingList() {
       totalItems: 0,
       totalStores: 0,
     };
+
+  // Reasignar tienda usando la selección prioritaria cuando esté vacía
+  const regrouped = new Map();
+  baseSummary.stores.forEach(({ store, items }) => {
+    items.forEach(({ product, source }) => {
+      let resolvedStore = store;
+      if (!resolvedStore || resolvedStore === "Sin tienda") {
+        const mainStore = getSelectionMainStoreName(product);
+        if (mainStore && mainStore !== "Sin tienda seleccionada") {
+          resolvedStore = mainStore;
+        }
+      }
+      const key = resolvedStore && resolvedStore.trim() ? resolvedStore : "Sin tienda";
+      if (!regrouped.has(key)) regrouped.set(key, []);
+      regrouped.get(key).push({ product, source });
+    });
+  });
+
+  const summary = {
+    stores: Array.from(regrouped.entries()).map(([store, items]) => ({
+      store,
+      items,
+      count: items.length,
+    })),
+    totalStores: regrouped.size,
+    totalItems: Array.from(regrouped.values()).reduce((acc, items) => acc + items.length, 0),
+  };
 
   if (summary.stores.length === 0) {
     shoppingSummary.textContent = "0 producto(s) · 0 tienda(s)";
@@ -4700,31 +4851,62 @@ function renderShoppingList() {
     title.textContent = store;
     count.textContent = `${items.length} producto(s)`;
 
+    const grouped = new Map();
     items.forEach(({ product, source }) => {
-      const itemFrag = cloneTemplateContent(shoppingItemTemplate);
-      const li = itemFrag ? itemFrag.querySelector("li") : document.createElement("li");
-      const main = li.querySelector(".shopping-item-main") || document.createElement("div");
-      const meta = li.querySelector(".shopping-item-meta") || document.createElement("div");
+      const family = (product.block || "").trim();
+      const key = family || "Sin familia";
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push({ product, source, family });
+    });
 
-      main.className = "shopping-item-main";
-      meta.className = "shopping-item-meta";
-      main.textContent = product.quantity
-        ? `${product.name || ""} — ${product.quantity}`
-        : product.name || "";
+    const groupEntries = Array.from(grouped.entries()).sort((a, b) =>
+      a[0].toLowerCase().localeCompare(b[0].toLowerCase(), "es", { sensitivity: "base" })
+    );
 
-      const parts = [];
-      if (source === "almacén") parts.push("Almacén");
-      else if (source === "otros") parts.push("Otros productos");
-      if (product.notes) parts.push(product.notes);
-      meta.textContent = parts.join(" · ");
-      if (!meta.textContent) {
-        meta.style.display = "none";
+    let firstGroup = true;
+    groupEntries.forEach(([, group]) => {
+      const family = group[0].family || "Sin familia";
+      if (!firstGroup) {
+        const divider = document.createElement("div");
+        divider.className = "shopping-group-divider";
+        list.appendChild(divider);
       }
+      firstGroup = false;
+      const titleEl = document.createElement("div");
+      titleEl.className = "shopping-group-title";
+      titleEl.textContent = family;
+      list.appendChild(titleEl);
 
-      if (!li.contains(main)) li.appendChild(main);
-      if (!li.contains(meta)) li.appendChild(meta);
+      group.forEach(({ product, source }) => {
+        const itemFrag = cloneTemplateContent(shoppingItemTemplate);
+        const li = itemFrag ? itemFrag.querySelector("li") : document.createElement("li");
+        const main = li.querySelector(".shopping-item-main") || document.createElement("div");
+        const meta = li.querySelector(".shopping-item-meta") || document.createElement("div");
 
-      list.appendChild(li);
+        main.className = "shopping-item-main";
+        meta.className = "shopping-item-meta";
+        main.textContent = product.quantity
+          ? `${product.name || ""} — ${product.quantity}`
+          : product.name || "";
+
+        const parts = [];
+        const inst = getSelectionInstanceForProduct(product);
+        const brand = (product.brand || inst?.brand || "").trim();
+        const provider =
+          (product.producerName || "").trim() ||
+          (inst?.producerId ? getProducerName(inst.producerId) : "");
+        if (provider) parts.push(provider);
+        if (brand) parts.push(brand);
+        meta.textContent = parts.join(" · ");
+        if (!meta.textContent) {
+          meta.style.display = "none";
+        }
+
+        if (!li.contains(main)) li.appendChild(main);
+        if (!li.contains(meta)) li.appendChild(meta);
+
+        list.appendChild(li);
+      });
     });
 
     return frag;
@@ -4823,13 +5005,18 @@ function handleExportBackup() {
     snap.unifiedProducts && snap.unifiedProducts.length
       ? snap.unifiedProducts
       : recomputeUnifiedFromDerived();
+  const snapshot = {
+    ...snap,
+    products: getPantryProducts(),
+    extraProducts: getOtherProducts(),
+    unifiedProducts: unified,
+    suppliers: getSuppliersList(),
+    producers: getProducersList(),
+    productInstances: getInstancesList(),
+    classifications: getClassificationsList(),
+  };
   if (window.BackupUtils && typeof window.BackupUtils.exportBackup === "function") {
-    window.BackupUtils.exportBackup({
-      snapshot: {
-        ...snap,
-        unifiedProducts: unified,
-      },
-    });
+    window.BackupUtils.exportBackup({ snapshot });
   }
 }
 

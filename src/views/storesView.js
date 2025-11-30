@@ -43,8 +43,6 @@
     const list =
       (typeof context.getStores === "function" ? context.getStores() : []) || [];
 
-    tableBody.innerHTML = "";
-
     const buildRow = (s) => {
       const nameInput = makeInput("name", s.name);
       const sel = document.createElement("select");
@@ -106,10 +104,12 @@
 
       td = document.createElement("td");
       const delBtn = document.createElement("button");
-      delBtn.className = "btn btn-small btn-danger";
-      delBtn.textContent = "✕";
+      delBtn.className = "btn btn-small btn-danger btn-trash";
+      delBtn.textContent = "🗑";
       delBtn.dataset.action = "delete";
       delBtn.dataset.id = s.id;
+      delBtn.title = "Eliminar tienda";
+      delBtn.setAttribute("aria-label", "Eliminar tienda");
       td.appendChild(delBtn);
       tr.appendChild(td);
 
@@ -136,27 +136,34 @@
         emptyColSpan: 6,
         createRow: (item) => buildRow(item),
       });
-      filterRows(context);
-      return;
+    } else {
+      tableBody.innerHTML = "";
+      if (items.length === 0) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 6;
+        td.textContent =
+          "No hay tiendas todavía. Usa 'Añadir tienda' para crear una.";
+        tr.appendChild(td);
+        tableBody.appendChild(tr);
+      } else {
+        items.forEach((s) => {
+          const row = buildRow(s);
+          if (row) tableBody.appendChild(row);
+        });
+      }
     }
-
-    if (items.length === 0) {
-      const tr = document.createElement("tr");
-      const td = document.createElement("td");
-      td.colSpan = 6;
-      td.textContent =
-        "No hay tiendas todavía. Usa 'Añadir tienda' para crear una.";
-      tr.appendChild(td);
-      tableBody.appendChild(tr);
-      return;
-    }
-
-    items.forEach((s) => {
-      const row = buildRow(s);
-      if (row) tableBody.appendChild(row);
-    });
 
     filterRows(context);
+    if (refs.summary) {
+      const total = items.length;
+      const visible = Array.from(tableBody.querySelectorAll("tr")).filter(
+        (tr) => tr.style.display !== "none" || !tr.dataset.id
+      ).length;
+      refs.summary.textContent = `Total: ${total}${
+        visible !== total ? ` · Visibles: ${visible}` : ""
+      }`;
+    }
   }
 
   function addRow(c) {
@@ -266,7 +273,13 @@
     const target = e.target;
     if (!target || target.dataset.action !== "delete") return;
     const tr = target.closest("tr");
-    if (tr) tr.remove();
+    if (!tr) return;
+    const ok =
+      typeof window.confirm === "function"
+        ? window.confirm("¿Eliminar esta tienda?")
+        : true;
+    if (!ok) return;
+    tr.remove();
   }
 
   function readRows(context) {

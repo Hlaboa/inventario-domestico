@@ -45,8 +45,6 @@
         ? context.getProducers()
         : []) || [];
 
-    tableBody.innerHTML = "";
-
     const buildRow = (p) => {
       const nameInput = makeInput("name", p.name);
       const locInput = makeInput("location", p.location);
@@ -84,10 +82,12 @@
 
       td = document.createElement("td");
       const delBtn = document.createElement("button");
-      delBtn.className = "btn btn-small btn-danger";
-      delBtn.textContent = "✕";
+      delBtn.className = "btn btn-small btn-danger btn-trash";
+      delBtn.textContent = "🗑";
       delBtn.dataset.action = "delete";
       delBtn.dataset.id = p.id;
+      delBtn.title = "Eliminar productor";
+      delBtn.setAttribute("aria-label", "Eliminar productor");
       td.appendChild(delBtn);
       tr.appendChild(td);
 
@@ -114,27 +114,34 @@
         emptyColSpan: 4,
         createRow: (item) => buildRow(item),
       });
-      filterRows(context);
-      return;
+    } else {
+      tableBody.innerHTML = "";
+      if (items.length === 0) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 4;
+        td.textContent =
+          "No hay productores todavía. Usa 'Añadir productor' para crear uno.";
+        tr.appendChild(td);
+        tableBody.appendChild(tr);
+      } else {
+        items.forEach((p) => {
+          const row = buildRow(p);
+          if (row) tableBody.appendChild(row);
+        });
+      }
     }
-
-    if (items.length === 0) {
-      const tr = document.createElement("tr");
-      const td = document.createElement("td");
-      td.colSpan = 4;
-      td.textContent =
-        "No hay productores todavía. Usa 'Añadir productor' para crear uno.";
-      tr.appendChild(td);
-      tableBody.appendChild(tr);
-      return;
-    }
-
-    items.forEach((p) => {
-      const row = buildRow(p);
-      if (row) tableBody.appendChild(row);
-    });
 
     filterRows(context);
+    if (refs.summary) {
+      const total = items.length;
+      const visible = Array.from(tableBody.querySelectorAll("tr")).filter(
+        (tr) => tr.style.display !== "none" || !tr.dataset.id
+      ).length;
+      refs.summary.textContent = `Total: ${total}${
+        visible !== total ? ` · Visibles: ${visible}` : ""
+      }`;
+    }
   }
 
   function addRow(c) {
@@ -210,7 +217,13 @@
     const target = e.target;
     if (!target || target.dataset.action !== "delete") return;
     const tr = target.closest("tr");
-    if (tr) tr.remove();
+    if (!tr) return;
+    const ok =
+      typeof window.confirm === "function"
+        ? window.confirm("¿Eliminar este productor?")
+        : true;
+    if (!ok) return;
+    tr.remove();
   }
 
   function readRows(context) {

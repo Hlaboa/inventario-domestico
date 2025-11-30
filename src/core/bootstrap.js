@@ -9,9 +9,13 @@
       mainClassificationButton: document.getElementById("mainClassificationButton"),
       mainProducersButton: document.getElementById("mainProducersButton"),
       mainStoresButton: document.getElementById("mainStoresButton"),
+      mainBackupButton: document.getElementById("mainBackupButton"),
+      mainShoppingButton: document.getElementById("mainShoppingButton"),
       almacenSection: document.getElementById("almacenSection"),
       otrosSection: document.getElementById("otrosSection"),
       classificationSection: document.getElementById("classificationSection"),
+      backupSection: document.getElementById("backupSection"),
+      shoppingSection: document.getElementById("shoppingSection"),
       proveedoresSection: document.getElementById("proveedoresSection"),
 
       // Modo edición
@@ -24,6 +28,14 @@
       otrosListPanel: document.getElementById("otrosListPanel"),
       otrosEditPanel: document.getElementById("otrosEditPanel"),
       extraSummaryInfo: document.getElementById("extraSummaryInfo"),
+      classificationSummaryInfo: document.getElementById("classificationSummaryInfo"),
+      producersSummaryInfo: document.getElementById("producersSummaryInfo"),
+      storesSummaryInfo: document.getElementById("storesSummaryInfo"),
+      instancesSummaryInfo: document.getElementById("instancesSummaryInfo"),
+      classificationSummaryInfo: document.getElementById("classificationSummaryInfo"),
+      classificationSearchInput: document.getElementById("classificationSearch"),
+      classificationFamilyFilterSelect: document.getElementById("classificationFamilyFilter"),
+      classificationTypeFilterSelect: document.getElementById("classificationTypeFilter"),
 
       // Almacén (vista)
       filterSearchInput: document.getElementById("filterSearch"),
@@ -148,6 +160,8 @@
       mainClassificationButton,
       mainProducersButton,
       mainStoresButton,
+      mainBackupButton,
+      mainShoppingButton,
       almacenEditModeButton,
       otrosEditModeButton,
     } = refs || {};
@@ -164,6 +178,10 @@
       mainProducersButton.addEventListener("click", () => setMainSection("producers"));
     if (mainStoresButton && setMainSection)
       mainStoresButton.addEventListener("click", () => setMainSection("stores"));
+    if (mainBackupButton && typeof window.setSidePanel === "function")
+      mainBackupButton.addEventListener("click", () => window.setSidePanel("backup"));
+    if (mainShoppingButton && typeof window.setSidePanel === "function")
+      mainShoppingButton.addEventListener("click", () => window.setSidePanel("shopping"));
 
     if (almacenEditModeButton && toggleAlmacenEditMode) {
       almacenEditModeButton.addEventListener("click", toggleAlmacenEditMode);
@@ -204,7 +222,6 @@
       backupFileInput,
       exportAlmacenCsvButton,
       exportOtrosCsvButton,
-      toggleShoppingPanelButton,
     } = refs || {};
 
     const rerenderInstances = renderInstancesTable || (() => {});
@@ -249,9 +266,6 @@
       exportOtrosCsvButton.addEventListener("click", handleExportOtrosCsv);
     }
 
-    if (toggleShoppingPanelButton && handleToggleShoppingPanel) {
-      toggleShoppingPanelButton.addEventListener("click", handleToggleShoppingPanel);
-    }
   }
 
   function initPopups(refs, handlers = {}) {

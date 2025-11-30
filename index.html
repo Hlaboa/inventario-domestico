@@ -25,29 +25,38 @@
               id="mainAlmacenButton"
               class="tab-button active"
             >
-              Almacén
+              ALMACÉN
             </button>
             <button type="button" id="mainOtrosButton" class="tab-button">
-              Otros productos
+              OTROS
             </button>
             <button type="button" id="mainSelectionButton" class="tab-button">
-              Selección de productos
-            </button>
-            <button type="button" id="mainClassificationButton" class="tab-button">
-              Clasificación productos
+              SELECCIÓN
             </button>
             <button type="button" id="mainProducersButton" class="tab-button">
-              Productores
+              PRODUCTORES
             </button>
             <button type="button" id="mainStoresButton" class="tab-button">
-              Tiendas
+              TIENDAS
+            </button>
+            <button type="button" id="mainClassificationButton" class="tab-button">
+              CLASIFICACIÓN
             </button>
             <button
               type="button"
-              id="toggleShoppingPanelButton"
+              id="mainBackupButton"
               class="tab-button tab-button-icon"
-              aria-label="Mostrar u ocultar lista de la compra"
-              title="Mostrar u ocultar lista de la compra"
+              aria-label="Copias de seguridad"
+              title="Copias de seguridad"
+            >
+              💾
+            </button>
+            <button
+              type="button"
+              id="mainShoppingButton"
+              class="tab-button tab-button-icon"
+              aria-label="Lista de la compra"
+              title="Lista de la compra"
             >
               🛒
             </button>
@@ -59,18 +68,20 @@
           <section id="almacenSection" class="main-section active">
             <div class="section-mode-header panel-header">
               <div>
-                <h2>Inventario de almacén</h2>
+                <h3>Inventario de almacén</h3>
                 <p class="panel-subtitle">
                   Marca qué tienes, qué falta y define una Selección prioritaria.
                 </p>
               </div>
-              <button
-                type="button"
-                class="btn btn-secondary btn-small"
-                id="almacenEditModeButton"
-              >
-                Editar inventario
-              </button>
+              <div class="panel-actions">
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-small"
+                  id="almacenEditModeButton"
+                >
+                  Editar inventario
+                </button>
+              </div>
             </div>
 
             <!-- Vista principal -->
@@ -107,7 +118,7 @@
                   </td>
                 </tr>
               </template>
-              <div class="filters">
+              <div class="filters filters-edit">
                 <div class="form-group quick-add-group">
                   <label>&nbsp;</label>
                   <button
@@ -179,7 +190,7 @@
                         <th scope="col" class="selection-col">Selección</th>
                         <th scope="col">Tiendas</th>
                         <th scope="col">Tengo</th>
-                        <th scope="col">F. adquisición</th>
+                      <th scope="col">Adquisición</th>
                       <th scope="col">Caducidad</th>
                       <th scope="col">Notas</th>
                       <th scope="col" aria-label="Acciones"></th>
@@ -337,38 +348,81 @@
           <section id="classificationSection" class="main-section">
             <div class="section-mode-header panel-header">
               <div>
-                <h2>Clasificación de productos</h2>
+                <h3>Clasificación de productos</h3>
                 <p class="panel-subtitle">
                   Gestiona las combinaciones de Familia y Tipo que se usan en todo el inventario.
                 </p>
               </div>
-              <div class="extra-header-actions panel-actions">
-                <button
-                  type="button"
-                  class="btn btn-secondary btn-small"
-                  id="addClassificationButton"
-                >
-                  Añadir combinación
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-primary btn-small"
-                  id="saveClassificationsButton"
-                >
-                  Guardar cambios
-                </button>
-              </div>
+              <div class="extra-header-actions panel-actions"></div>
             </div>
 
-            <div class="table-wrapper">
-              <div class="table-scroll">
+              <div class="filters filters-edit">
+                <div class="form-group quick-add-group">
+                  <label>&nbsp;</label>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-small btn-quick-add"
+                    id="addClassificationButton"
+                    title="Añadir combinación"
+                    aria-label="Añadir combinación"
+                  >
+                    +
+                  </button>
+                </div>
+                <div class="form-group search-group">
+                  <label for="classificationSearch">Buscar</label>
+                  <input
+                    type="text"
+                    id="classificationSearch"
+                    placeholder="Familia, tipo, notas..."
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="classificationFamilyFilter">Familia</label>
+                  <select id="classificationFamilyFilter">
+                    <option value="">Todas</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="classificationTypeFilter">Tipo</label>
+                  <select id="classificationTypeFilter">
+                    <option value="">Todos</option>
+                  </select>
+                </div>
+                <div class="form-group quick-add-group">
+                  <label>&nbsp;</label>
+                  <button
+                    type="button"
+                    class="btn btn-primary btn-small btn-quick-add"
+                    id="saveClassificationsButton"
+                    title="Guardar"
+                    aria-label="Guardar"
+                  >
+                    ✓
+                  </button>
+                </div>
+              </div>
+              <div class="list-header panel-header panel-header-compact">
+                <div
+                  class="summary"
+                  id="classificationSummaryInfo"
+                  aria-live="polite"
+                >
+                  Total: 0
+                </div>
+              </div>
+
+              <div class="table-wrapper">
+                <div class="table-scroll">
                 <template id="classificationRowTemplate">
                   <tr>
                     <td data-slot="block"></td>
                     <td data-slot="type"></td>
                     <td data-slot="notes"></td>
                     <td>
-                      <button class="btn btn-small btn-danger" data-role="delete" aria-label="Eliminar fila">✕</button>
+                      <button class="btn btn-small btn-danger btn-trash" data-role="delete" aria-label="Eliminar" title="Eliminar">
+                        🗑
+                      </button>
                     </td>
                   </tr>
                 </template>
@@ -378,7 +432,7 @@
                       <th scope="col">Familia</th>
                       <th scope="col">Tipo</th>
                       <th scope="col">Notas</th>
-                      <th scope="col">Eliminar</th>
+                      <th scope="col" aria-label="Eliminar"></th>
                     </tr>
                   </thead>
                   <tbody id="classificationTableBody"></tbody>
@@ -453,7 +507,7 @@
                   </button>
                 </div>
                 <div class="form-group search-group">
-                  <label for="extraFilterSearch">Buscar en otros</label>
+                  <label for="extraFilterSearch">Buscar</label>
                   <input
                     type="text"
                     id="extraFilterSearch"
@@ -591,7 +645,7 @@
 
               <div class="filters filters-edit">
                 <div class="form-group search-group">
-                  <label for="extraEditFilterSearch">Buscar en otros</label>
+                  <label for="extraEditFilterSearch">Buscar</label>
                   <input
                     type="text"
                     id="extraEditFilterSearch"
@@ -654,26 +708,23 @@
                     Gestiona tus productores y sus notas.
                   </p>
                 </div>
-                <div class="panel-actions">
-                  <button
-                    type="button"
-                    class="btn btn-secondary btn-small"
-                    id="addProducerButton"
-                  >
-                    Añadir productor
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn-primary btn-small"
-                    id="saveProducersButton"
-                  >
-                    Guardar cambios
-                  </button>
-                </div>
+                <div class="panel-actions"></div>
               </div>
               <div class="filters filters-edit">
+                <div class="form-group quick-add-group">
+                  <label>&nbsp;</label>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-small btn-quick-add"
+                    id="addProducerButton"
+                    title="Añadir productor"
+                    aria-label="Añadir productor"
+                  >
+                    +
+                  </button>
+                </div>
                 <div class="form-group search-group">
-                  <label for="producersSearch">Buscar productor</label>
+                  <label for="producersSearch">Buscar</label>
                   <input
                     type="text"
                     id="producersSearch"
@@ -686,6 +737,23 @@
                     <option value="">Todas</option>
                   </select>
                 </div>
+                <div class="form-group">
+                  <label>&nbsp;</label>
+                  <button
+                    type="button"
+                    class="btn btn-primary btn-small btn-quick-add"
+                    id="saveProducersButton"
+                    title="Guardar"
+                    aria-label="Guardar"
+                  >
+                    ✓
+                  </button>
+                </div>
+              </div>
+              <div class="list-header panel-header panel-header-compact">
+                <div class="summary" id="producersSummaryInfo" aria-live="polite">
+                  Total: 0
+                </div>
               </div>
 
               <div class="table-wrapper">
@@ -696,7 +764,14 @@
                       <td data-slot="location"></td>
                       <td data-slot="notes"></td>
                       <td>
-                        <button class="btn btn-small btn-danger" data-role="delete" aria-label="Eliminar">✕</button>
+                        <button
+                          class="btn btn-small btn-danger btn-trash"
+                          data-role="delete"
+                          aria-label="Eliminar selección"
+                          title="Eliminar selección"
+                        >
+                          🗑
+                        </button>
                       </td>
                     </tr>
                   </template>
@@ -706,7 +781,7 @@
                       <th scope="col">Nombre productor</th>
                       <th scope="col">Localización</th>
                       <th scope="col">Notas</th>
-                      <th scope="col">Eliminar</th>
+                      <th scope="col" aria-label="Eliminar"></th>
                     </tr>
                   </thead>
                     <tbody id="producersTableBody"></tbody>
@@ -724,26 +799,23 @@
                     Gestiona las tiendas y su información de contacto.
                   </p>
                 </div>
-                <div class="panel-actions">
-                  <button
-                    type="button"
-                    class="btn btn-secondary btn-small"
-                    id="addStoreButton"
-                  >
-                    Añadir tienda
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn-primary btn-small"
-                    id="saveStoresButton"
-                  >
-                    Guardar cambios
-                  </button>
-                </div>
+                <div class="panel-actions"></div>
               </div>
               <div class="filters filters-edit">
+                <div class="form-group quick-add-group">
+                  <label>&nbsp;</label>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-small btn-quick-add"
+                    id="addStoreButton"
+                    title="Añadir tienda"
+                    aria-label="Añadir tienda"
+                  >
+                    +
+                  </button>
+                </div>
                 <div class="form-group search-group">
-                  <label for="storesSearch">Buscar tienda</label>
+                  <label for="storesSearch">Buscar</label>
                   <input
                     type="text"
                     id="storesSearch"
@@ -764,6 +836,23 @@
                     <option value="">Todas</option>
                   </select>
                 </div>
+                <div class="form-group">
+                  <label>&nbsp;</label>
+                  <button
+                    type="button"
+                    class="btn btn-primary btn-small btn-quick-add"
+                    id="saveStoresButton"
+                    title="Guardar"
+                    aria-label="Guardar"
+                  >
+                    ✓
+                  </button>
+                </div>
+              </div>
+              <div class="list-header panel-header panel-header-compact">
+                <div class="summary" id="storesSummaryInfo" aria-live="polite">
+                  Total: 0
+                </div>
               </div>
 
               <div class="table-wrapper">
@@ -776,7 +865,14 @@
                       <td data-slot="website"></td>
                       <td data-slot="notes"></td>
                       <td>
-                        <button class="btn btn-small btn-danger" data-role="delete" aria-label="Eliminar">✕</button>
+                        <button
+                          class="btn btn-small btn-danger btn-trash"
+                          data-role="delete"
+                          aria-label="Eliminar"
+                          title="Eliminar"
+                        >
+                          🗑
+                        </button>
                       </td>
                     </tr>
                   </template>
@@ -788,7 +884,7 @@
                       <th scope="col">Localización</th>
                       <th scope="col">Web / contacto</th>
                       <th scope="col">Notas</th>
-                      <th scope="col">Eliminar</th>
+                      <th scope="col" aria-label="Eliminar"></th>
                     </tr>
                   </thead>
                     <tbody id="storesTableBody"></tbody>
@@ -806,26 +902,23 @@
                     Crea combinaciones de producto, productor, marca y tiendas para usarlas como selección prioritaria.
                   </p>
                 </div>
-                <div class="panel-actions">
-                  <button
-                    type="button"
-                    class="btn btn-secondary btn-small"
-                    id="addInstanceButton"
-                  >
-                    Añadir selección
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn-primary btn-small"
-                    id="saveInstancesButton"
-                  >
-                    Guardar cambios
-                  </button>
-                </div>
+                <div class="panel-actions"></div>
               </div>
               <div class="filters filters-edit">
+                <div class="form-group quick-add-group">
+                  <label>&nbsp;</label>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-small btn-quick-add"
+                    id="addInstanceButton"
+                    title="Añadir selección"
+                    aria-label="Añadir selección"
+                  >
+                    +
+                  </button>
+                </div>
                 <div class="form-group search-group">
-                  <label for="instancesSearch">Buscar selección</label>
+                  <label for="instancesSearch">Buscar</label>
                   <input
                     type="text"
                     id="instancesSearch"
@@ -849,6 +942,23 @@
                   <select id="instancesStoreFilter">
                     <option value="">Todas</option>
                   </select>
+                </div>
+                <div class="form-group">
+                  <label>&nbsp;</label>
+                  <button
+                    type="button"
+                    class="btn btn-primary btn-small btn-quick-add"
+                    id="saveInstancesButton"
+                    title="Guardar"
+                    aria-label="Guardar"
+                  >
+                    ✓
+                  </button>
+                </div>
+              </div>
+              <div class="list-header panel-header panel-header-compact">
+                <div class="summary" id="instancesSummaryInfo" aria-live="polite">
+                  Total: 0
                 </div>
               </div>
 
@@ -877,9 +987,9 @@
                       <th scope="col">Familia</th>
                       <th scope="col">Productor</th>
                       <th scope="col">Marca</th>
-                      <th scope="col">Tiendas asociadas</th>
+                      <th scope="col">Tiendas</th>
                       <th scope="col">Notas</th>
-                      <th scope="col">Eliminar</th>
+                      <th scope="col"></th>
                     </tr>
                   </thead>
                     <tbody id="instancesTableBody"></tbody>
@@ -890,8 +1000,8 @@
           </section>
         </section>
 
-        <!-- Panel lista de la compra + backup -->
-        <section class="panel panel-shopping">
+        <!-- Panel lista de la compra -->
+        <section id="shoppingSection" class="side-panel">
           <template id="shoppingStoreTemplate">
             <div class="shopping-store-block">
               <div class="shopping-store-header">
@@ -915,13 +1025,15 @@
                 agrupado por tienda (Selección).
               </p>
             </div>
-            <div class="shopping-actions panel-actions">
+              <div class="shopping-actions panel-actions">
               <button
                 type="button"
-                class="btn btn-primary btn-small"
+                class="btn btn-primary btn-small btn-quick-add"
                 id="copyListButton"
+                title="Copiar lista"
+                aria-label="Copiar lista"
               >
-                Copiar lista
+                📎
               </button>
             </div>
           </div>
@@ -932,49 +1044,80 @@
 
           <div id="shoppingListContainer"></div>
 
-          <div class="backup-block">
-            <h3>Copias de seguridad</h3>
-            <div class="backup-actions">
+        </section>
+
+        <!-- Panel de copias de seguridad -->
+        <section id="backupSection" class="side-panel">
+          <div class="section-mode-header panel-header">
+            <div>
+              <h3>Copias de seguridad</h3>
+              <p class="panel-subtitle">
+                Exporta o restaura tus datos (almacén, otros, productores, tiendas y selección).
+              </p>
+            </div>
+            <div class="panel-actions"></div>
+          </div>
+          <div class="filters filters-edit">
+            <div class="form-group quick-add-group">
+              <label>&nbsp;</label>
               <button
                 type="button"
                 class="btn btn-secondary btn-small"
                 id="exportBackupButton"
+                title="Descargar copia (.json)"
+                aria-label="Descargar copia (.json)"
               >
                 Descargar copia (.json)
               </button>
+            </div>
+            <div class="form-group">
+              <label>&nbsp;</label>
               <button
                 type="button"
                 class="btn btn-secondary btn-small"
                 id="importBackupButton"
+                title="Restaurar desde archivo"
+                aria-label="Restaurar desde archivo"
               >
                 Restaurar desde archivo
               </button>
+            </div>
+            <div class="form-group">
+              <label>&nbsp;</label>
               <button
                 type="button"
                 class="btn btn-secondary btn-small"
                 id="exportAlmacenCsvButton"
+                title="Almacén a Excel"
+                aria-label="Almacén a Excel"
               >
-                Almacén a Excel
+                Exportar almacén a Excel
               </button>
+            </div>
+            <div class="form-group">
+              <label>&nbsp;</label>
               <button
                 type="button"
                 class="btn btn-secondary btn-small"
                 id="exportOtrosCsvButton"
+                title="Otros productos a Excel"
+                aria-label="Otros productos a Excel"
               >
-                Otros productos a Excel
+                Exportar otros a Excel
               </button>
-              <input
-                type="file"
-                id="backupFileInput"
-                accept="application/json"
-                style="display: none"
-              />
             </div>
+          </div>
+          <div class="list-header panel-header panel-header-compact">
             <p class="backup-note">
-              La copia incluye almacén, otros productos, productores, tiendas y
-              selección de productos.
+              La copia incluye almacén, otros productos, selección, productores, tiendas y clasificación de productos.
             </p>
           </div>
+          <input
+            type="file"
+            id="backupFileInput"
+            accept="application/json"
+            style="display: none"
+          />
         </section>
       </main>
     </div>

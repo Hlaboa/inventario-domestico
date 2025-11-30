@@ -51,6 +51,17 @@
     setValue(refs.instancesFamilyFilterSelect, "");
     setValue(refs.instancesProducerFilterSelect, "");
     setValue(refs.instancesStoreFilterSelect, "");
+
+    setValue(refs.storesSearchInput, "");
+    setValue(refs.storesTypeFilterSelect, "");
+    setValue(refs.storesLocationFilterSelect, "");
+
+    setValue(refs.producersSearchInput, "");
+    setValue(refs.producersLocationFilterSelect, "");
+
+    setValue(refs.classificationSearchInput, "");
+    setValue(refs.classificationFamilyFilterSelect, "");
+    setValue(refs.classificationTypeFilterSelect, "");
   }
 
   function debounce(fn, wait = 120) {

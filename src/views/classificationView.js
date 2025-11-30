@@ -21,6 +21,10 @@
     const refs = context.refs || {};
     const tableBody = refs.tableBody;
     const rowTemplate = refs.rowTemplate;
+    const summary = refs.summary;
+    const searchInput = refs.searchInput;
+    const familyFilter = refs.familyFilter;
+    const typeFilter = refs.typeFilter;
     if (!tableBody) return;
 
     const list =
@@ -76,10 +80,12 @@
 
       td = document.createElement("td");
       const del = document.createElement("button");
-      del.className = "btn btn-small btn-danger";
+      del.className = "btn btn-small btn-danger btn-trash";
       del.dataset.action = "delete-classification";
       del.dataset.id = c.id;
-      del.textContent = "✕";
+      del.textContent = "🗑";
+      del.title = "Eliminar combinación";
+      del.setAttribute("aria-label", "Eliminar combinación");
       td.appendChild(del);
       tr.appendChild(td);
 
@@ -94,24 +100,69 @@
         emptyColSpan: 4,
         createRow: (item) => buildRow(item),
       });
-      return;
+    } else {
+      tableBody.innerHTML = "";
+      if (list.length === 0) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 4;
+        td.textContent =
+          "No hay combinaciones todavía. Añade una familia/tipo para empezar.";
+        tr.appendChild(td);
+        tableBody.appendChild(tr);
+      } else {
+        list.forEach((c) => {
+          const row = buildRow(c);
+          if (row) tableBody.appendChild(row);
+        });
+      }
     }
-
-    if (list.length === 0) {
-      const tr = document.createElement("tr");
-      const td = document.createElement("td");
-      td.colSpan = 4;
-      td.textContent =
-        "No hay combinaciones todavía. Añade una familia/tipo para empezar.";
-      tr.appendChild(td);
-      tableBody.appendChild(tr);
-      return;
+    if (summary) {
+      const total = list.length;
+      summary.textContent = `Total: ${total}`;
     }
+    filterRows(context);
+  }
 
-    list.forEach((c) => {
-      const row = buildRow(c);
-      if (row) tableBody.appendChild(row);
+  function filterRows(c) {
+    const context = getCtx(c);
+    const refs = context.refs || {};
+    const tableBody = refs.tableBody;
+    if (!tableBody) return;
+    const search = (refs.searchInput?.value || "").toLowerCase();
+    const family = refs.familyFilter?.value || "";
+    const type = refs.typeFilter?.value || "";
+
+    Array.from(tableBody.querySelectorAll("tr")).forEach((tr) => {
+      const id = tr.dataset.id;
+      if (!id) {
+        tr.style.display = "";
+        return;
+      }
+      const block = (tr.querySelector('input[data-field="block"]')?.value || "").trim();
+      const typeVal = (tr.querySelector('input[data-field="type"]')?.value || "").trim();
+      const notes = (tr.querySelector('input[data-field="notes"]')?.value || "").trim();
+      let visible = true;
+      if (family && block !== family) visible = false;
+      if (type && typeVal !== type) visible = false;
+      if (search) {
+        const haystack = `${block} ${typeVal} ${notes}`.toLowerCase();
+        if (!haystack.includes(search)) visible = false;
+      }
+      tr.style.display = visible ? "" : "none";
     });
+
+    if (refs.summary) {
+      const total = (typeof context.getClassifications === "function"
+        ? (context.getClassifications() || []).length
+        : 0);
+      const visibleRows = Array.from(tableBody.querySelectorAll("tr")).filter(
+        (tr) => tr.style.display !== "none" || !tr.dataset.id
+      ).length;
+      refs.summary.textContent = `Total: ${total}${
+        visibleRows !== total ? ` · Visibles: ${visibleRows}` : ""
+      }`;
+    }
   }
 
   function addRow(c) {
@@ -179,12 +230,18 @@
     tableBody.prepend(tr);
   }
 
-  function handleClick(e) {
-    const target = e.target;
-    if (!target || target.dataset.action !== "delete-classification") return;
-    const tr = target.closest("tr");
-    if (tr) tr.remove();
-  }
+function handleClick(e) {
+  const target = e.target;
+  if (!target || target.dataset.action !== "delete-classification") return;
+  const tr = target.closest("tr");
+  if (!tr) return;
+  const ok =
+    typeof window.confirm === "function"
+      ? window.confirm("¿Eliminar esta combinación?")
+      : true;
+  if (!ok) return;
+  tr.remove();
+}
 
   function collectRows(context) {
     const refs = context.refs || {};
@@ -254,8 +311,17 @@
     if (refs.saveButton) {
       refs.saveButton.addEventListener("click", () => save());
     }
+    if (refs.searchInput) {
+      refs.searchInput.addEventListener("input", () => filterRows());
+    }
+    if (refs.familyFilter) {
+      refs.familyFilter.addEventListener("change", () => filterRows());
+    }
+    if (refs.typeFilter) {
+      refs.typeFilter.addEventListener("change", () => filterRows());
+    }
     render(context);
   }
 
-  window.ClassificationView = { init, render, save, addRow };
+  window.ClassificationView = { init, render, save, addRow, filterRows };
 })();

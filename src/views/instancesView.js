@@ -138,6 +138,80 @@
     const nextRowMap = new Map();
     const nextHashMap = new Map();
 
+    const buildStoreSelector = (inst) => {
+      const selStores = document.createElement("select");
+      selStores.className = "table-input inline-stores-select visually-hidden";
+      selStores.multiple = true;
+      selStores.dataset.field = "storeIds";
+      selStores.dataset.id = inst.id;
+      const storeOptions = context.data?.stores || [];
+      const getOptions = () =>
+        Array.from(
+          (selStores && (selStores.options || selStores.children)) || []
+        );
+      const getSelectedOptions = () => {
+        const opts = selStores ? selStores.selectedOptions : null;
+        if (opts && typeof opts.length !== "undefined" && opts.length > 0) {
+          return Array.from(opts);
+        }
+        return getOptions().filter((o) => o && o.selected);
+      };
+      storeOptions
+        .slice()
+        .sort((a, b) =>
+          (a.name || "").localeCompare(b.name || "", "es", {
+            sensitivity: "base",
+          })
+        )
+        .forEach((s) => {
+          const o = document.createElement("option");
+          o.value = s.id;
+          o.textContent = s.name || "(sin nombre)";
+          o.selected = Array.isArray(inst.storeIds) && inst.storeIds.includes(s.id);
+          selStores.appendChild(o);
+        });
+
+      const chips = document.createElement("div");
+      chips.className = "inline-store-chips instances-store-chips";
+      const renderChips = () => {
+        const selectedIds = new Set(getSelectedOptions().map((o) => o.value));
+        chips.innerHTML = "";
+        storeOptions
+          .slice()
+          .sort((a, b) =>
+            (a.name || "").localeCompare(b.name || "", "es", {
+              sensitivity: "base",
+            })
+          )
+          .forEach((s) => {
+            const chip = document.createElement("button");
+            chip.type = "button";
+            chip.className = "store-chip-toggle";
+            chip.textContent = s.name || "(sin nombre)";
+            chip.dataset.id = s.id;
+            const isSelected = selectedIds.has(s.id);
+            chip.classList.toggle("selected", isSelected);
+            chip.addEventListener("click", () => {
+              const opt = getOptions().find((o) => o.value === s.id);
+              if (opt) {
+                opt.selected = !opt.selected;
+                selStores.dispatchEvent(new Event("change", { bubbles: true }));
+              }
+            });
+            chips.appendChild(chip);
+          });
+      };
+      selStores.addEventListener("change", renderChips);
+      renderChips();
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "stores-chip-wrapper instances-stores-wrapper";
+      wrapper.appendChild(selStores);
+      wrapper.appendChild(chips);
+
+      return { wrapper, selStores };
+    };
+
     const makeInput = (field, value = "", type = "text") => {
       if (window.AppUtils && typeof window.AppUtils.createTableInput === "function") {
         return window.AppUtils.createTableInput(field, value, type);
@@ -218,26 +292,10 @@
 
       const brandInput = makeInput("brand", inst.brand || "");
 
-      const selStores = document.createElement("select");
-      selStores.className = "table-input inline-stores-select";
-      selStores.multiple = true;
-      selStores.dataset.field = "storeIds";
-      selStores.dataset.id = inst.id;
-      const storeOptions = context.data?.stores || [];
-      storeOptions
-        .slice()
-        .sort((a, b) =>
-          (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" })
-        )
-        .forEach((s) => {
-          const o = document.createElement("option");
-          o.value = s.id;
-          o.textContent = s.name || "(sin nombre)";
-          o.selected = Array.isArray(inst.storeIds) && inst.storeIds.includes(s.id);
-          selStores.appendChild(o);
-        });
+      const { wrapper: storesWrapper, selStores } = buildStoreSelector(inst);
 
       const notesArea = makeTextarea("notes", inst.notes || "");
+      notesArea.classList.add("instances-notes-input");
 
       if (!row && rowTemplate && window.AppComponents && typeof window.AppComponents.buildRowWithTemplate === "function") {
         row = window.AppComponents.buildRowWithTemplate({
@@ -257,14 +315,14 @@
           replacements: {
             "[data-slot='productName']": (() => {
               const wrap = document.createElement("div");
-              wrap.className = "instances-product-cell";
+              wrap.className = "instances-product-wrap";
               wrap.appendChild(inputName);
               wrap.appendChild(createBtn);
               return wrap;
             })(),
             "[data-slot='producer']": selProducer,
             "[data-slot='brand']": brandInput,
-            "[data-slot='stores']": selStores,
+            "[data-slot='stores']": storesWrapper,
             "[data-slot='notes']": notesArea,
           },
         });
@@ -277,8 +335,12 @@
 
         // Producto
         let td = document.createElement("td");
-        td.appendChild(inputName);
-        td.appendChild(createBtn);
+        td.classList.add("instances-product-cell");
+        const wrap = document.createElement("div");
+        wrap.className = "instances-product-wrap";
+        wrap.appendChild(inputName);
+        wrap.appendChild(createBtn);
+        td.appendChild(wrap);
         row.appendChild(td);
 
         // Familia
@@ -287,6 +349,7 @@
         // Productor
         td = document.createElement("td");
         td.appendChild(selProducer);
+        td.classList.add("instances-producer-cell");
         row.appendChild(td);
 
         // Marca
@@ -296,21 +359,25 @@
 
         // Tiendas
         td = document.createElement("td");
-        td.appendChild(selStores);
+        td.classList.add("instances-stores-cell");
+        td.appendChild(storesWrapper);
         row.appendChild(td);
 
         // Notas
         td = document.createElement("td");
         td.appendChild(notesArea);
+        td.classList.add("instances-notes-cell");
         row.appendChild(td);
 
         // Acciones
         td = document.createElement("td");
         const delBtn = document.createElement("button");
-        delBtn.className = "btn btn-small btn-danger";
+        delBtn.className = "btn btn-small btn-danger btn-trash";
         delBtn.dataset.action = "delete-instance";
         delBtn.dataset.id = inst.id;
-        delBtn.textContent = "✕";
+        delBtn.textContent = "🗑";
+        delBtn.title = "Eliminar selección";
+        delBtn.setAttribute("aria-label", "Eliminar selección");
         td.appendChild(delBtn);
         row.appendChild(td);
       }
@@ -327,6 +394,32 @@
         row.querySelector('[data-action="create-product-selection"]') || createBtn;
       const inputNameEl =
         row.querySelector('input[data-field="productName"]') || inputName;
+      const notesCellEl =
+        (notesArea && notesArea.closest && notesArea.closest("td")) ||
+        row.querySelector(".instances-notes-cell");
+      if (notesCellEl) notesCellEl.classList.add("instances-notes-cell");
+      if (row.querySelector(".instances-stores-cell") === null) {
+        const storesCell = (storesWrapper && storesWrapper.closest && storesWrapper.closest("td")) || null;
+        if (storesCell) storesCell.classList.add("instances-stores-cell");
+      }
+      const productCellEl =
+        (inputName && inputName.closest && inputName.closest("td")) ||
+        row.querySelector(".instances-product-cell") ||
+        (row.querySelector("td") || null);
+      if (productCellEl) productCellEl.classList.add("instances-product-cell");
+      const producerCellEl =
+        (selProducer && selProducer.closest && selProducer.closest("td")) ||
+        row.querySelector(".instances-producer-cell");
+      if (producerCellEl) producerCellEl.classList.add("instances-producer-cell");
+      const deleteBtnEl =
+        row.querySelector('[data-action="delete-instance"]') ||
+        row.querySelector('[data-role="delete"]');
+      if (deleteBtnEl) {
+        deleteBtnEl.classList.add("btn", "btn-small", "btn-danger", "btn-trash");
+        deleteBtnEl.textContent = "🗑";
+        deleteBtnEl.title = deleteBtnEl.title || "Eliminar selección";
+        deleteBtnEl.setAttribute("aria-label", deleteBtnEl.getAttribute("aria-label") || "Eliminar selección");
+      }
 
       if (
         inputNameEl &&
@@ -406,7 +499,12 @@
       const getStoreIds = () => {
         const sel = tr.querySelector('select[data-field="storeIds"]');
         if (!sel) return [];
-        return Array.from(sel.selectedOptions)
+        const opts =
+          (sel.selectedOptions && sel.selectedOptions.length
+            ? Array.from(sel.selectedOptions)
+            : Array.from(sel.options || sel.children || [])) || [];
+        return opts
+          .filter((o) => !sel.selectedOptions || sel.selectedOptions.length ? true : o.selected)
           .map((o) => o.value)
           .filter(Boolean);
       };
@@ -520,6 +618,11 @@
       const tr = target.closest("tr");
       if (!tr) return;
       const id = target.dataset.id || tr.dataset.id;
+      const ok =
+        typeof window.confirm === "function"
+          ? window.confirm("¿Eliminar esta selección?")
+          : true;
+      if (!ok) return;
       const current = (getCtx().data?.instances || []).filter((i) => i.id !== id);
       persistAndRender(getCtx(), current, { allowClear: true });
     } else if (action === "create-product-selection") {
