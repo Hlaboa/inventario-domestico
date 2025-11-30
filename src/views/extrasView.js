@@ -194,6 +194,12 @@
     chk.checked = !!item.buy;
     chk.dataset.field = "buy";
     chk.dataset.id = item.id;
+    chk.addEventListener("change", () => {
+      const ctx = getCtx();
+      if (typeof ctx.onToggleBuy === "function") {
+        ctx.onToggleBuy(item.id, chk.checked);
+      }
+    });
     td.appendChild(chk);
     tr.appendChild(td);
 
@@ -229,6 +235,8 @@
     const storeIds = Array.isArray(inst?.storeIds) ? inst.storeIds : [];
     row.dataset.storeIds = storeIds.join(",");
     row.dataset.search = `${item.name || ""} ${item.block || ""} ${item.type || ""} ${item.quantity || ""} ${selectionLabel} ${storesLabel} ${item.notes || ""}`.toLowerCase();
+    const buyChk = row.querySelector('input[data-field="buy"]');
+    if (buyChk) buyChk.checked = !!item.buy;
   }
 
   function hasActiveFilters(refs = {}) {
@@ -350,12 +358,18 @@
       const stripe = stripeMap[(p.block || "").trim() || "__none__"] || 0;
       const hash = getRowHash(p, context);
       const existing = existingRows.get(p.id);
-      let row = existing && hashMap.get(p.id) === hash ? existing : null;
+      const reuse = existing && hashMap.get(p.id) === hash;
+      if (existing && !reuse) {
+        existing.remove();
+      }
+      let row = reuse ? existing : null;
       if (!row) {
         row = buildRow(p, stripe, context);
       }
       if (row) {
         decorateRow(row, p, stripe, context);
+        const buyChk = row.querySelector('input[data-field="buy"]');
+        if (buyChk) buyChk.checked = !!p.buy;
         frag.appendChild(row);
         nextRowMap.set(p.id, row);
         nextHashMap.set(p.id, hash);

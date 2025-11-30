@@ -98,6 +98,10 @@ class StubElement {
     };
   }
   appendChild(child) {
+    if (child && child.tag === "fragment" && Array.isArray(child.children)) {
+      this.children.push(...child.children);
+      return child;
+    }
     this.children.push(child);
     return child;
   }
@@ -116,13 +120,24 @@ class StubElement {
     this._handlers[type] = handler;
   }
   querySelectorAll(selector) {
-    if (selector === "tr") {
-      return this.children.filter((c) => c.tag === "tr");
+    if (selector && selector.includes(":not")) {
+      return [];
+    }
+    if (selector === "tr" || selector.startsWith("tr")) {
+      let rows = this.children.filter(
+        (c) => c.tag === "tr" && c.style.display !== "none" && !c._removed
+      );
+      if (selector.includes("[data-id]")) {
+        rows = rows.filter((c) => c.dataset && c.dataset.id);
+      }
+      return rows;
     }
     return [];
   }
   querySelector(selector) {
-    if (selector === "tr") return this.children.find((c) => c.tag === "tr") || null;
+    if (selector === "tr" || selector.startsWith("tr")) {
+      return this.querySelectorAll("tr")[0] || null;
+    }
     return null;
   }
   remove() {
@@ -136,6 +151,7 @@ class StubElement {
 function createStubDocument() {
   return {
     createElement: (tag) => new StubElement(tag),
+    createDocumentFragment: () => new StubElement("fragment"),
     querySelector: () => null,
     querySelectorAll: () => [],
   };
@@ -207,6 +223,7 @@ register("actions.setProducts sin DataService actualiza AppState y AppStore", ()
   const sample = [{ id: "p2", name: "Pasta" }];
   store.actions.setProducts(sample);
   const snapshot = store.getState();
+  const patch = AppState.hydrateCalls[0] || {};
 
   assert.strictEqual(snapshot.products.length, 1, "Debe guardar el producto");
   assert.strictEqual(
@@ -214,10 +231,44 @@ register("actions.setProducts sin DataService actualiza AppState y AppStore", ()
     1,
     "Debe notificar a AppState.hydrate"
   );
-  assert.deepStrictEqual(
-    AppState.hydrateCalls[0],
-    { products: sample },
+  assert.strictEqual(
+    patch.products?.[0]?.name,
+    "Pasta",
     "Debe hidratar con el patch de productos"
+  );
+  assert.ok(
+    Array.isArray(patch.unifiedProducts) && patch.unifiedProducts.length === 1,
+    "Debe hidratar unifiedProducts coherentes"
+  );
+
+  store.__cleanup();
+});
+
+register("AppStore normaliza ids numéricos en unifiedProducts", () => {
+  const AppState = {
+    state: {},
+    hydrateCalls: [],
+    hydrate(patch) {
+      this.hydrateCalls.push(patch);
+      this.state = { ...this.state, ...(patch || {}) };
+    },
+    getState() {
+      return this.state;
+    },
+    subscribe() {
+      return () => {};
+    },
+  };
+
+  const store = loadStore({ AppState });
+  store.actions.setUnifiedProducts([{ id: 99, name: "Extra num", scope: "otros", buy: true }]);
+  const snapshot = store.getState();
+
+  assert.strictEqual(snapshot.unifiedProducts[0].id, "99", "Debe forzar id string");
+  assert.strictEqual(
+    AppState.hydrateCalls[0]?.unifiedProducts?.[0]?.id,
+    "99",
+    "Hydrate recibe id como string"
   );
 
   store.__cleanup();
@@ -273,12 +324,16 @@ register("AppStorage normaliza productos y extraProducts con scope correcto", ()
   global.window = { AppUtils, localStorage: createMemoryStorage() };
   require(storageModule);
   const normalize = global.window.AppStorage.normalize;
-  const prod = normalize.product({ id: "1", name: "A", have: "on", block: "B" });
-  const extra = normalize.extraProduct({ id: "2", name: "E", buy: "on", scope: "otros" });
+  const prod = normalize.product({ id: 1, name: "A", have: "on", block: "B" });
+  const extra = normalize.extraProduct({ id: 2, name: "E", buy: "on", scope: "otros" });
   assert.strictEqual(prod.scope, undefined, "Productos no fijan scope (solo unified)");
+  assert.strictEqual(prod.id, "1", "Producto fuerza id numérico a string");
   assert.strictEqual(extra.buy, true, "Extra marca buy en booleano");
-  const unified = normalize.unifiedProduct({ id: "3", name: "U", have: "on", scope: "otros" });
+  assert.strictEqual(extra.have, false, "Extra deriva have inverso a buy");
+  assert.strictEqual(extra.id, "2", "Extra fuerza id numérico a string");
+  const unified = normalize.unifiedProduct({ id: 3, name: "U", have: "on", scope: "otros" });
   assert.strictEqual(unified.scope, "otros", "Unified respeta scope 'otros'");
+  assert.strictEqual(unified.id, "3", "Unified fuerza id numérico a string");
 });
 
 register("DataService.persistState guarda unifiedProducts y listas separadas", () => {
@@ -364,6 +419,25 @@ register("DataService.setUnifiedProducts persiste y actualiza AppState", () => {
   ds.__cleanup();
 });
 
+register("DataService usa fallback si AppStorage.saveUnifiedProducts lanza error", () => {
+  const AppStorage = {
+    keys: { unifiedProducts: "productosCocinaUnificados" },
+    saveUnifiedProducts() {
+      throw new Error("storage blocked");
+    },
+    normalize: { unifiedProduct: (p) => p },
+  };
+  const localStorage = createMemoryStorage();
+  const ds = loadDataService({ AppStorage, localStorage });
+
+  ds.setUnifiedProducts([{ id: "u1", scope: "almacen", name: "Prod" }]);
+
+  const stored = JSON.parse(localStorage.getItem("productosCocinaUnificados"));
+  assert.strictEqual(stored.length, 1, "Debe guardar mediante fallback si falla AppStorage");
+
+  ds.__cleanup();
+});
+
 register("StateAdapter.setEntity delega en AppStore.actions y notifica suscriptores sin bucle", () => {
   const calls = { action: 0, notified: 0 };
   const storeState = { unifiedProducts: [] };
@@ -442,6 +516,57 @@ register("InventoryView.render crea filas para productos", () => {
   const rows = productTableBody.querySelectorAll("tr");
   if (rows.length !== 2) {
     throw new Error(`Se esperaban 2 filas (1 draft + 1 producto), hay ${rows.length}`);
+  }
+});
+
+register("InventoryView no duplica filas al cambiar datos", () => {
+  delete require.cache[path.join(__dirname, "..", "src", "views", "inventoryView.js")];
+  const productTableBody = new StubElement("tbody");
+  const refs = {
+    productTableBody,
+    filterSearchInput: { value: "" },
+    filterShelfSelect: { value: "" },
+    filterBlockSelect: { value: "" },
+    filterTypeSelect: { value: "" },
+    filterStoreSelect: { value: "" },
+    filterStatusSelect: { value: "all" },
+    summaryInfo: { textContent: "" },
+  };
+  const stubDocument = createStubDocument();
+  global.window = { document: stubDocument };
+  global.document = stubDocument;
+  require(path.join(__dirname, "..", "src", "views", "inventoryView.js"));
+
+  const baseProduct = { id: "p1", name: "Arroz", block: "Granos", type: "Blanco", shelf: "A", quantity: "1" };
+  const helpers = {
+    compareShelfBlockTypeName: () => 0,
+    buildFamilyStripeMap: () => ({}),
+    createFamilySelect: () => new StubElement("select"),
+    createTypeSelect: () => new StubElement("select"),
+    createTableInput: () => new StubElement("input"),
+    createTableTextarea: () => new StubElement("textarea"),
+    linkFamilyTypeSelects: () => {},
+    productMatchesStore: () => true,
+    getSelectionLabelForProduct: () => "",
+    getSelectionStoresForProduct: () => "",
+    createSelectionButton: () => new StubElement("button"),
+    handleInventoryTableClick: () => {},
+  };
+
+  global.window.InventoryView.render({
+    refs,
+    state: { products: [{ ...baseProduct, have: false }], productDrafts: [] },
+    helpers,
+  });
+  global.window.InventoryView.render({
+    refs,
+    state: { products: [{ ...baseProduct, have: true }], productDrafts: [] },
+    helpers,
+  });
+
+  const rows = productTableBody.querySelectorAll("tr");
+  if (rows.length !== 1) {
+    throw new Error(`No debe haber filas duplicadas tras re-render, hay ${rows.length}`);
   }
 });
 
@@ -638,6 +763,94 @@ register("ExtrasFeature reenvía acciones al manejar clicks y checkboxes", () =>
   assert.strictEqual(calls.toggle, 1, "Debe llamar a toggleBuy");
   assert.strictEqual(calls.delete, 1, "Debe llamar a delete");
   assert.strictEqual(calls.move, 1, "Debe llamar a moveToAlmacen");
+});
+
+register("ExtrasFeature.moveToAlmacen conserva scope al persistir", () => {
+  const mod = path.join(__dirname, "..", "src", "features", "extras.js");
+  delete require.cache[mod];
+  global.window = { document: createStubDocument() };
+  require(mod);
+
+  const unified = [];
+  const extras = [{ id: 7, name: "Refresco", scope: "otros", buy: true, have: false }];
+  global.window.ExtrasFeature.init({
+    refs: { tableBody: new StubElement("tbody") },
+    getExtras: () => extras,
+    getPantryProducts: () => [{ id: "p1", scope: "almacen", name: "Arroz" }],
+    persistUnified: (list) => unified.push(list),
+    actions: {},
+    nowIsoString: () => "2024-01-01T00:00:00.000Z",
+  });
+
+  const handler = global.window.ExtrasFeature.handleClick;
+  const moveBtn = {
+    dataset: { action: "move-to-almacen", id: "7" },
+    closest: () => moveBtn,
+    matches: () => false,
+  };
+  handler({ target: moveBtn });
+
+  if (!unified.length) throw new Error("No se persistió unified");
+  const scopes = unified[0].reduce(
+    (acc, p) => ({ ...acc, [p.id]: p.scope }),
+    {}
+  );
+  if (scopes["7"] !== "almacen") {
+    throw new Error(`El producto movido debe quedar con scope 'almacen', got ${scopes["7"]}`);
+  }
+});
+
+register("ExtrasView no duplica filas al alternar comprar", () => {
+  const mod = path.join(__dirname, "..", "src", "views", "extrasView.js");
+  delete require.cache[mod];
+  const tableBody = new StubElement("tbody");
+  const refs = {
+    tableBody,
+    searchInput: { value: "" },
+    familyFilter: { value: "" },
+    typeFilter: { value: "" },
+    storeFilter: { value: "" },
+    buyFilter: { value: "all" },
+  };
+  const stubDocument = createStubDocument();
+  global.window = { document: stubDocument };
+  global.document = stubDocument;
+  require(mod);
+
+  const base = { id: "e1", name: "Velas", block: "Hogar", type: "", quantity: "1" };
+  const ctx = {
+    refs,
+    data: { extras: [{ ...base, buy: false }], drafts: [], producers: [], stores: [] },
+    getExtras() {
+      return this.data.extras;
+    },
+    buildFamilyStripeMap: () => ({}),
+    helpers: {
+      createTableInput: () => new StubElement("input"),
+      createTableTextarea: () => new StubElement("textarea"),
+      createSelectionButton: () => new StubElement("button"),
+      getSelectionLabelForProduct: () => "",
+      getSelectionStoresForProduct: () => "",
+    },
+  };
+
+  global.window.ExtrasView.render(ctx);
+  // Re-render con toggle buy
+  ctx.data.extras = [{ ...base, buy: true }];
+  global.window.ExtrasView.render(ctx);
+
+  const rows = tableBody.querySelectorAll("tr[data-id]");
+  if (rows.length !== 1) {
+    throw new Error(`No debe haber duplicados tras re-render: hay ${rows.length} filas`);
+  }
+  const chk = rows[0].children.find?.((c) => c.dataset?.field === "buy") || null;
+  const hasBuyChecked =
+    chk?.children?.find?.((c) => c.tag === "input")?.checked ||
+    chk?.checked ||
+    rows[0].dataset.buy === "1";
+  if (!hasBuyChecked) {
+    throw new Error("La fila debería reflejar el estado de compra activo");
+  }
 });
 
 register("InstancesFeature.handleInput llama a updateField", () => {

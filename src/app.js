@@ -241,12 +241,8 @@ function setClassificationsList(list) {
 }
 
 function refreshProductsFromUnified() {
-  const state = getStateSnapshot();
-  const unified =
-    (Array.isArray(state.unifiedProducts) && state.unifiedProducts.length
-      ? state.unifiedProducts
-      : unifiedProducts) || [];
-  unifiedProducts = Array.isArray(unified) ? unified.filter(Boolean) : [];
+  const unified = Array.isArray(unifiedProducts) ? unifiedProducts : [];
+  unifiedProducts = normalizeExtrasHave(unified.filter(Boolean));
   products = unifiedProducts.filter((p) => p.scope === "almacen");
   extraProducts = unifiedProducts.filter((p) => p.scope === "otros");
 }
@@ -271,22 +267,26 @@ function recomputeUnifiedFromDerived() {
 }
 
 function getUnifiedList() {
-  const state = getStateSnapshot();
-  const unified =
-    (Array.isArray(state.unifiedProducts) && state.unifiedProducts) ||
-    (Array.isArray(unifiedProducts) && unifiedProducts) ||
-    [];
-  return unified.filter(Boolean);
+  return Array.isArray(unifiedProducts) ? unifiedProducts.filter(Boolean) : [];
+}
+
+function normalizeExtrasHave(list = []) {
+  return list.map((p) => {
+    if (!p) return p;
+    const id = p.id !== undefined && p.id !== null ? String(p.id) : p.id;
+    if (p.scope !== "otros") return { ...p, id };
+    const buy = !!p.buy;
+    return { ...p, id, buy, have: !buy };
+  });
 }
 
 function setUnifiedList(next) {
-  unifiedProducts = Array.isArray(next) ? next.filter(Boolean) : [];
+  const cleaned = Array.isArray(next) ? next.filter(Boolean) : [];
+  unifiedProducts = normalizeExtrasHave(cleaned);
   memoProductsDatalistKey = "";
   refreshProductsFromUnified();
   if (stateAdapter && typeof stateAdapter.setEntity === "function") {
     stateAdapter.setEntity("unifiedProducts", unifiedProducts);
-    syncFromAppStore();
-    return unifiedProducts;
   }
   if (
     window.AppStore &&
@@ -294,22 +294,144 @@ function setUnifiedList(next) {
     typeof window.AppStore.actions.setUnifiedProducts === "function"
   ) {
     window.AppStore.actions.setUnifiedProducts(unifiedProducts);
-    syncFromAppStore();
-    return unifiedProducts;
   }
-  if (window.DataService && typeof window.DataService.setUnifiedProducts === "function") {
-    unifiedProducts = window.DataService.setUnifiedProducts(unifiedProducts);
-    refreshProductsFromUnified();
-    return unifiedProducts;
-  }
+  let persisted = false;
   if (window.AppStorage && typeof window.AppStorage.saveUnifiedProducts === "function") {
-    window.AppStorage.saveUnifiedProducts(unifiedProducts);
-    return unifiedProducts;
+    try {
+      window.AppStorage.saveUnifiedProducts(unifiedProducts);
+      persisted = true;
+    } catch {
+      persisted = false;
+    }
   }
+  if (!persisted) {
+    try {
+      localStorage.setItem("productosCocinaUnificados", JSON.stringify(unifiedProducts));
+      persisted = true;
+    } catch {
+      persisted = false;
+    }
+  }
+  if (!persisted && typeof appUtils.saveList === "function") {
+    try {
+      appUtils.saveList("productosCocinaUnificados", unifiedProducts);
+    } catch {}
+  }
+
+  // Persistencia redundante en claves legacy para asegurar carga en navegadores que bloquean la clave unificada
+  const legacyProducts = unifiedProducts
+    .filter((p) => p.scope === "almacen")
+    .map((p) => {
+      const { scope, ...rest } = p;
+      return rest;
+    });
+  const legacyExtras = unifiedProducts
+    .filter((p) => p.scope === "otros")
+    .map((p) => {
+      const { scope, ...rest } = p;
+      return rest;
+    });
   try {
-    localStorage.setItem("productosCocinaUnificados", JSON.stringify(unifiedProducts));
-  } catch {}
+    localStorage.setItem("inventarioCocinaAlmacen", JSON.stringify(legacyProducts));
+    localStorage.setItem("otrosProductosCompra", JSON.stringify(legacyExtras));
+  } catch {
+    if (typeof appUtils.saveList === "function") {
+      try {
+        appUtils.saveList("inventarioCocinaAlmacen", legacyProducts);
+        appUtils.saveList("otrosProductosCompra", legacyExtras);
+      } catch {}
+    }
+  }
   return unifiedProducts;
+}
+
+function getUnifiedForWrite() {
+  if (Array.isArray(unifiedProducts) && unifiedProducts.length) {
+    return normalizeExtrasHave(unifiedProducts).slice();
+  }
+  const state = getStateSnapshot();
+  if (Array.isArray(state.unifiedProducts) && state.unifiedProducts.length) {
+    return normalizeExtrasHave(state.unifiedProducts).slice();
+  }
+  return normalizeExtrasHave(recomputeUnifiedFromDerived());
+}
+
+function updateExtraBuyFlag(id, checked) {
+  const targetId = id !== undefined && id !== null ? String(id) : "";
+  if (!targetId) return;
+  const unified = getUnifiedForWrite();
+  const nowIsoVal = nowIsoString();
+  let touched = false;
+  const updatedUnified = unified.map((p) => {
+    if (!p || String(p.id) !== targetId) return p;
+    if (!!p.buy === !!checked) return p;
+    touched = true;
+    return { ...p, buy: !!checked, have: !checked, updatedAt: nowIsoVal };
+  });
+  if (!touched) return;
+
+  // Feedback inmediato en tabla rápida mientras renderizan controladores
+  const quickRow = extraListTableBody?.querySelector(`tr[data-id="${id}"]`);
+  if (quickRow) {
+    quickRow.dataset.buy = checked ? "1" : "0";
+    const chk = quickRow.querySelector('input[data-field="buy"]');
+    if (chk) chk.checked = !!checked;
+  }
+
+  // Ajuste opcional en tabla de edición si está visible
+  const editRow = extraTableBody?.querySelector(`tr[data-id="${id}"]`);
+  if (editRow) {
+    editRow.dataset.buy = checked ? "1" : "0";
+    const chk = editRow.querySelector('input[data-field="buy"]');
+    if (chk) chk.checked = !!checked;
+  }
+
+  const persistLegacy = () => {
+    const legacyExtras = updatedUnified
+      .filter((p) => p && p.scope === "otros")
+      .map((p) => {
+        const { scope, ...rest } = p;
+        return rest;
+      });
+    try {
+      localStorage.setItem("otrosProductosCompra", JSON.stringify(legacyExtras));
+    } catch {
+      if (typeof appUtils.saveList === "function") {
+        try {
+          appUtils.saveList("otrosProductosCompra", legacyExtras);
+        } catch {}
+      }
+    }
+  };
+
+  // Si hay store activo, delegamos en él para evitar doble render pesado
+  if (isStoreActive()) {
+    if (window.AppStore && window.AppStore.actions && typeof window.AppStore.actions.setUnifiedProducts === "function") {
+      try {
+        window.AppStore.actions.setUnifiedProducts(updatedUnified);
+        setTimeout(persistLegacy, 0);
+        return;
+      } catch {}
+    }
+    if (window.DataService && typeof window.DataService.setUnifiedProducts === "function") {
+      try {
+        window.DataService.setUnifiedProducts(updatedUnified);
+        setTimeout(persistLegacy, 0);
+        return;
+      } catch {}
+    }
+  }
+
+  // Modo sin store: persistimos local y renderizamos
+  setUnifiedList(updatedUnified);
+  saveExtraProducts();
+  persistLegacy();
+
+  requestAnimationFrame(() => {
+    renderExtraQuickTable();
+    renderExtraEditTable();
+    renderShoppingList();
+  });
 }
 
 function updateUnifiedWithProducts(list) {
@@ -330,12 +452,26 @@ function updateUnifiedWithExtras(list) {
   return setUnifiedList(scoped);
 }
 
+function handleGlobalExtraBuyToggle(e) {
+  const target = e.target;
+  if (!target || target.type !== "checkbox" || target.dataset.field !== "buy") return;
+  const row = target.closest("tr");
+  const id = target.dataset.id || row?.dataset.id;
+  if (!id) return;
+  const inExtrasTable =
+    (extraListTableBody && extraListTableBody.contains(row)) ||
+    (extraTableBody && extraTableBody.contains(row));
+  if (!inExtrasTable) return;
+  updateExtraBuyFlag(id, target.checked);
+}
+
 function isStoreActive() {
   return !!(
     (stateAdapter && typeof stateAdapter.subscribe === "function") ||
     (window.AppStore && typeof window.AppStore.subscribe === "function")
   );
 }
+
 
 function hasSnapshotData(snap) {
   if (!snap || typeof snap !== "object") return false;
@@ -593,6 +729,7 @@ let memoStoreLocations = [];
 let memoInstanceFamilies = [];
 let memoProducerFilterOptions = "";
 let memoProductsDatalistKey = "";
+let saveShortcutBound = false;
 
 let filtersDefaultsApplied = false;
 let selectionDragCleanup = null;
@@ -618,6 +755,24 @@ const renderProductsDebounced = debounce(() => {
     renderProducts();
   }
 }, 80);
+
+function ensureSaveShortcutBinding() {
+  if (saveShortcutBound) return;
+  saveShortcutBound = true;
+  const options = { capture: true, passive: false };
+  const events = ["keydown", "keypress", "keyup"];
+  events.forEach((evt) => {
+    window.addEventListener(evt, handleGlobalSaveShortcut, options);
+    document.addEventListener(evt, handleGlobalSaveShortcut, options);
+    if (document.body) {
+      document.body.addEventListener(evt, handleGlobalSaveShortcut, options);
+    }
+  });
+  // Fallback para navegadores que ignoran capture en addEventListener
+  window.onkeydown = handleGlobalSaveShortcut;
+  document.onkeydown = handleGlobalSaveShortcut;
+  if (document.body) document.body.onkeydown = handleGlobalSaveShortcut;
+}
 
 function getInventoryContext() {
   return {
@@ -658,6 +813,7 @@ function getInventoryContext() {
 // ==============================
 
 document.addEventListener("DOMContentLoaded", () => {
+  ensureSaveShortcutBinding();
   const refs =
     window.AppBootstrap && typeof window.AppBootstrap.collectRefs === "function"
       ? window.AppBootstrap.collectRefs()
@@ -777,6 +933,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const renderInstancesDebounced = debounce(renderInstancesTable, 80);
 
   ensureSelectionPopupInit();
+  document.addEventListener("change", handleGlobalExtraBuyToggle, { capture: true });
 
   if (window.ProductAutocomplete && typeof window.ProductAutocomplete.init === "function") {
     window.ProductAutocomplete.init({
@@ -816,7 +973,22 @@ document.addEventListener("DOMContentLoaded", () => {
     if (toggleShoppingPanelButton) {
       toggleShoppingPanelButton.title = "Mostrar lista de la compra";
     }
+
+    const linkedPairs = [
+      [filterBlockSelect, filterTypeSelect],
+      [editFilterFamilySelect, editFilterTypeSelect],
+      [extraFilterFamilySelect, extraFilterTypeSelect],
+      [extraEditFilterFamilySelect, extraEditFilterTypeSelect],
+    ];
+    linkedPairs.forEach(([fam, type]) => {
+      const sync = () =>
+        syncFamilyTypeFilterPair(fam, type, { familyAllLabel: "Todas", typeAllLabel: "Todos" });
+      if (fam) fam.addEventListener("change", sync);
+      if (type) type.addEventListener("change", sync);
+    });
   }
+
+  ensureSaveShortcutBinding();
 
   // Carga datos y renderizado inicial
   loadAllData();
@@ -939,6 +1111,7 @@ document.addEventListener("DOMContentLoaded", () => {
     getStoreNames,
     persistUnified,
     getPantryProducts,
+    onToggleBuy: updateExtraBuyFlag,
     onChange: () => {
       renderProducts();
       renderExtraQuickTable();
@@ -1268,23 +1441,50 @@ document.addEventListener("DOMContentLoaded", () => {
       getInventoryContext,
       actions: {
         toggleHave: (id, checked) => {
-          const list = getPantryProducts().map((p) =>
-            p.id === id
-              ? {
-                  ...p,
-                  have: checked,
-                  acquisitionDate: !p.have && checked ? todayDateString() : p.acquisitionDate,
-                }
-              : p
-          );
-          const extras = getOtherProducts();
-          setUnifiedList([
-            ...list.map((p) => ({ ...p, scope: "almacen" })),
-            ...extras.map((p) => ({ ...p, scope: "otros" })),
-          ]);
-          saveProducts();
-          renderProducts();
-          renderShoppingList();
+          const nowDate = todayDateString();
+          const nowIsoVal = nowIsoString();
+          const unified = getUnifiedForWrite();
+          let touched = false;
+          const updatedUnified = unified.map((p) => {
+            if (p.id !== id) return p;
+            touched = true;
+            const wasHave = !!p.have;
+            const nextAcq = !wasHave && checked ? nowDate : p.acquisitionDate;
+            return { ...p, have: !!checked, acquisitionDate: nextAcq, updatedAt: nowIsoVal };
+          });
+          if (!touched) return;
+
+          unifiedProducts = updatedUnified;
+          refreshProductsFromUnified();
+          try {
+            if (window.AppStorage?.saveUnifiedProducts) {
+              window.AppStorage.saveUnifiedProducts(updatedUnified);
+            } else if (typeof appUtils.saveList === "function") {
+              appUtils.saveList("productosCocinaUnificados", updatedUnified);
+            } else {
+              localStorage.setItem("productosCocinaUnificados", JSON.stringify(updatedUnified));
+            }
+          } catch {}
+
+          // Ajuste rápido en UI para feedback inmediato
+          const row = productTableBody?.querySelector(`tr[data-id="${id}"]`);
+          if (row) {
+            row.dataset.have = checked ? "1" : "0";
+            const chk = row.querySelector('input[data-field="have"]');
+            if (chk) chk.checked = !!checked;
+          }
+          if (summaryInfo && productTableBody) {
+            const visible = Array.from(productTableBody.querySelectorAll("tr[data-id]")).filter(
+              (tr) => tr.style.display !== "none"
+            );
+            const haveCount = visible.filter((tr) => tr.dataset.have === "1").length;
+            const total = visible.length;
+            summaryInfo.textContent = `Total: ${total} · Tengo: ${haveCount} · Faltan: ${Math.max(
+              total - haveCount,
+              0
+            )}`;
+          }
+          requestAnimationFrame(() => renderShoppingList());
         },
         moveToExtra: moveProductToExtra,
         selectSelection: openSelectionPopupForProduct,
@@ -1293,6 +1493,8 @@ document.addEventListener("DOMContentLoaded", () => {
           renderProducts();
         },
         saveDraft: (id) => commitDraftProducts(id ? [id] : null),
+        startEdit: (id) => startEditProduct(id),
+        deleteProduct: (id) => deleteProduct(id),
       },
     });
     window.InventoryFeature.render();
@@ -1337,6 +1539,9 @@ document.addEventListener("DOMContentLoaded", () => {
         renderProductsDatalist();
       },
       actions: {
+        toggleBuy: (id, checked) => {
+          updateExtraBuyFlag(id, checked);
+        },
         selectSelection: (id) => openSelectionPopupForProduct(id),
         cancelDraft: (id) => {
           if (!id) return;
@@ -1449,7 +1654,20 @@ document.addEventListener("DOMContentLoaded", () => {
       ? window.AppState.getState()
       : {});
   syncFromState(currentState);
-  document.addEventListener("keydown", handleGlobalSaveShortcut);
+  document.addEventListener("keydown", handleGlobalSaveShortcut, { capture: true, passive: false });
+  window.addEventListener("keydown", handleGlobalSaveShortcut, { capture: true, passive: false });
+  document.addEventListener("keypress", handleGlobalSaveShortcut, { capture: true, passive: false });
+  window.addEventListener("keypress", handleGlobalSaveShortcut, { capture: true, passive: false });
+  if (document.body) {
+    document.body.addEventListener("keydown", handleGlobalSaveShortcut, {
+      capture: true,
+      passive: false,
+    });
+    document.body.addEventListener("keypress", handleGlobalSaveShortcut, {
+      capture: true,
+      passive: false,
+    });
+  }
   document.addEventListener("keydown", handleGlobalEscape);
 
   initNavAccessibility();
@@ -1809,6 +2027,78 @@ function getClassificationFamilies() {
         .filter(Boolean)
     )
   ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+}
+
+function syncFamilyTypeFilterPair(familySel, typeSel, { familyAllLabel = "Todas", typeAllLabel = "Todos" } = {}) {
+  if (!familySel && !typeSel) return;
+  const families = getClassificationFamilies();
+  const familyTypes = new Map();
+  families.forEach((fam) => familyTypes.set(fam, getClassificationTypes(fam)));
+  const allTypes = Array.from(
+    new Set(families.flatMap((fam) => familyTypes.get(fam) || []))
+  ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+
+  const currentFamily = familySel?.value || "";
+  const currentType = typeSel?.value || "";
+
+  if (familySel) {
+    const allowedFamilies =
+      currentType && currentType.trim().length
+        ? families.filter((fam) => (familyTypes.get(fam) || []).includes(currentType))
+        : families;
+    const prev = currentFamily;
+    familySel.innerHTML = "";
+    const optAll = document.createElement("option");
+    optAll.value = "";
+    optAll.textContent = familyAllLabel;
+    familySel.appendChild(optAll);
+    allowedFamilies.forEach((fam) => {
+      const o = document.createElement("option");
+      o.value = fam;
+      o.textContent = fam;
+      familySel.appendChild(o);
+    });
+    if (allowedFamilies.includes(prev)) familySel.value = prev;
+  }
+
+  if (typeSel) {
+    const allowedTypes =
+      currentFamily && currentFamily.trim().length
+        ? familyTypes.get(currentFamily) || []
+        : allTypes;
+    const prev = currentType;
+    typeSel.innerHTML = "";
+    const optAll = document.createElement("option");
+    optAll.value = "";
+    optAll.textContent = typeAllLabel;
+    typeSel.appendChild(optAll);
+    allowedTypes.forEach((t) => {
+      const o = document.createElement("option");
+      o.value = t;
+      o.textContent = t;
+      typeSel.appendChild(o);
+    });
+    if (allowedTypes.includes(prev)) typeSel.value = prev;
+  }
+}
+
+function syncAllFamilyTypeFilters() {
+  syncFamilyTypeFilterPair(filterBlockSelect, filterTypeSelect, {
+    familyAllLabel: "Todas",
+    typeAllLabel: "Todos",
+  });
+  syncFamilyTypeFilterPair(editFilterFamilySelect, editFilterTypeSelect, {
+    familyAllLabel: "Todas",
+    typeAllLabel: "Todos",
+  });
+  syncFamilyTypeFilterPair(extraFilterFamilySelect, extraFilterTypeSelect, {
+    familyAllLabel: "Todas",
+    typeAllLabel: "Todos",
+  });
+  syncFamilyTypeFilterPair(extraEditFilterFamilySelect, extraEditFilterTypeSelect, {
+    familyAllLabel: "Todas",
+    typeAllLabel: "Todos",
+  });
 }
 
 function getClassificationTypes(family = "") {
@@ -2982,6 +3272,8 @@ function renderBlockOptions() {
       sel.value = current;
     }
   });
+
+  syncAllFamilyTypeFilters();
 }
 
 function renderTypeOptions() {
@@ -3013,6 +3305,8 @@ function renderTypeOptions() {
       sel.value = current;
     }
   });
+
+  syncAllFamilyTypeFilters();
 }
 
 function renderStoreOptions() {
@@ -3255,6 +3549,11 @@ function handleInventoryTableClick(e) {
     renderProducts();
     return;
   }
+  if (action === "save-draft-product") {
+    const id = target.dataset.id;
+    commitDraftProducts(id ? [id] : null);
+    return;
+  }
 
   if (target.matches('input[type="checkbox"][data-field="have"]')) {
     const id = target.dataset.id;
@@ -3279,6 +3578,10 @@ function handleInventoryTableClick(e) {
     moveProductToExtra(id);
   } else if (action === "select-selection") {
     openSelectionPopupForProduct(id);
+  } else if (action === "delete-product") {
+    deleteProduct(id);
+  } else if (action === "edit-product") {
+    startEditProduct(id);
   }
 }
 
@@ -3288,11 +3591,15 @@ function moveProductToExtra(id) {
   if (!item) return;
   const ok = confirm("¿Mover este producto a 'Otros productos'? Se mantendrá la información.");
   if (!ok) return;
+  const nextBuy = !item.have;
   const updated = unified.map((p) =>
-    p.id === id ? { ...p, scope: "otros" } : p
+    p.id === id ? { ...p, scope: "otros", buy: nextBuy, have: !nextBuy } : p
   );
   setUnifiedList(updated);
   saveExtraProducts();
+
+  // Limpia borradores asociados al producto movido
+  productDrafts = productDrafts.filter((d) => d.originalId !== id && d.id !== id);
 
   renderProducts();
   if (!isStoreActive()) {
@@ -3354,6 +3661,41 @@ function handleAddQuickProduct() {
   });
   renderProducts();
   highlightTopRow(productTableBody);
+}
+
+function startEditProduct(id) {
+  if (!id) return;
+  const list = getPantryProducts();
+  const prod = list.find((p) => p.id === id);
+  if (!prod) return;
+  productDrafts = productDrafts.filter((d) => d.originalId !== id);
+  const draftId =
+    (crypto.randomUUID ? crypto.randomUUID() : "draft-edit-" + Date.now()) +
+    "-" +
+    Math.random().toString(36).slice(2);
+  productDrafts.unshift({
+    id: draftId,
+    originalId: id,
+    name: prod.name || "",
+    block: prod.block || "",
+    type: prod.type || "",
+    shelf: prod.shelf || "",
+    quantity: prod.quantity || "",
+    have: !!prod.have,
+    acquisitionDate: prod.acquisitionDate || "",
+    expiryText: prod.expiryText || "",
+    notes: prod.notes || "",
+  });
+  renderProducts();
+  highlightTopRow(productTableBody);
+}
+
+function deleteProduct(id) {
+  if (!id) return;
+  const ok = confirm("¿Eliminar este producto del almacén?");
+  if (!ok) return;
+  productDrafts = productDrafts.filter((d) => d.originalId !== id && d.id !== id);
+  removeProductById(id);
 }
 
 function highlightTopRow(tbody) {
@@ -3612,37 +3954,47 @@ function handleInstancesDependencies() {
 }
 
 function handleGlobalSaveShortcut(e) {
-  const isSaveKey = e.key && e.key.toLowerCase() === "s";
+  if (e && e.__saveHandled) return false;
+  const key = (e.key || e.code || "").toLowerCase();
+  const isSaveKey = key === "s" || key === "keys";
   if (!isSaveKey || (!e.metaKey && !e.ctrlKey)) return;
-  e.preventDefault();
+  if (typeof e.preventDefault === "function") e.preventDefault();
+  if (typeof e.stopPropagation === "function") e.stopPropagation();
+  if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
+  e.cancelBubble = true;
+  e.returnValue = false;
+  if (e) e.__saveHandled = true;
   commitDraftProducts();
   commitDraftExtras();
   if (almacenEditPanel && almacenEditPanel.classList.contains("active")) {
     handleSaveGrid();
-    return;
+    setAlmacenMode(false);
+    return false;
   }
   if (otrosEditPanel && otrosEditPanel.classList.contains("active")) {
     if (window.ExtraEditView && typeof window.ExtraEditView.save === "function") {
       window.ExtraEditView.save(extraEditViewContext);
     }
-    return;
+    setOtrosMode(false);
+    return false;
   }
   if (instancesPanel && instancesPanel.classList.contains("active")) {
     handleSaveInstances();
-    return;
+    return false;
   }
   if (producersPanel && producersPanel.classList.contains("active")) {
     handleSaveProducers();
-    return;
+    return false;
   }
   if (storesPanel && storesPanel.classList.contains("active")) {
     handleSaveStores();
-    return;
+    return false;
   }
   if (classificationSection && classificationSection.classList.contains("active")) {
     handleSaveClassifications();
-    return;
+    return false;
   }
+  return false;
 }
 
 function handleGlobalEscape(e) {
@@ -3904,6 +4256,7 @@ function openInlineProductCreator(row) {
       quantity: (inpQty.value || "").trim(),
       notes: (inpNotes.value || "").trim(),
       buy: false,
+      have: true,
       selectionId: "",
       createdAt: now,
       updatedAt: now,
@@ -4010,6 +4363,7 @@ function createExtraProductFromPrompt(initialName = "") {
     quantity: (quantity || "").trim(),
     notes: (notes || "").trim(),
     buy: false,
+    have: true,
     selectionId: "",
     createdAt: now,
     updatedAt: now,
@@ -4192,19 +4546,21 @@ function handleBackupFileChange(e) {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
 
+  const cleanupInput = () => {
+    if (backupFileInput) backupFileInput.value = "";
+    if (e && e.target && e.target.type === "file") e.target.value = "";
+  };
+
   if (window.BackupUtils && typeof window.BackupUtils.importBackup === "function") {
     window.BackupUtils.importBackup({
       file,
       onSnapshot: (snapshot) => {
-        if (window.AppStore && typeof window.AppStore.setState === "function") {
-          window.AppStore.setState(snapshot);
-          syncFromAppStore();
-        } else {
-          unifiedProducts = snapshot.unifiedProducts;
-          suppliers = snapshot.suppliers;
-          producers = snapshot.producers;
-          productInstances = snapshot.productInstances;
-          classifications = snapshot.classifications;
+        const applySnapshot = (snap) => {
+          unifiedProducts = snap.unifiedProducts;
+          suppliers = snap.suppliers;
+          producers = snap.producers;
+          productInstances = snap.productInstances;
+          classifications = snap.classifications;
           persistUnified(unifiedProducts);
           saveSuppliers();
           saveProducers();
@@ -4236,13 +4592,98 @@ function handleBackupFileChange(e) {
           renderClassificationTable();
           renderInstancesTable();
           renderShoppingList();
+        };
+
+        if (window.AppStore && typeof window.AppStore.setState === "function") {
+          window.AppStore.setState(snapshot);
+          syncFromAppStore();
+        } else {
+          applySnapshot(snapshot);
         }
+        cleanupInput();
       },
     });
+    return;
   }
-  if (backupFileInput) {
-    backupFileInput.value = "";
-  }
+
+  // Fallback si BackupUtils no está disponible
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const text = ev.target?.result || "";
+      const data = JSON.parse(text);
+      const snapshot = {
+        unifiedProducts: Array.isArray(data.unifiedProducts)
+          ? data.unifiedProducts
+          : [
+              ...(Array.isArray(data.products) ? data.products : []).map((p) => ({
+                ...p,
+                scope: "almacen",
+              })),
+              ...(Array.isArray(data.extraProducts) ? data.extraProducts : []).map((p) => ({
+                ...p,
+                scope: "otros",
+              })),
+            ],
+        suppliers: Array.isArray(data.suppliers) ? data.suppliers : [],
+        producers: Array.isArray(data.producers) ? data.producers : [],
+        productInstances: Array.isArray(data.productInstances) ? data.productInstances : [],
+        classifications: Array.isArray(data.classifications) ? data.classifications : [],
+      };
+      const applySnapshot = (snap) => {
+        unifiedProducts = snap.unifiedProducts;
+        suppliers = snap.suppliers;
+        producers = snap.producers;
+        productInstances = snap.productInstances;
+        classifications = snap.classifications;
+        persistUnified(unifiedProducts);
+        saveSuppliers();
+        saveProducers();
+        saveProductInstances();
+        saveClassifications();
+        refreshProductsFromUnified();
+        renderShelfOptions();
+        renderBlockOptions();
+        renderTypeOptions();
+        renderStoreOptions();
+        updateProducerFilterOptions();
+        updateStoreFilterOptions();
+        updateInstanceFilterOptions();
+        renderProductsDatalist();
+        renderProducts();
+        renderGridRows();
+        renderExtraQuickTable();
+        renderExtraEditTable();
+        if (window.ProducersFeature && typeof window.ProducersFeature.render === "function") {
+          window.ProducersFeature.render();
+        } else if (window.ProducersView && typeof window.ProducersView.render === "function") {
+          window.ProducersView.render(producersViewContext);
+        }
+        if (window.StoresFeature && typeof window.StoresFeature.render === "function") {
+          window.StoresFeature.render();
+        } else if (window.StoresView && typeof window.StoresView.render === "function") {
+          window.StoresView.render(storesViewContext);
+        }
+        renderClassificationTable();
+        renderInstancesTable();
+        renderShoppingList();
+      };
+
+      if (window.AppStore && typeof window.AppStore.setState === "function") {
+        window.AppStore.setState(snapshot);
+        syncFromAppStore();
+      } else {
+        applySnapshot(snapshot);
+      }
+      alert("Copia de seguridad restaurada correctamente.");
+    } catch (err) {
+      console.error(err);
+      alert("No se pudo leer el archivo de copia de seguridad. Asegúrate de que es un JSON válido.");
+    } finally {
+      cleanupInput();
+    }
+  };
+  reader.readAsText(file);
 }
 
 function handleExportAlmacenCsv() {

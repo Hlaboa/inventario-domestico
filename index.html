@@ -98,11 +98,11 @@
                   <td>
                     <button
                       class="btn btn-small btn-icon"
-                      data-role="move"
-                      aria-label="Mover a otros productos"
-                      title="Mover a otros productos"
+                      data-role="edit"
+                      aria-label="Editar producto"
+                      title="Editar producto"
                     >
-                      →
+                      ✎
                     </button>
                   </td>
                 </tr>
@@ -168,7 +168,7 @@
 
               <div class="table-wrapper" id="instancesTableWrapper">
                 <div class="table-scroll">
-                  <table class="product-table">
+                  <table class="product-table inventory-table">
                     <thead>
                       <tr>
                         <th scope="col">Producto</th>
@@ -180,9 +180,9 @@
                         <th scope="col">Tiendas</th>
                         <th scope="col">Tengo</th>
                         <th scope="col">F. adquisición</th>
-                        <th scope="col">Caducidad</th>
-                        <th scope="col">Notas</th>
-                        <th scope="col">Retirar</th>
+                      <th scope="col">Caducidad</th>
+                      <th scope="col">Notas</th>
+                      <th scope="col" aria-label="Acciones"></th>
                       </tr>
                     </thead>
                     <tbody id="productTableBody"></tbody>

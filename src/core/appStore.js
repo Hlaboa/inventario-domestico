@@ -19,8 +19,8 @@
 
   const nowIso = () => new Date().toISOString();
   const ensureId = (val, prefix) =>
-    val && String(val).trim().length > 0
-      ? val
+    val !== undefined && val !== null && String(val).trim().length > 0
+      ? String(val)
       : (crypto?.randomUUID ? crypto.randomUUID() : `${prefix}-${Math.random().toString(36).slice(2)}`);
 
   /**
@@ -32,6 +32,12 @@
     const now = nowIso();
     const trimmedName = (p.name || "").trim();
     if (!trimmedName) return null;
+    let buy = !!p.buy;
+    let have = !!p.have;
+    if (scope === "otros") {
+      buy = p.buy !== undefined ? !!p.buy : !have;
+      have = !buy;
+    }
     return {
       id: ensureId(p.id, scope === "otros" ? "extra" : "prod"),
       name: trimmedName,
@@ -39,8 +45,8 @@
       type: (p.type || "").trim(),
       shelf: (p.shelf || "").trim(),
       quantity: p.quantity || "",
-      have: !!p.have,
-      buy: !!p.buy,
+      have,
+      buy,
       selectionId: p.selectionId || "",
       storeName: (p.storeName || "").trim(),
       notes: p.notes || "",
@@ -268,11 +274,43 @@
     const setter = dataSetters[name];
     if (typeof setter === "function") {
       const res = setter(list);
-      const merged =
-        appState && typeof appState.getState === "function"
-          ? { ...state, ...appState.getState(), [name]: res }
-          : { ...state, [name]: res };
-      captureState(merged);
+      const base =
+        (appState && typeof appState.getState === "function" && ensureStateShape(appState.getState())) ||
+        state ||
+        {};
+
+      if (name === "products" || name === "extraProducts" || name === "unifiedProducts") {
+        const products =
+          name === "products"
+            ? res.map((p) => validateProduct({ ...p, scope: "almacen" }))
+            : (base.products || []).map((p) => validateProduct({ ...p, scope: "almacen" }));
+        const extras =
+          name === "extraProducts"
+            ? res.map((p) => validateProduct({ ...p, scope: "otros" }))
+            : (base.extraProducts || []).map((p) => validateProduct({ ...p, scope: "otros" }));
+        const unified =
+          name === "unifiedProducts"
+            ? normalizeUnifiedList(res)
+            : normalizeUnifiedList([...products, ...extras]);
+        const nextState = ensureStateShape({
+          ...base,
+          unifiedProducts: unified,
+          products,
+          extraProducts: extras,
+        });
+        captureState(nextState);
+        appState?.hydrate?.({
+          unifiedProducts: nextState.unifiedProducts,
+          products: nextState.products,
+          extraProducts: nextState.extraProducts,
+        });
+        notify();
+        return res;
+      }
+
+      const nextState = ensureStateShape({ ...base, [name]: res });
+      captureState(nextState);
+      appState?.hydrate?.({ [name]: nextState[name] });
       notify();
       return res;
     }
@@ -290,9 +328,17 @@
       const nextState = ensureStateShape({ ...current, unifiedProducts: unified });
       captureState(nextState);
       if (name === "products") {
-        appState?.hydrate?.({ products: originalProducts });
+        appState?.hydrate?.({
+          products: nextState.products,
+          extraProducts: nextState.extraProducts,
+          unifiedProducts: nextState.unifiedProducts,
+        });
       } else {
-        appState?.hydrate?.({ extraProducts: originalExtras });
+        appState?.hydrate?.({
+          products: nextState.products,
+          extraProducts: nextState.extraProducts,
+          unifiedProducts: nextState.unifiedProducts,
+        });
       }
       dataService?.persistState?.(nextState);
       notify();

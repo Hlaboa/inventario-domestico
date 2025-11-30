@@ -108,6 +108,7 @@
       ...getPantryProducts().map((p) => ({ ...p, scope: "almacen" })),
       ...getOtherProducts().map((p) => ({ ...p, scope: "otros" })),
     ];
+    const existingById = new Map(unified.map((p) => [String(p.id), p]));
     let updatedDrafts = drafts.slice();
     let added = false;
 
@@ -133,11 +134,16 @@
       const expiryText = getField("expiryText");
       const notes = (tr.querySelector('textarea[data-field="notes"]') || {}).value;
       const now = nowFn();
-      const newProd = {
-        id:
-          (crypto.randomUUID ? crypto.randomUUID() : "prod-" + Date.now()) +
+      const originalId = (tr.dataset.originalId || "").trim();
+      const base = originalId ? existingById.get(originalId) : null;
+      const id =
+        originalId ||
+        (crypto.randomUUID ? crypto.randomUUID() : "prod-" + Date.now()) +
           "-" +
-          Math.random().toString(36).slice(2),
+          Math.random().toString(36).slice(2);
+      const newProd = {
+        ...(base || {}),
+        id,
         name,
         block,
         type,
@@ -148,11 +154,14 @@
         expiryText,
         notes,
         scope: "almacen",
-        selectionId: "",
-        createdAt: now,
+        selectionId: base?.selectionId || "",
+        createdAt: base?.createdAt || now,
         updatedAt: now,
       };
-      unified = [newProd, ...unified];
+      if (originalId) {
+        unified = unified.filter((p) => String(p.id) !== originalId);
+      }
+      unified = [newProd, ...unified.filter(Boolean)];
       updatedDrafts = updatedDrafts.filter((d) => d.id !== draftId);
       added = true;
     });
@@ -216,6 +225,7 @@
         quantity,
         notes,
         buy,
+        have: !buy,
         scope: "otros",
         selectionId: "",
         createdAt: now,

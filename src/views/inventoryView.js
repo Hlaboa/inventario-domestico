@@ -71,6 +71,8 @@
     }
   }
 
+  const EXPECTED_COLUMNS = 12;
+
   function render({ refs, state, helpers }) {
     const {
       productTableBody,
@@ -84,6 +86,11 @@
       inventoryRowTemplate,
     } = refs;
     const { products, productDrafts } = state;
+    const editingIds = new Set(
+      (productDrafts || [])
+        .map((d) => d && d.originalId)
+        .filter(Boolean)
+    );
     if (!productTableBody) return;
     selectionLabelCache.clear();
     selectionStoresCache.clear();
@@ -131,7 +138,7 @@
         },
         actions: {
           "[data-role='selection-btn']": { action: "select-selection", id: product.id },
-          "[data-role='move']": { action: "move-to-extra", id: product.id },
+          "[data-role='edit']": { action: "edit-product", id: product.id },
         },
         replacements: {
           "[data-role='selection-btn']": selectionBtn,
@@ -184,21 +191,21 @@
       addCellText(p.expiryText || "");
       addCellText(p.notes || "");
 
-      td = document.createElement("td");
-      const moveBtn = document.createElement("button");
-      moveBtn.className = "btn btn-small btn-icon";
-      moveBtn.textContent = "→";
-      moveBtn.title = "Mover a otros productos";
-      moveBtn.setAttribute("aria-label", "Mover a otros productos");
-      moveBtn.dataset.action = "move-to-extra";
-      moveBtn.dataset.id = p.id;
-      td.appendChild(moveBtn);
+    td = document.createElement("td");
+    const editBtn = document.createElement("button");
+    editBtn.className = "btn btn-small btn-icon";
+    editBtn.textContent = "✎";
+    editBtn.title = "Editar producto";
+    editBtn.setAttribute("aria-label", "Editar producto");
+    editBtn.dataset.action = "edit-product";
+    editBtn.dataset.id = p.id;
+    td.appendChild(editBtn);
 
-      tr.appendChild(td);
-      return tr;
-    };
+    tr.appendChild(td);
+    return tr;
+  };
 
-    let items = products.slice();
+    let items = products.slice().filter((p) => !editingIds.has(p.id));
     items.sort(helpers.compareShelfBlockTypeName);
     const stripeMap = getStripeMap(items, helpers);
 
@@ -215,6 +222,7 @@
       const tr = document.createElement("tr");
       tr.className = "product-draft-row";
       tr.dataset.draftId = d.id;
+      if (d.originalId) tr.dataset.originalId = d.originalId;
 
       let td = document.createElement("td");
       td.appendChild(helpers.createTableInput("name", d.name || ""));
@@ -278,6 +286,7 @@
 
       td = document.createElement("td");
       const saveBtn = document.createElement("button");
+      saveBtn.type = "button";
       saveBtn.className = "btn btn-small btn-success";
       saveBtn.dataset.action = "save-draft-product";
       saveBtn.dataset.id = d.id;
@@ -287,6 +296,7 @@
       td.appendChild(saveBtn);
 
       const cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
       cancelBtn.className = "btn btn-small btn-danger";
       cancelBtn.dataset.action = "cancel-draft-product";
       cancelBtn.dataset.id = d.id;
@@ -294,6 +304,30 @@
       cancelBtn.title = "Cancelar";
       cancelBtn.setAttribute("aria-label", "Cancelar");
       td.appendChild(cancelBtn);
+
+      if (d.originalId) {
+        const moveBtn = document.createElement("button");
+        moveBtn.type = "button";
+        moveBtn.className = "btn btn-small btn-icon";
+        moveBtn.dataset.action = "move-to-extra";
+        moveBtn.dataset.id = d.originalId || d.id;
+        moveBtn.dataset.originalId = d.originalId || "";
+        moveBtn.title = "Mover a otros productos";
+        moveBtn.setAttribute("aria-label", "Mover a otros productos");
+        moveBtn.textContent = "→";
+        td.appendChild(moveBtn);
+
+        const delBtn = document.createElement("button");
+        delBtn.type = "button";
+        delBtn.className = "btn btn-small btn-danger btn-trash";
+        delBtn.dataset.action = "delete-product";
+        delBtn.dataset.id = d.originalId || d.id;
+        delBtn.dataset.originalId = d.originalId || "";
+        delBtn.textContent = "🗑";
+        delBtn.title = "Eliminar producto";
+        delBtn.setAttribute("aria-label", "Eliminar producto");
+        td.appendChild(delBtn);
+      }
       tr.appendChild(td);
 
       target.appendChild(tr);
@@ -303,10 +337,16 @@
       const stripe = stripeMap[(p.block || "").trim() || "__none__"] || 0;
       const hash = getRowHash(p, helpers);
       const existing = existingRows.get(p.id);
-      let tr =
-        existing && hashMap.get(p.id) === hash ? existing : null;
+      const reuse = existing && hashMap.get(p.id) === hash;
+      if (existing && !reuse) {
+        existing.remove();
+      }
+      let tr = reuse ? existing : null;
       if (!tr) {
         tr = buildRowFromTemplate(p, stripe) || buildFallbackRow(p, stripe);
+      }
+      if (!tr || tr.children.length !== EXPECTED_COLUMNS) {
+        tr = buildFallbackRow(p, stripe);
       }
       if (tr) {
         applyStripe(tr, stripe);

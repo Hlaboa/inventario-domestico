@@ -104,7 +104,10 @@
       const nextExtras = updater(extras.slice());
       const unified = [
         ...pantry.map((p) => ({ ...p, scope: "almacen" })),
-        ...nextExtras.map((p) => ({ ...p, scope: "otros" })),
+        ...nextExtras.map((p) => ({
+          ...p,
+          scope: p && p.scope === "almacen" ? "almacen" : "otros",
+        })),
       ];
       persistUnified(unified);
       onChange();
@@ -113,24 +116,32 @@
     return {
       toggleBuy: (id, checked) => {
         updateUnified((extras) =>
-          extras.map((p) => (p.id === id ? { ...p, buy: checked } : p))
+          extras.map((p) =>
+            String(p.id) === String(id) ? { ...p, buy: checked, have: !checked } : p
+          )
         );
       },
       moveToAlmacen: (id) => {
         updateUnified((extras) => {
-          const idx = extras.findIndex((p) => p.id === id);
+          const idx = extras.findIndex((p) => String(p.id) === String(id));
           if (idx === -1) return extras;
           const item = extras[idx];
           const now = nowIsoString();
           extras.splice(idx, 1);
           return [
             ...extras,
-            { ...item, scope: "almacen", updatedAt: now, have: !!item.have, buy: !!item.buy },
+            {
+              ...item,
+              scope: "almacen",
+              updatedAt: now,
+              have: item.have !== undefined ? !!item.have : !item.buy,
+              buy: !!item.buy,
+            },
           ];
         });
       },
       delete: (id) => {
-        updateUnified((extras) => extras.filter((p) => p.id !== id));
+        updateUnified((extras) => extras.filter((p) => String(p.id) !== String(id)));
       },
       selectSelection: options.actions?.selectSelection,
       cancelDraft: options.actions?.cancelDraft,

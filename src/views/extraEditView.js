@@ -68,6 +68,14 @@
       : null;
     const buyCheckbox = makeInput(helpers, "buy", "", "checkbox");
     buyCheckbox.checked = !!product.buy;
+    buyCheckbox.dataset.id = product.id;
+    buyCheckbox.addEventListener("change", () => {
+      const context = getCtx();
+      if (typeof context.onToggleBuy === "function") {
+        context.onToggleBuy(product.id, buyCheckbox.checked);
+      }
+    });
+    buyCheckbox.dataset.id = product.id;
 
     if (
       rowTemplate &&
@@ -154,6 +162,7 @@
     tr.appendChild(td);
 
     td = document.createElement("td");
+    buyCheckbox.checked = !!product.buy;
     td.appendChild(buyCheckbox);
     tr.appendChild(td);
 
@@ -230,7 +239,11 @@
           const stripe =
             stripeMap[(p.block || "").trim() || "__none__"] || 0;
           const row = buildRow(p, stripe, context);
-          if (row) frag.appendChild(row);
+          if (row) {
+            const buyChk = row.querySelector('input[data-field="buy"]');
+            if (buyChk) buyChk.checked = !!p.buy;
+            frag.appendChild(row);
+          }
         });
         tableBody.appendChild(frag);
       }
@@ -259,6 +272,7 @@
       quantity: "",
       notes: "",
       buy: false,
+      have: true,
       selectionId: "",
     };
 
@@ -315,6 +329,7 @@
         quantity,
         notes,
         buy,
+        have: !buy,
         selectionId,
         createdAt,
         updatedAt: now,

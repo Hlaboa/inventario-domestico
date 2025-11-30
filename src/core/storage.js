@@ -23,10 +23,11 @@
     }
     res = normalizeMultiFields(res);
     res.id =
-      res.id ||
-      (crypto.randomUUID
-        ? crypto.randomUUID()
-        : "prod-" + Math.random().toString(36).slice(2));
+      res.id !== undefined && res.id !== null && String(res.id).trim().length > 0
+        ? String(res.id)
+        : (crypto.randomUUID
+            ? crypto.randomUUID()
+            : "prod-" + Math.random().toString(36).slice(2));
     res.selectionId = res.selectionId || "";
     res.have = !!res.have;
     res.quantity = res.quantity || "";
@@ -44,18 +45,21 @@
       p.scope === "otros" || p.scope === "almacen" ? p.scope : "almacen";
     const base =
       scope === "almacen" ? normalizeProduct(p) : normalizeExtraProduct(p);
-    return { ...base, scope };
+    return { ...base, id: base.id ? String(base.id) : base.id, scope };
   }
 
   function normalizeExtraProduct(p) {
     const res = normalizeMultiFields(p);
+    const buy = !!res.buy;
     res.id =
-      res.id ||
-      (crypto.randomUUID
-        ? crypto.randomUUID()
-        : "extra-" + Math.random().toString(36).slice(2));
+      res.id !== undefined && res.id !== null && String(res.id).trim().length > 0
+        ? String(res.id)
+        : (crypto.randomUUID
+            ? crypto.randomUUID()
+            : "extra-" + Math.random().toString(36).slice(2));
     res.selectionId = res.selectionId || "";
-    res.buy = !!res.buy;
+    res.buy = buy;
+    res.have = res.have !== undefined ? !!res.have : !buy;
     res.quantity = res.quantity || "";
     res.block = res.block || "";
     res.type = res.type || "";
@@ -69,10 +73,11 @@
     const now = nowIsoString();
     return {
       id:
-        s.id ||
-        (crypto.randomUUID
-          ? crypto.randomUUID()
-          : "store-" + Math.random().toString(36).slice(2)),
+        s.id !== undefined && s.id !== null && String(s.id).trim().length > 0
+          ? String(s.id)
+          : (crypto.randomUUID
+              ? crypto.randomUUID()
+              : "store-" + Math.random().toString(36).slice(2)),
       name: (s.name || "").trim(),
       type: (s.type || "").trim(),
       location: (s.location || s.storesText || "").trim(),
@@ -87,10 +92,11 @@
     const now = nowIsoString();
     return {
       id:
-        p.id ||
-        (crypto.randomUUID
-          ? crypto.randomUUID()
-          : "prod-" + Math.random().toString(36).slice(2)),
+        p.id !== undefined && p.id !== null && String(p.id).trim().length > 0
+          ? String(p.id)
+          : (crypto.randomUUID
+              ? crypto.randomUUID()
+              : "prod-" + Math.random().toString(36).slice(2)),
       name: (p.name || "").trim(),
       location: (p.location || p.storesText || "").trim(),
       website: (p.website || "").trim(),
@@ -104,10 +110,11 @@
     const now = nowIsoString();
     return {
       id:
-        i.id ||
-        (crypto.randomUUID
-          ? crypto.randomUUID()
-          : "inst-" + Math.random().toString(36).slice(2)),
+        i.id !== undefined && i.id !== null && String(i.id).trim().length > 0
+          ? String(i.id)
+          : (crypto.randomUUID
+              ? crypto.randomUUID()
+              : "inst-" + Math.random().toString(36).slice(2)),
       productId: i.productId || "",
       productName: (i.productName || "").trim(),
       producerId: i.producerId || "",
@@ -123,10 +130,11 @@
     const now = nowIsoString();
     return {
       id:
-        c.id ||
-        (crypto.randomUUID
-          ? crypto.randomUUID()
-          : "cls-" + Math.random().toString(36).slice(2)),
+        c.id !== undefined && c.id !== null && String(c.id).trim().length > 0
+          ? String(c.id)
+          : (crypto.randomUUID
+              ? crypto.randomUUID()
+              : "cls-" + Math.random().toString(36).slice(2)),
       block: (c.block || "").trim(),
       type: (c.type || "").trim(),
       notes: c.notes || "",

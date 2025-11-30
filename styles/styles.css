@@ -300,7 +300,7 @@ body.lock-scroll {
   position: sticky;
   top: calc(var(--top-sticky-offset) + 6px);
   z-index: 20;
-  box-shadow: 0 12px 20px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 8px 14px rgba(15, 23, 42, 0.06);
 }
 .filters[role="search"] {
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.03);
@@ -591,7 +591,7 @@ textarea:focus-visible {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  max-height: calc(100vh - var(--top-sticky-offset) - 9.5rem);
+  max-height: calc(100vh - var(--top-sticky-offset) - 11rem);
 }
 
 .table-scroll {
@@ -600,6 +600,7 @@ textarea:focus-visible {
   max-height: none;
   height: 100%;
   padding-top: 0;
+  padding-bottom: 0.2rem;
   width: 100%;
 }
 
@@ -608,15 +609,14 @@ textarea:focus-visible {
   border-spacing: 0;
   width: max(100%, var(--table-min-width));
   min-width: var(--table-min-width);
-  table-layout: auto;
 }
 
 .table-scroll thead th {
   position: sticky;
   top: 0;
   z-index: 2;
-  background: #e9dece;
-  box-shadow: 0 4px 8px rgba(44, 37, 29, 0.12);
+  background: #efe4d5;
+  box-shadow: 0 3px 6px rgba(44, 37, 29, 0.08);
   padding-top: 0.75rem;
   padding-bottom: 0.7rem;
   transition: background 0.12s ease, color 0.12s ease;
@@ -642,6 +642,14 @@ textarea:focus-visible {
   border-collapse: collapse;
   font-size: 0.78rem;
   table-layout: auto;
+}
+
+.inventory-table {
+  table-layout: auto;
+}
+
+.inventory-table tbody td:first-child {
+  font-weight: 700;
 }
 
 .table-inventory-edit col:nth-child(1) {
@@ -716,18 +724,24 @@ textarea:focus-visible {
 
 .product-table th,
 .product-table td {
-  padding: var(--space-1) var(--space-2);
+  padding: 0.45rem 0.6rem;
   border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: middle;
   position: relative;
   line-height: 1.35;
+  box-sizing: border-box;
 }
 
 .product-table th {
   font-weight: 600;
   color: var(--text);
   white-space: nowrap;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.product-table tbody td {
+  border-top: 1px solid rgba(0, 0, 0, 0.03);
 }
 
 .col-resize-handle {
@@ -764,12 +778,31 @@ textarea:focus-visible {
   background: var(--primary-soft);
 }
 
-.product-table tbody tr[data-have="0"] td {
-  box-shadow: inset 3px 0 0 rgba(242, 180, 90, 0.65);
+.product-table tbody tr[data-have="0"] td:first-child {
+  box-shadow: inset 3px 0 0 rgba(242, 180, 90, 0.75);
 }
 
-.product-table tbody tr[data-buy="1"] td {
-  box-shadow: inset 3px 0 0 rgba(232, 165, 107, 0.8);
+.product-table tbody tr[data-buy="1"] td:first-child {
+  box-shadow: inset 3px 0 0 rgba(232, 165, 107, 0.85);
+}
+
+/* Acciones en inventario: en línea y sin cortes */
+.inventory-table td:last-child,
+.product-draft-row td:last-child {
+  white-space: nowrap;
+}
+.inventory-table td:last-child .btn,
+.product-draft-row td:last-child .btn {
+  margin-right: 0.25rem;
+}
+
+.btn-trash {
+  background: transparent;
+  color: #a02f2f;
+  box-shadow: none;
+}
+.btn-trash:hover:not(:disabled) {
+  background: rgba(160, 47, 47, 0.12);
 }
 
 .table-wrapper::-webkit-scrollbar {

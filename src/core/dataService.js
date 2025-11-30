@@ -113,14 +113,22 @@
     const add = (item, scope) => {
       if (!item) return;
       const id =
-        item.id ||
-        (crypto.randomUUID
-          ? crypto.randomUUID()
-          : `${scope}-` + Math.random().toString(36).slice(2));
+        item.id !== undefined && item.id !== null
+          ? String(item.id)
+          : (crypto.randomUUID
+              ? crypto.randomUUID()
+              : `${scope}-` + Math.random().toString(36).slice(2));
       const current = existing.find((u) => u.id === id) || {};
+      const base = scope === "otros"
+        ? {
+            buy: item.buy !== undefined ? !!item.buy : !item.have,
+            have: item.have !== undefined ? !!item.have : !(item.buy ?? false),
+          }
+        : {};
       map.set(id, {
         ...current,
         ...item,
+        ...base,
         id,
         scope,
         createdAt: item.createdAt || current.createdAt || now,
@@ -242,15 +250,25 @@
   }
 
   function persistEntity(name, list) {
+    const key = storageKeys[name];
+    const tryFallbackSave = () => {
+      if (!key) return;
+      try {
+        fallbackSave(key, list);
+      } catch {}
+    };
+
     const saveFn = saveMap[name];
     if (typeof saveFn === "function") {
-      saveFn(list);
-      return;
+      try {
+        saveFn(list);
+        return;
+      } catch {
+        tryFallbackSave();
+        return;
+      }
     }
-    const key = storageKeys[name];
-    if (key) {
-      fallbackSave(key, list);
-    }
+    tryFallbackSave();
   }
 
   function persistState(nextState) {

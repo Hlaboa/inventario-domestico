@@ -40,6 +40,8 @@
       delete: "delete",
       "save-draft-product": "save-draft-product",
       "cancel-draft-product": "cancel-draft-product",
+      edit: "edit-product",
+      "delete-product": "delete-product",
     };
     let action = target.dataset.action || roleActionMap[target.dataset.role];
     if (!action && target.closest("button")) {
@@ -67,7 +69,17 @@
       return;
     }
     if (action === "move-to-extra") {
-      ctx.actions?.moveToExtra?.(id);
+      const originalId = target.dataset.originalId || target.closest("tr")?.dataset.originalId;
+      ctx.actions?.moveToExtra?.(originalId || id);
+      return;
+    }
+    if (action === "edit-product") {
+      ctx.actions?.startEdit?.(id);
+      return;
+    }
+    if (action === "delete-product") {
+      const origId = target.dataset.originalId || target.closest("tr")?.dataset.originalId || id;
+      ctx.actions?.deleteProduct?.(origId || id);
       return;
     }
     if (action === "select-selection") {
