@@ -91,6 +91,9 @@
                   <td data-field="name"></td>
                   <td data-field="block"></td>
                   <td data-field="type"></td>
+                  <td>
+                    <input type="checkbox" data-field="have" />
+                  </td>
                   <td data-field="shelf"></td>
                   <td data-field="quantity"></td>
                   <td class="selection-td">
@@ -99,9 +102,8 @@
                       <div class="selection-text" data-field="selectionText"></div>
                     </div>
                   </td>
-                  <td data-field="stores"></td>
                   <td>
-                    <input type="checkbox" data-field="have" />
+                    <div class="stores-text" data-field="stores"></div>
                   </td>
                   <td data-field="acquisitionDate"></td>
                   <td data-field="expiryText"></td>
@@ -185,15 +187,15 @@
                         <th scope="col">Producto</th>
                         <th scope="col">Familia</th>
                         <th scope="col">Tipo</th>
+                        <th scope="col">Tengo</th>
                         <th scope="col">Ubicación</th>
                         <th scope="col">Cantidad</th>
                         <th scope="col" class="selection-col">Selección</th>
                         <th scope="col">Tiendas</th>
-                        <th scope="col">Tengo</th>
-                      <th scope="col">Adquisición</th>
-                      <th scope="col">Caducidad</th>
-                      <th scope="col">Notas</th>
-                      <th scope="col" aria-label="Acciones"></th>
+                        <th scope="col">Adquisición</th>
+                        <th scope="col">Caducidad</th>
+                        <th scope="col">Notas</th>
+                        <th scope="col" aria-label="Acciones"></th>
                       </tr>
                     </thead>
                     <tbody id="productTableBody"></tbody>
@@ -271,6 +273,7 @@
                       <td data-slot="name"></td>
                       <td data-slot="block"></td>
                       <td data-slot="type"></td>
+                      <td data-slot="have"></td>
                       <td data-slot="shelf"></td>
                       <td data-slot="quantity"></td>
                       <td class="selection-td">
@@ -286,8 +289,9 @@
                           </button>
                         </div>
                       </td>
-                      <td><span data-field="stores"></span></td>
-                      <td data-slot="have"></td>
+                      <td>
+                        <div class="stores-text" data-field="stores"></div>
+                      </td>
                       <td data-slot="acquisitionDate"></td>
                       <td data-slot="expiryText"></td>
                       <td data-slot="notes"></td>
@@ -324,11 +328,11 @@
                         <th scope="col">Producto</th>
                         <th scope="col">Familia</th>
                         <th scope="col">Tipo</th>
+                        <th scope="col">Tengo</th>
                         <th scope="col">Ubicación</th>
                         <th scope="col">Cantidad</th>
                         <th scope="col" class="selection-col">Selección</th>
                         <th scope="col">Tiendas</th>
-                        <th scope="col">Tengo</th>
                         <th scope="col">F. adquisición</th>
                         <th scope="col">Caducidad</th>
                         <th scope="col">Notas</th>
@@ -469,6 +473,9 @@
                   <td data-field="name"></td>
                   <td data-field="block"></td>
                   <td data-field="type"></td>
+                  <td data-field="buy">
+                    <input type="checkbox" data-field="buy" />
+                  </td>
                   <td data-field="quantity"></td>
                   <td class="selection-td">
                     <div class="selection-cell">
@@ -477,9 +484,6 @@
                     </div>
                   </td>
                   <td data-field="stores"></td>
-                  <td>
-                    <input type="checkbox" data-field="buy" />
-                  </td>
                   <td data-field="notes"></td>
                   <td>
                     <button
@@ -555,6 +559,7 @@
                       <td data-slot="name"></td>
                       <td data-slot="block"></td>
                       <td data-slot="type"></td>
+                      <td data-slot="buy"></td>
                       <td data-slot="quantity"></td>
                       <td class="selection-td">
                         <div class="selection-cell">
@@ -570,7 +575,6 @@
                         </div>
                       </td>
                       <td><span data-field="stores"></span></td>
-                      <td data-slot="buy"></td>
                       <td data-slot="notes"></td>
                       <td>
                         <button
@@ -601,10 +605,10 @@
                         <th scope="col">Producto</th>
                         <th scope="col">Familia</th>
                         <th scope="col">Tipo</th>
+                      <th scope="col">Comprar</th>
                       <th scope="col">Cantidad</th>
                       <th scope="col" class="selection-col">Selección</th>
                       <th scope="col">Tiendas</th>
-                      <th scope="col">Comprar</th>
                       <th scope="col">Notas</th>
                       <th scope="col" aria-label="Acciones"></th>
                     </tr>
@@ -680,10 +684,10 @@
                         <th scope="col">Producto</th>
                         <th scope="col">Familia</th>
                         <th scope="col">Tipo</th>
+                        <th scope="col">Comprar</th>
                         <th scope="col">Cantidad</th>
                         <th scope="col" class="selection-col">Selección</th>
                         <th scope="col">Tiendas</th>
-                        <th scope="col">Comprar</th>
                         <th scope="col">Notas</th>
                         <th scope="col">Mover a almacén</th>
                       </tr>

@@ -122,6 +122,7 @@
           "[data-field='name']": product.name || "",
           "[data-field='block']": product.block || "",
           "[data-field='type']": product.type || "",
+          "[data-field='have']": product.have ? "1" : "",
           "[data-field='shelf']": product.shelf || "",
           "[data-field='quantity']": product.quantity || "",
           "[data-field='selectionText']": getSelectionLabelCached(product, helpers),
@@ -162,6 +163,16 @@
       addCellText(p.name || "");
       addCellText(p.block || "");
       addCellText(p.type || "");
+
+      let td = document.createElement("td");
+      const haveCheck = document.createElement("input");
+      haveCheck.type = "checkbox";
+      haveCheck.checked = !!p.have;
+      haveCheck.dataset.field = "have";
+      haveCheck.dataset.id = p.id;
+      td.appendChild(haveCheck);
+      tr.appendChild(td);
+
       addCellText(p.shelf || "");
       addCellText(p.quantity || "");
       const selTd = document.createElement("td");
@@ -176,16 +187,13 @@
       selCell.appendChild(selText);
       selTd.appendChild(selCell);
       tr.appendChild(selTd);
-      addCellText(getSelectionStoresCached(p, helpers));
 
-      let td = document.createElement("td");
-      const haveCheck = document.createElement("input");
-      haveCheck.type = "checkbox";
-      haveCheck.checked = !!p.have;
-      haveCheck.dataset.field = "have";
-      haveCheck.dataset.id = p.id;
-      td.appendChild(haveCheck);
-      tr.appendChild(td);
+      const storesTd = document.createElement("td");
+      const storesDiv = document.createElement("div");
+      storesDiv.className = "stores-text";
+      storesDiv.textContent = getSelectionStoresCached(p, helpers);
+      storesTd.appendChild(storesDiv);
+      tr.appendChild(storesTd);
 
       addCellText(p.acquisitionDate || "");
       addCellText(p.expiryText || "");
@@ -205,9 +213,15 @@
     return tr;
   };
 
-    let items = products.slice().filter((p) => !editingIds.has(p.id));
-    items.sort(helpers.compareShelfBlockTypeName);
-    const stripeMap = getStripeMap(items, helpers);
+    const draftsByOriginal = new Map();
+    const orphanDrafts = [];
+    productDrafts.forEach((d) => {
+      if (d.originalId) draftsByOriginal.set(d.originalId, d);
+      else orphanDrafts.push(d);
+    });
+
+    const sortedAll = products.slice().sort(helpers.compareShelfBlockTypeName);
+    const stripeMap = getStripeMap(sortedAll, helpers);
 
     const frag =
       typeof document !== "undefined" && document.createDocumentFragment
@@ -218,122 +232,137 @@
     const nextRowMap = new Map();
     const nextHashMap = new Map();
 
-    productDrafts.forEach((d) => {
-      const tr = document.createElement("tr");
-      tr.className = "product-draft-row";
-      tr.dataset.draftId = d.id;
-      if (d.originalId) tr.dataset.originalId = d.originalId;
-
-      let td = document.createElement("td");
-      td.appendChild(helpers.createTableInput("name", d.name || ""));
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      const famSel = helpers.createFamilySelect(d.block || "");
-      famSel.dataset.field = "block";
-      td.appendChild(famSel);
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      const typeSel = helpers.createTypeSelect(d.block || "", d.type || "");
-      typeSel.dataset.field = "type";
-      helpers.linkFamilyTypeSelects(famSel, typeSel);
-      td.appendChild(typeSel);
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      td.appendChild(helpers.createTableInput("shelf", d.shelf || ""));
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      td.appendChild(helpers.createTableInput("quantity", d.quantity || ""));
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      td.textContent = "—";
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      td.textContent = "—";
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      const haveChk = helpers.createTableInput(
-        "have",
-        d.have ? "on" : "",
-        "checkbox"
-      );
-      haveChk.checked = !!d.have;
-      td.appendChild(haveChk);
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      const adq = helpers.createTableInput(
-        "acquisitionDate",
-        d.acquisitionDate || "",
-        "date"
-      );
-      td.appendChild(adq);
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      td.appendChild(helpers.createTableInput("expiryText", d.expiryText || ""));
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      td.appendChild(helpers.createTableTextarea("notes", d.notes || ""));
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      const saveBtn = document.createElement("button");
-      saveBtn.type = "button";
-      saveBtn.className = "btn btn-small btn-success";
-      saveBtn.dataset.action = "save-draft-product";
-      saveBtn.dataset.id = d.id;
-      saveBtn.title = "Guardar producto";
-      saveBtn.setAttribute("aria-label", "Guardar producto");
-      saveBtn.textContent = "✓";
-      td.appendChild(saveBtn);
-
-      const cancelBtn = document.createElement("button");
-      cancelBtn.type = "button";
-      cancelBtn.className = "btn btn-small btn-danger";
-      cancelBtn.dataset.action = "cancel-draft-product";
-      cancelBtn.dataset.id = d.id;
-      cancelBtn.textContent = "✕";
-      cancelBtn.title = "Cancelar";
-      cancelBtn.setAttribute("aria-label", "Cancelar");
-      td.appendChild(cancelBtn);
-
-      if (d.originalId) {
-        const moveBtn = document.createElement("button");
-        moveBtn.type = "button";
-        moveBtn.className = "btn btn-small btn-icon";
-        moveBtn.dataset.action = "move-to-extra";
-        moveBtn.dataset.id = d.originalId || d.id;
-        moveBtn.dataset.originalId = d.originalId || "";
-        moveBtn.title = "Mover a otros productos";
-        moveBtn.setAttribute("aria-label", "Mover a otros productos");
-        moveBtn.textContent = "→";
-        td.appendChild(moveBtn);
-
-        const delBtn = document.createElement("button");
-        delBtn.type = "button";
-        delBtn.className = "btn btn-small btn-danger btn-trash";
-        delBtn.dataset.action = "delete-product";
-        delBtn.dataset.id = d.originalId || d.id;
-        delBtn.dataset.originalId = d.originalId || "";
-        delBtn.textContent = "🗑";
-        delBtn.title = "Eliminar producto";
-        delBtn.setAttribute("aria-label", "Eliminar producto");
-        td.appendChild(delBtn);
+    // Construir orden combinado de productos y drafts en su posición original
+    const orderedEntries = orphanDrafts.map((d) => ({ type: "draft", draft: d }));
+    sortedAll.forEach((p) => {
+      const draft = draftsByOriginal.get(p.id);
+      if (draft) {
+        orderedEntries.push({ type: "draft", draft });
+      } else if (!editingIds.has(p.id)) {
+        orderedEntries.push({ type: "product", product: p });
       }
-      tr.appendChild(td);
-
-      target.appendChild(tr);
     });
 
-    for (const p of items) {
+    orderedEntries.forEach((entry) => {
+      if (entry.type === "draft") {
+        const d = entry.draft;
+        const tr = document.createElement("tr");
+        tr.className = "product-draft-row";
+        tr.dataset.draftId = d.id;
+        if (d.originalId) tr.dataset.originalId = d.originalId;
+        const stripe = stripeMap[(d.block || "").trim() || "__none__"] || 0;
+        applyStripe(tr, stripe);
+
+        let td = document.createElement("td");
+        td.appendChild(helpers.createTableInput("name", d.name || ""));
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        const famSel = helpers.createFamilySelect(d.block || "");
+        famSel.dataset.field = "block";
+        td.appendChild(famSel);
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        const typeSel = helpers.createTypeSelect(d.block || "", d.type || "");
+        typeSel.dataset.field = "type";
+        helpers.linkFamilyTypeSelects(famSel, typeSel);
+        td.appendChild(typeSel);
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        const haveChk = helpers.createTableInput(
+          "have",
+          d.have ? "on" : "",
+          "checkbox"
+        );
+        haveChk.checked = !!d.have;
+        td.appendChild(haveChk);
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        td.appendChild(helpers.createTableInput("shelf", d.shelf || ""));
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        td.appendChild(helpers.createTableInput("quantity", d.quantity || ""));
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        td.textContent = "—";
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        td.textContent = "—";
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        const adq = helpers.createTableInput(
+          "acquisitionDate",
+          d.acquisitionDate || "",
+          "date"
+        );
+        td.appendChild(adq);
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        td.appendChild(helpers.createTableInput("expiryText", d.expiryText || ""));
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        td.appendChild(helpers.createTableTextarea("notes", d.notes || ""));
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        const saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.className = "btn btn-small btn-success";
+        saveBtn.dataset.action = "save-draft-product";
+        saveBtn.dataset.id = d.id;
+        saveBtn.title = "Guardar producto";
+        saveBtn.setAttribute("aria-label", "Guardar producto");
+        saveBtn.textContent = "✓";
+        td.appendChild(saveBtn);
+
+        const cancelBtn = document.createElement("button");
+        cancelBtn.type = "button";
+        cancelBtn.className = "btn btn-small btn-danger";
+        cancelBtn.dataset.action = "cancel-draft-product";
+        cancelBtn.dataset.id = d.id;
+        cancelBtn.textContent = "✕";
+        cancelBtn.title = "Cancelar";
+        cancelBtn.setAttribute("aria-label", "Cancelar");
+        td.appendChild(cancelBtn);
+
+        if (d.originalId) {
+          const moveBtn = document.createElement("button");
+          moveBtn.type = "button";
+          moveBtn.className = "btn btn-small btn-icon";
+          moveBtn.dataset.action = "move-to-extra";
+          moveBtn.dataset.id = d.originalId || d.id;
+          moveBtn.dataset.originalId = d.originalId || "";
+          moveBtn.title = "Mover a otros productos";
+          moveBtn.setAttribute("aria-label", "Mover a otros productos");
+          moveBtn.textContent = "→";
+          td.appendChild(moveBtn);
+
+          const delBtn = document.createElement("button");
+          delBtn.type = "button";
+          delBtn.className = "btn btn-small btn-danger btn-trash";
+          delBtn.dataset.action = "delete-product";
+          delBtn.dataset.id = d.originalId || d.id;
+          delBtn.dataset.originalId = d.originalId || "";
+          delBtn.textContent = "🗑";
+          delBtn.title = "Eliminar producto";
+          delBtn.setAttribute("aria-label", "Eliminar producto");
+          td.appendChild(delBtn);
+        }
+        tr.appendChild(td);
+        target.appendChild(tr);
+        return;
+      }
+
+      const p = entry.product;
       const stripe = stripeMap[(p.block || "").trim() || "__none__"] || 0;
       const hash = getRowHash(p, helpers);
       const existing = existingRows.get(p.id);
@@ -363,7 +392,7 @@
         nextRowMap.set(p.id, tr);
         nextHashMap.set(p.id, hash);
       }
-    }
+    });
 
     existingRows.forEach((row, id) => {
       if (!nextRowMap.has(id)) {

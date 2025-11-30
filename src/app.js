@@ -20,6 +20,9 @@ let productInstances = []; // selección producto+productor+marca+tiendas (cache
 let classifications = []; // combinaciones familia/tipo (cache)
 let productDrafts = [];
 let extraDrafts = [];
+let pendingInstancesList = null;
+let instancesUpdateTimer = null;
+const INSTANCE_UPDATE_DEBOUNCE = 200;
 const stateAdapter = window.StateAdapter || null;
 const appUtils = window.AppUtils || {};
 const debounce =
@@ -123,6 +126,16 @@ function setInstancesList(list) {
     localStorage.setItem(STORAGE_KEY_INSTANCES, JSON.stringify(productInstances));
   } catch {}
   return productInstances;
+}
+
+function flushInstancesUpdates() {
+  if (!pendingInstancesList) return;
+  const toSave = pendingInstancesList;
+  pendingInstancesList = null;
+  if (instancesViewContext) {
+    instancesViewContext.__skipNextRender = true;
+  }
+  setInstancesList(toSave);
 }
 
 function setSuppliersList(list) {
@@ -1455,6 +1468,8 @@ document.addEventListener("DOMContentLoaded", () => {
     getFamilyForInstance,
     getProducerName,
     getStoreNames,
+    isKnownProduct,
+    getFamilyByProductName,
     buildFamilyStripeMap,
     attachMultiSelectToggle,
     persist: persistInstances,
@@ -1656,13 +1671,78 @@ document.addEventListener("DOMContentLoaded", () => {
         return instancesViewContext;
       },
       getInstances: () => getInstancesList(),
-      actions: {
-        delete: (id) => removeInstanceById(id),
-        updateField: (id, field, value) => {
-          const list = getInstancesList().map((inst) =>
-            inst.id === id ? { ...inst, [field]: value, updatedAt: nowIsoString() } : inst
-          );
-          setInstancesList(list);
+        actions: {
+          delete: (id) => removeInstanceById(id),
+          updateField: (id, field, value) => {
+            if (instancesViewContext) {
+              instancesViewContext.__skipNextRender = true;
+            }
+          const now = nowIsoString();
+          const baseList = pendingInstancesList || getInstancesList();
+          const idx = baseList.findIndex((inst) => inst.id === id);
+          const normalizedValue =
+            field === "storeIds" && Array.isArray(value) ? value.slice() : value;
+          if (idx === -1) {
+            const newInst = {
+              id,
+              productId: "",
+              productName: "",
+              producerId: "",
+              brand: "",
+              storeIds: [],
+              notes: "",
+              block: "",
+              createdAt: now,
+              updatedAt: now,
+              __isNew: true,
+            };
+            if (field === "storeIds" && Array.isArray(normalizedValue)) {
+              newInst.storeIds = normalizedValue;
+            } else {
+              newInst[field] = normalizedValue;
+            }
+            pendingInstancesList = [newInst, ...baseList];
+          } else {
+            const current = baseList[idx];
+            const currentValue =
+              field === "storeIds" && Array.isArray(current.storeIds)
+                ? current.storeIds
+                : current[field];
+            const sameArray =
+              field === "storeIds" &&
+              Array.isArray(normalizedValue) &&
+              Array.isArray(currentValue) &&
+              normalizedValue.length === currentValue.length &&
+              normalizedValue.every((v, i) => v === currentValue[i]);
+            const sameValue =
+              field === "storeIds" ? sameArray : normalizedValue === currentValue;
+            if (sameValue) return;
+
+            if (pendingInstancesList) {
+              const target = pendingInstancesList[idx];
+              if (field === "storeIds" && Array.isArray(normalizedValue)) {
+                target.storeIds = normalizedValue;
+              } else {
+                target[field] = normalizedValue;
+              }
+              target.updatedAt = now;
+            } else {
+              const clone = baseList.slice();
+              clone[idx] = {
+                ...current,
+                [field]:
+                  field === "storeIds" && Array.isArray(normalizedValue)
+                    ? normalizedValue
+                    : normalizedValue,
+                updatedAt: now,
+              };
+              pendingInstancesList = clone;
+            }
+          }
+          clearTimeout(instancesUpdateTimer);
+          instancesUpdateTimer = setTimeout(() => {
+            flushInstancesUpdates();
+          }, INSTANCE_UPDATE_DEBOUNCE);
         },
         add: () => handleAddInstanceRow(),
         save: () => handleSaveInstances(),
@@ -3996,8 +4076,12 @@ function startEditExtra(id) {
     notes: prod.notes || "",
     buy: !!prod.buy,
   });
+  const scrollParent =
+    (extraListTableBody && extraListTableBody.closest(".table-scroll")) || null;
+  const prevScroll = scrollParent ? scrollParent.scrollTop : window.scrollY;
   renderExtraQuickTable();
-  highlightTopRow(extraListTableBody);
+  if (scrollParent) scrollParent.scrollTop = prevScroll;
+  else window.scrollTo({ top: prevScroll, behavior: "auto" });
 }
 
 function handleAddQuickProduct() {
@@ -4049,8 +4133,12 @@ function startEditProduct(id) {
     expiryText: prod.expiryText || "",
     notes: prod.notes || "",
   });
+  const scrollParent =
+    (productTableBody && productTableBody.closest(".table-scroll")) || null;
+  const prevScroll = scrollParent ? scrollParent.scrollTop : window.scrollY;
   renderProducts();
-  highlightTopRow(productTableBody);
+  if (scrollParent) scrollParent.scrollTop = prevScroll;
+  else window.scrollTo({ top: prevScroll, behavior: "auto" });
 }
 
 function deleteProduct(id) {
@@ -4287,7 +4375,7 @@ function persistInstances(list, options = {}) {
     const match =
       lower &&
       allProducts.find((p) => (p.name || "").trim().toLowerCase() === lower);
-    const productId = match ? match.id : inst.productId || "";
+    const productId = match ? match.id : "";
     const productById = productId ? findProductById(productId) : null;
     const resolvedBlock = resolveInstanceFamily({
       ...inst,
@@ -4529,6 +4617,7 @@ function handleAddInstanceRow() {
 }
 
 function handleSaveInstances() {
+  flushInstancesUpdates();
   if (window.InstancesView && typeof window.InstancesView.save === "function") {
     window.InstancesView.save(instancesViewContext);
     showToast("Selección de productos guardada");
@@ -4558,6 +4647,20 @@ function openInlineProductCreator(row) {
 
   const nameInput = row.querySelector('input[data-field="productName"]');
   const prefill = nameInput ? nameInput.value : "";
+  const prefillName = (prefill || "").trim();
+  if (!prefillName) {
+    alert("Escribe un nombre en el campo Producto antes de crearlo.");
+    if (nameInput) nameInput.focus();
+    return;
+  }
+
+  const exists = getUnifiedList().some(
+    (p) => (p.name || "").toLowerCase() === prefillName.toLowerCase()
+  );
+  if (exists) {
+    alert("Ya existe un producto con ese nombre en el inventario.");
+    return;
+  }
 
   const families = getClassificationFamilies();
   if (!families.length) {
@@ -4579,11 +4682,11 @@ function openInlineProductCreator(row) {
   fgName.className = "form-group";
   const lblName = document.createElement("label");
   lblName.textContent = "Nombre producto";
-  const inpName = document.createElement("input");
-  inpName.type = "text";
-  inpName.value = prefill || "";
+  const nameDisplay = document.createElement("div");
+  nameDisplay.className = "inline-product-name-display";
+  nameDisplay.textContent = prefillName;
   fgName.appendChild(lblName);
-  fgName.appendChild(inpName);
+  fgName.appendChild(nameDisplay);
 
   const fgFam = document.createElement("div");
   fgFam.className = "form-group";
@@ -4627,10 +4730,16 @@ function openInlineProductCreator(row) {
   actions.className = "inline-product-creator-actions";
   const btnSave = document.createElement("button");
   btnSave.type = "button";
-  btnSave.className = "btn btn-primary btn-small";
-  btnSave.textContent = "Crear";
+  btnSave.className = "btn btn-success btn-small";
+  btnSave.textContent = "✓";
+  btnSave.title = "Crear producto";
+  btnSave.setAttribute("aria-label", "Crear producto");
+  const closeCreator = () => {
+    tr.remove();
+  };
+
   btnSave.addEventListener("click", () => {
-    const nameVal = (inpName.value || "").trim();
+    const nameVal = prefillName;
     if (!nameVal) {
       alert("Introduce un nombre de producto.");
       return;
@@ -4683,14 +4792,16 @@ function openInlineProductCreator(row) {
       nameInput.dispatchEvent(new Event("input", { bubbles: true }));
       nameInput.focus();
     }
-    tr.remove();
+    closeCreator();
   });
 
   const btnCancel = document.createElement("button");
   btnCancel.type = "button";
-  btnCancel.className = "btn btn-secondary btn-small";
-  btnCancel.textContent = "Cancelar";
-  btnCancel.addEventListener("click", () => tr.remove());
+  btnCancel.className = "btn btn-danger btn-small";
+  btnCancel.textContent = "✕";
+  btnCancel.title = "Cancelar";
+  btnCancel.setAttribute("aria-label", "Cancelar");
+  btnCancel.addEventListener("click", closeCreator);
 
   actions.appendChild(btnCancel);
   actions.appendChild(btnSave);
@@ -4700,9 +4811,9 @@ function openInlineProductCreator(row) {
   form.appendChild(fgType);
   form.appendChild(fgQty);
   form.appendChild(fgNotes);
+  form.appendChild(actions);
 
   td.appendChild(form);
-  td.appendChild(actions);
   tr.appendChild(td);
 
   row.insertAdjacentElement("afterend", tr);

@@ -4,6 +4,8 @@
   const hashMap = new Map();
   let stripeCacheKey = "";
   let stripeCache = {};
+  let filtersActive = false;
+  let lastEditTs = 0;
 
   const stripeClassRegex = /^family-stripe-/;
 
@@ -50,12 +52,27 @@
     ].join("||");
   }
 
+  function shouldDeferRender(context) {
+    const refs = context.refs || {};
+    const active = document.activeElement;
+    if (!active || !refs.tableBody) return false;
+    if (!refs.tableBody.contains(active)) return false;
+    const now = Date.now();
+    if (now - lastEditTs < 450) return true;
+    return false;
+  }
+
   function render(c) {
     const context = getCtx(c);
     const refs = context.refs || {};
     const tableBody = refs.tableBody;
     const rowTemplate = refs.rowTemplate;
     if (!tableBody) return;
+    if (shouldDeferRender(context)) return;
+    if (context.__skipNextRender) {
+      context.__skipNextRender = false;
+      return;
+    }
 
     const {
       instances = [],
@@ -123,10 +140,12 @@
       const lower = (inst.productName || "").trim().toLowerCase();
       const matchById = inst.productId ? productById.get(inst.productId) : null;
       const matchByName = lower ? productByName.get(lower) : null;
+      const idMatchesName =
+        !!(matchById && lower && (matchById.name || "").trim().toLowerCase() === lower);
       const family =
         inst.block ||
-        (matchById && matchById.block) ||
         (matchByName && matchByName.block) ||
+        (idMatchesName && matchById && matchById.block) ||
         getFamilyForInstance(inst);
       if (family && !inst.block) inst.block = family;
       return { ...inst, block: family };
@@ -385,11 +404,12 @@
       applyStripe(row, stripe);
       row.dataset.family = family || "";
       row.dataset.producerId = inst.producerId || "";
-      row.dataset.storeIds = Array.isArray(inst.storeIds) ? inst.storeIds.join(",") : "";
+        row.dataset.storeIds = Array.isArray(inst.storeIds) ? inst.storeIds.join(",") : "";
+        row.dataset.isNew = inst.__isNew ? "1" : "";
 
-      const familyCellEl =
-        row.querySelector(".instances-family-cell") ||
-        row.querySelector('[data-field="family"]');
+        const familyCellEl =
+          row.querySelector(".instances-family-cell") ||
+          row.querySelector('[data-field="family"]');
       const createBtnEl =
         row.querySelector('[data-action="create-product-selection"]') || createBtn;
       const inputNameEl =
@@ -421,22 +441,49 @@
         deleteBtnEl.setAttribute("aria-label", deleteBtnEl.getAttribute("aria-label") || "Eliminar selección");
       }
 
-      if (
-        inputNameEl &&
-        typeof context.isKnownProduct === "function" &&
-        typeof context.getFamilyByProductName === "function"
-      ) {
+      if (inputNameEl) {
+        const getFamilyForName = (name) => {
+          const lower = (name || "").trim().toLowerCase();
+          const prodById = inst.productId ? productById.get(inst.productId) : null;
+          const prodByName = lower ? productByName.get(lower) : null;
+          const idMatchesName =
+            !!(prodById && lower && (prodById.name || "").trim().toLowerCase() === lower);
+          if (idMatchesName && prodById && prodById.block) return prodById.block;
+          if (prodByName && prodByName.block) return prodByName.block;
+          if (!lower && prodById && prodById.block) return prodById.block;
+          if (typeof context.getFamilyByProductName === "function") {
+            return context.getFamilyByProductName(name) || "";
+          }
+          return "";
+        };
+        const isKnown = (name) => {
+          const lower = (name || "").trim().toLowerCase();
+          const prodById = inst.productId ? productById.get(inst.productId) : null;
+          const idMatchesName =
+            !!(prodById && lower && (prodById.name || "").trim().toLowerCase() === lower);
+          const hasByName = lower && productByName.has(lower);
+          const helperKnown =
+            typeof context.isKnownProduct === "function"
+              ? context.isKnownProduct(name, inst.productId)
+              : false;
+          return !!((idMatchesName && prodById) || hasByName || helperKnown);
+        };
         const updateMissingState = () => {
-          const known = context.isKnownProduct(inputNameEl.value, inst.productId);
+          const known = isKnown(inputNameEl.value);
           row.classList.toggle("instance-missing-product", !known);
+          row.dataset.missing = known ? "0" : "1";
           if (familyCellEl) {
-            familyCellEl.textContent =
-              context.getFamilyByProductName(inputNameEl.value) || "—";
+            const famText = getFamilyForName(inputNameEl.value) || "—";
+            familyCellEl.textContent = famText;
           }
           if (createBtnEl) {
             createBtnEl.style.display = known ? "none" : "inline-flex";
           }
         };
+        if (inputNameEl.__missingHandler) {
+          inputNameEl.removeEventListener("input", inputNameEl.__missingHandler);
+        }
+        inputNameEl.__missingHandler = updateMissingState;
         inputNameEl.addEventListener("input", updateMissingState);
         updateMissingState();
       }
@@ -457,7 +504,11 @@
 
     if (typeof context.attachMultiSelectToggle === "function") {
       Array.from(tableBody.querySelectorAll('select[multiple][data-field="storeIds"]')).forEach(
-        (sel) => context.attachMultiSelectToggle(sel)
+        (sel) => {
+          if (sel.dataset.enhanced === "1") return;
+          context.attachMultiSelectToggle(sel);
+          sel.dataset.enhanced = "1";
+        }
       );
     }
 
@@ -567,6 +618,11 @@
 
   function addRow(c) {
     const context = getCtx(c);
+    if (context._addingRow) return;
+    context._addingRow = true;
+    setTimeout(() => {
+      context._addingRow = false;
+    }, 0);
     const refs = context.refs || {};
     const tableBody = refs.tableBody;
     if (!tableBody) return;
@@ -595,6 +651,7 @@
       block: refs.familyFilter?.value || "",
       createdAt: now,
       updatedAt: now,
+      __isNew: true,
     };
 
     const data = context.data || {};
@@ -650,6 +707,16 @@
     const filterStoreId = refs.storeFilter?.value || "";
 
     const rows = Array.from(tableBody.querySelectorAll("tr"));
+    const hasFilters = !!(search || filterFamily || filterProducerId || filterStoreId);
+    if (!hasFilters && !filtersActive) return;
+    if (!hasFilters && filtersActive) {
+      rows.forEach((row) => {
+        row.style.display = "";
+      });
+      filtersActive = false;
+      return;
+    }
+    filtersActive = true;
     rows.forEach((row) => {
       const name =
         (row.querySelector('input[data-field="productName"]')?.value || "").toLowerCase();
@@ -674,6 +741,11 @@
       const storeNames = storeSelect
         ? Array.from(storeSelect.selectedOptions || []).map((o) => o.textContent || "")
         : [];
+
+      if (row.dataset.isNew === "1") {
+        row.style.display = "";
+        return;
+      }
 
       let visible = true;
       if (filterFamily && family !== filterFamily) visible = false;
@@ -711,7 +783,12 @@
     refs.addButton?.addEventListener("click", () => addRow());
     refs.saveButton?.addEventListener("click", () => save());
     refs.tableBody?.addEventListener("click", handleClick);
+    const markEdit = () => {
+      lastEditTs = Date.now();
+    };
     refs.tableBody?.addEventListener("input", refilterOnEdit);
+    refs.tableBody?.addEventListener("input", markEdit);
+    refs.tableBody?.addEventListener("keydown", markEdit);
     refs.tableBody?.addEventListener("change", refilterOnEdit);
     render(context);
   }

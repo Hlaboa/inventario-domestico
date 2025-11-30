@@ -146,6 +146,11 @@
 
   function addRow(c) {
     const context = getCtx(c);
+    if (context._addingRow) return;
+    context._addingRow = true;
+    setTimeout(() => {
+      context._addingRow = false;
+    }, 0);
     const refs = context.refs || {};
     const tableBody = refs.tableBody;
     const rowTemplate = refs.rowTemplate;

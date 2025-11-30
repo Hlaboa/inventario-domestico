@@ -126,41 +126,6 @@
       ? helpers.createSelectionButton(item.selectionId, item.id)
       : null;
 
-    if (
-      rowTemplate &&
-      window.AppComponents &&
-      typeof window.AppComponents.buildRowWithTemplate === "function"
-    ) {
-      const row = window.AppComponents.buildRowWithTemplate({
-        template: rowTemplate,
-        stripe,
-        dataset: { id: item.id },
-        text: {
-          "[data-field='name']": item.name,
-          "[data-field='block']": item.block,
-          "[data-field='type']": item.type,
-          "[data-field='quantity']": item.quantity,
-          "[data-field='notes']": item.notes,
-          "[data-field='stores']": getSelectionStoresCached(item, context),
-          "[data-field='selectionText']": getSelectionLabelCached(item, context),
-        },
-        checkboxes: {
-          'input[data-field="buy"]': !!item.buy,
-        },
-        attributes: {
-          'input[data-field="buy"]': { dataset: { id: item.id } },
-        },
-        actions: {
-          "[data-role='edit']": { action: "edit-extra", id: item.id },
-          "[data-role='move']": { action: "move-to-almacen", id: item.id },
-        },
-        replacements: {
-          "[data-role='selection-btn']": selectionBtn,
-        },
-      });
-      if (row) return row;
-    }
-
     const tr = document.createElement("tr");
     tr.dataset.id = item.id;
     tr.classList.add(`family-stripe-${stripe}`);
@@ -174,20 +139,6 @@
     addCellText(item.name || "");
     addCellText(item.block || "");
     addCellText(item.type || "");
-    addCellText(item.quantity || "");
-    const selTd = document.createElement("td");
-    selTd.className = "selection-td";
-    const selCell = document.createElement("div");
-    selCell.className = "selection-cell";
-    const selText = document.createElement("div");
-    selText.className = "selection-text";
-    selText.textContent = getSelectionLabelCached(item, context);
-    selCell.appendChild(selectionBtn || document.createElement("span"));
-    selCell.appendChild(selText);
-    selTd.appendChild(selCell);
-    tr.appendChild(selTd);
-
-    addCellText(getSelectionStoresCached(item, context));
 
     let td = document.createElement("td");
     const chk = document.createElement("input");
@@ -204,6 +155,26 @@
     td.appendChild(chk);
     tr.appendChild(td);
 
+    addCellText(item.quantity || "");
+    const selTd = document.createElement("td");
+    selTd.className = "selection-td";
+    const selCell = document.createElement("div");
+    selCell.className = "selection-cell";
+    const selText = document.createElement("div");
+    selText.className = "selection-text";
+    selText.textContent = getSelectionLabelCached(item, context);
+    selCell.appendChild(selectionBtn || document.createElement("span"));
+    selCell.appendChild(selText);
+    selTd.appendChild(selCell);
+    tr.appendChild(selTd);
+
+    const storesTd = document.createElement("td");
+    const storesDiv = document.createElement("div");
+    storesDiv.className = "stores-text";
+    storesDiv.textContent = getSelectionStoresCached(item, context);
+    storesTd.appendChild(storesDiv);
+    tr.appendChild(storesTd);
+
     addCellText(item.notes || "");
 
   td = document.createElement("td");
@@ -215,15 +186,6 @@
   editBtn.dataset.action = "edit-extra";
   editBtn.dataset.id = item.id;
     td.appendChild(editBtn);
-
-    const moveBtn = document.createElement("button");
-    moveBtn.className = "btn btn-small btn-icon";
-    moveBtn.textContent = "→";
-    moveBtn.title = "Mover a almacén";
-    moveBtn.setAttribute("aria-label", "Mover a almacén");
-    moveBtn.dataset.action = "move-to-almacen";
-    moveBtn.dataset.id = item.id;
-    td.appendChild(moveBtn);
 
     tr.appendChild(td);
     return tr;
@@ -299,18 +261,7 @@
       td.appendChild(typeSel);
       tr.appendChild(td);
 
-      td = document.createElement("td");
-      td.appendChild(makeInput(helpers, "quantity", d.quantity || ""));
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      td.textContent = "—";
-      tr.appendChild(td);
-
-      td = document.createElement("td");
-      td.textContent = "—";
-      tr.appendChild(td);
-
+      // Comprar (4ª)
       td = document.createElement("td");
       const buyChk = makeInput(helpers, "buy", d.buy ? "on" : "", "checkbox");
       buyChk.checked = !!d.buy;
@@ -323,10 +274,36 @@
       td.appendChild(buyChk);
       tr.appendChild(td);
 
+      // Cantidad (5ª)
+      td = document.createElement("td");
+      td.appendChild(makeInput(helpers, "quantity", d.quantity || ""));
+      tr.appendChild(td);
+
+      // Selección (6ª)
+      td = document.createElement("td");
+      td.className = "selection-td";
+      const selCell = document.createElement("div");
+      selCell.className = "selection-cell";
+      const selText = document.createElement("div");
+      selText.className = "selection-text";
+      selText.textContent = "";
+      selCell.appendChild(selText);
+      td.appendChild(selCell);
+      tr.appendChild(td);
+
+      // Tiendas (7ª)
+      td = document.createElement("td");
+      const storesSpan = document.createElement("span");
+      storesSpan.textContent = "";
+      td.appendChild(storesSpan);
+      tr.appendChild(td);
+
+      // Notas (8ª)
       td = document.createElement("td");
       td.appendChild(makeTextarea(helpers, "notes", d.notes || ""));
       tr.appendChild(td);
 
+      // Acciones (9ª)
       td = document.createElement("td");
       const saveBtn = document.createElement("button");
       saveBtn.className = "btn btn-small btn-success";
@@ -377,15 +354,24 @@
     const tableBody = refs.tableBody;
     if (!tableBody) return;
 
+    // Reconstruye siempre las filas para asegurar el orden de columnas actualizado
+    tableBody.innerHTML = "";
+    rowMap.clear();
+    hashMap.clear();
+
     const drafts =
       (typeof context.getDrafts === "function" ? context.getDrafts() : []) || [];
     const extras =
-      (typeof context.getExtras === "function"
-        ? context.getExtras()
-        : []) || [];
-    const editingIds = new Set(drafts.map((d) => d && d.originalId).filter(Boolean));
-    const filteredExtras = extras.filter((p) => !editingIds.has(p.id));
-    const sorted = filteredExtras.slice().sort(defaultSort);
+      (typeof context.getExtras === "function" ? context.getExtras() : []) || [];
+
+    const draftsByOriginal = new Map();
+    const orphanDrafts = [];
+    drafts.forEach((d) => {
+      if (d && d.originalId) draftsByOriginal.set(d.originalId, d);
+      else if (d) orphanDrafts.push(d);
+    });
+
+    const sorted = extras.slice().sort(defaultSort);
     const stripeMap = getStripeMap(context, sorted);
 
     selectionLabelCache.clear();
@@ -404,9 +390,129 @@
     const frag = document.createDocumentFragment();
     const nextRowMap = new Map();
     const nextHashMap = new Map();
-    const draftsCount = renderDrafts(context, frag, drafts);
+    const draftsCount = drafts.length;
 
+    const orderedEntries = orphanDrafts.map((d) => ({ type: "draft", draft: d }));
     sorted.forEach((p) => {
+      const draft = draftsByOriginal.get(p.id);
+      if (draft) {
+        orderedEntries.push({ type: "draft", draft });
+      } else {
+        orderedEntries.push({ type: "product", product: p });
+      }
+    });
+
+    orderedEntries.forEach((entry) => {
+      if (entry.type === "draft") {
+        const d = entry.draft;
+        const tr = document.createElement("tr");
+        tr.className = "extra-draft-row";
+        tr.dataset.draftId = d.id;
+        tr.dataset.id = d.originalId || d.id;
+        tr.dataset.originalId = d.originalId || "";
+        tr.dataset.block = d.block || "";
+        tr.dataset.type = d.type || "";
+        tr.dataset.buy = d.buy ? "1" : "0";
+        tr.dataset.search = `${d.name || ""} ${d.block || ""} ${d.type || ""} ${d.quantity || ""} ${d.notes || ""}`.toLowerCase();
+        const stripe = stripeMap[(d.block || "").trim() || "__none__"] || 0;
+        applyStripe(tr, stripe);
+
+        let td = document.createElement("td");
+        td.appendChild(makeInput(context.helpers || {}, "name", d.name || ""));
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        const famSel = context.helpers?.createFamilySelect
+          ? context.helpers.createFamilySelect(d.block || "")
+          : makeInput(context.helpers || {}, "block", d.block || "");
+        famSel.dataset.field = "block";
+        td.appendChild(famSel);
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        const typeSel = context.helpers?.createTypeSelect
+          ? context.helpers.createTypeSelect(d.block || "", d.type || "")
+          : makeInput(context.helpers || {}, "type", d.type || "");
+        typeSel.dataset.field = "type";
+        if (context.helpers?.linkFamilyTypeSelects) {
+          context.helpers.linkFamilyTypeSelects(famSel, typeSel);
+        }
+        td.appendChild(typeSel);
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        const buyChk = makeInput(context.helpers || {}, "buy", d.buy ? "on" : "", "checkbox");
+        buyChk.checked = !!d.buy;
+        buyChk.dataset.id = d.originalId || d.id;
+        buyChk.addEventListener("change", () => {
+          if (typeof context.onToggleBuy === "function") {
+            context.onToggleBuy(d.originalId || d.id, buyChk.checked);
+          }
+        });
+        td.appendChild(buyChk);
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        td.appendChild(makeInput(context.helpers || {}, "quantity", d.quantity || ""));
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        td.textContent = "—";
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        td.textContent = "—";
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        td.appendChild(makeTextarea(context.helpers || {}, "notes", d.notes || ""));
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        const saveBtn = document.createElement("button");
+        saveBtn.className = "btn btn-small btn-success";
+        saveBtn.dataset.action = "save-draft-extra";
+        saveBtn.dataset.id = d.id;
+        saveBtn.title = "Guardar producto";
+        saveBtn.setAttribute("aria-label", "Guardar producto");
+        saveBtn.textContent = "✓";
+        td.appendChild(saveBtn);
+
+        const cancelBtn = document.createElement("button");
+        cancelBtn.className = "btn btn-small btn-danger";
+        cancelBtn.dataset.action = "cancel-draft-extra";
+        cancelBtn.dataset.id = d.id;
+        cancelBtn.textContent = "✕";
+        td.appendChild(cancelBtn);
+
+        if (d.originalId) {
+          const moveBtn = document.createElement("button");
+          moveBtn.className = "btn btn-small btn-icon";
+          moveBtn.dataset.action = "move-to-almacen";
+          moveBtn.dataset.id = d.originalId;
+          moveBtn.title = "Mover a almacén";
+          moveBtn.setAttribute("aria-label", "Mover a almacén");
+          moveBtn.textContent = "→";
+          td.appendChild(moveBtn);
+
+          const delBtn = document.createElement("button");
+          delBtn.className = "btn btn-small btn-danger btn-trash";
+          delBtn.dataset.action = "delete";
+          delBtn.dataset.id = d.originalId;
+          delBtn.textContent = "🗑";
+          delBtn.title = "Eliminar producto";
+          delBtn.setAttribute("aria-label", "Eliminar producto");
+          td.appendChild(delBtn);
+        }
+
+        tr.appendChild(td);
+        frag.appendChild(tr);
+        nextRowMap.set(d.originalId || d.id, tr);
+        nextHashMap.set(d.originalId || d.id, getRowHash(d, context));
+        return;
+      }
+
+      const p = entry.product;
       const stripe = stripeMap[(p.block || "").trim() || "__none__"] || 0;
       const hash = getRowHash(p, context);
       const existing = existingRows.get(p.id);

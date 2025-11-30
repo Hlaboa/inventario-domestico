@@ -707,10 +707,20 @@ textarea:focus-visible {
 
 .inventory-table tbody td:first-child {
   font-weight: 700;
+  padding-left: 0.5rem;
 }
 
 .table-extra-edit tbody td:first-child {
   font-weight: 700;
+  padding-left: 0.5rem;
+}
+
+.inventory-table th,
+.inventory-table td,
+.table-extra-edit th,
+.table-extra-edit td {
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
 }
 
 .table-inventory-edit col:nth-child(1) {
@@ -721,19 +731,19 @@ textarea:focus-visible {
   width: 10%;
 }
 .table-inventory-edit col:nth-child(4) {
-  width: 8%;
+  width: 6%;
 }
 .table-inventory-edit col:nth-child(5) {
-  width: 6%;
-}
-.table-inventory-edit col:nth-child(6) {
-  width: 12%;
-}
-.table-inventory-edit col:nth-child(7) {
   width: 8%;
 }
-.table-inventory-edit col:nth-child(8) {
+.table-inventory-edit col:nth-child(6) {
   width: 6%;
+}
+.table-inventory-edit col:nth-child(7) {
+  width: 12%;
+}
+.table-inventory-edit col:nth-child(8) {
+  width: 8%;
 }
 .table-inventory-edit col:nth-child(9) {
   width: 8%;
@@ -756,22 +766,22 @@ textarea:focus-visible {
   width: 12%;
 }
 .table-extra-edit col:nth-child(4) {
-  width: 8%;
-}
-.table-extra-edit col:nth-child(5) {
-  width: 12%;
-}
-.table-extra-edit col:nth-child(6) {
-  width: 8%;
-}
-.table-extra-edit col:nth-child(7) {
   width: 6%;
 }
+.table-extra-edit col:nth-child(5) {
+  width: 8%;
+}
+.table-extra-edit col:nth-child(6) {
+  width: 18%;
+}
+.table-extra-edit col:nth-child(7) {
+  width: 15%;
+}
 .table-extra-edit col:nth-child(8) {
-  width: 10%;
+  width: 6%;
 }
 .table-extra-edit col:nth-child(9) {
-  width: 12%;
+  width: 3%;
 }
 
 .product-table thead,
@@ -783,15 +793,25 @@ textarea:focus-visible {
   min-width: 170px;
 }
 
+.inventory-table input[type="checkbox"],
+.table-inventory-edit input[type="checkbox"],
+.table-extra-edit input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0 auto;
+}
+
 .product-table th,
 .product-table td {
-  padding: 0.45rem 0.6rem;
+  padding: 0.06rem 0.24rem;
   border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: middle;
   position: relative;
-  line-height: 1.35;
+  line-height: 1;
   box-sizing: border-box;
+  height: 2rem;
+  max-height: 2rem;
 }
 
 .product-table th {
@@ -847,6 +867,68 @@ textarea:focus-visible {
   box-shadow: inset 3px 0 0 rgba(232, 165, 107, 0.85);
 }
 
+.product-table tbody tr[data-missing="1"] td:first-child,
+.product-table tbody tr.instance-missing-product td:first-child {
+  box-shadow: inset 4px 0 0 rgba(222, 130, 117, 0.65);
+}
+
+.product-table tbody tr[data-missing="1"] td,
+.product-table tbody tr.instance-missing-product td {
+  background: #fff7f5;
+}
+
+/* Evita que selección/tiendas rompan en varias líneas y cambien la altura */
+.product-table td.selection-td,
+.product-table td.stores-cell,
+.product-table td[data-field="stores"],
+.product-table td[data-field="selectionText"] {
+  max-width: clamp(120px, 18vw, 200px);
+  overflow: hidden;
+}
+.product-table td.selection-td .selection-text,
+.product-table td.stores-cell .selection-text,
+.product-table td[data-field="stores"] .selection-text,
+.product-table td[data-field="selectionText"] .selection-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1;
+  font-size: 0.7rem;
+  max-height: 2rem;
+}
+
+.stores-text,
+.product-table td[data-field="stores"] span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1;
+  font-size: 0.7rem;
+  max-height: 2rem;
+}
+.product-table .selection-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  height: 100%;
+}
+.product-table .selection-cell .selection-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.product-table .selection-td .selection-text {
+  display: block;
+}
+
 /* Acciones en inventario: en línea y sin cortes */
 .inventory-table td:last-child,
 .product-draft-row td:last-child {
@@ -854,6 +936,14 @@ textarea:focus-visible {
 }
 .inventory-table td:last-child .btn,
 .product-draft-row td:last-child .btn {
+  margin-right: 0.25rem;
+}
+.table-extra-edit td:last-child,
+.extra-draft-row td:last-child {
+  white-space: nowrap;
+}
+.table-extra-edit td:last-child .btn,
+.extra-draft-row td:last-child .btn {
   margin-right: 0.25rem;
 }
 
@@ -879,6 +969,32 @@ textarea:focus-visible {
   width: 100%;
 }
 
+/* Evitar que las filas en edición cambien de altura al volverse multilinea */
+.product-draft-row td,
+.extra-draft-row td {
+  vertical-align: middle;
+}
+.product-draft-row .table-input,
+.product-draft-row select.table-input,
+.product-draft-row textarea.table-input,
+.extra-draft-row .table-input,
+.extra-draft-row select.table-input,
+.extra-draft-row textarea.table-input {
+  height: 34px;
+  min-height: 34px;
+  max-height: 34px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  resize: none;
+}
+.product-draft-row textarea.table-input,
+.extra-draft-row textarea.table-input {
+  max-height: 56px;
+  overflow: auto;
+}
+
 .extra-header-actions {
   display: flex;
   gap: 0.5rem;
@@ -894,6 +1010,17 @@ textarea:focus-visible {
 .shopping-actions {
   display: flex;
   gap: 0.5rem;
+}
+
+#copyListButton {
+  background: rgba(232, 165, 107, 0.14);
+  color: var(--primary-strong);
+  box-shadow: none;
+}
+
+#copyListButton:hover:not(:disabled) {
+  background: rgba(232, 165, 107, 0.2);
+  box-shadow: none;
 }
 
 #shoppingListContainer {
@@ -1379,12 +1506,23 @@ textarea:focus-visible {
 
 .instances-product-cell .product-name-input {
   font-size: 0.74rem;
+  font-weight: 700;
+}
+
+#instancesPanel {
+  --instances-input-height: 2rem;
 }
 
 #instancesPanel .product-table input.table-input,
 #instancesPanel .product-table select.table-input,
 #instancesPanel .product-table textarea.table-input {
   font-size: 0.74rem;
+}
+#instancesPanel .product-table input.table-input,
+#instancesPanel .product-table select.table-input {
+  min-height: var(--instances-input-height);
+  height: var(--instances-input-height);
+  box-sizing: border-box;
 }
 
 #instancesPanel .product-table td {
@@ -1431,25 +1569,25 @@ textarea:focus-visible {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 0.2rem;
-  align-items: stretch;
+  align-items: center;
   height: 100%;
-  min-height: 2.6rem;
+  min-height: var(--instances-input-height);
 }
 
 .instances-product-wrap .product-name-input {
   width: 100%;
   min-width: 0;
-  min-height: 2.6rem;
-  height: 100%;
+  min-height: var(--instances-input-height);
+  height: var(--instances-input-height);
   box-sizing: border-box;
 }
 
 .instances-product-wrap .btn.btn-icon {
   padding: 0 0.55rem;
-  height: 100%;
-  min-height: 2.6rem;
+  height: var(--instances-input-height);
+  min-height: var(--instances-input-height);
   min-width: 1.6rem;
-  align-self: stretch;
+  align-self: center;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1459,7 +1597,7 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   height: 100%;
-  min-height: 2.6rem;
+  min-height: var(--instances-input-height);
   padding-top: 0;
   padding-bottom: 0;
 }
@@ -1492,10 +1630,22 @@ textarea:focus-visible {
   min-width: 0;
 }
 
+.inline-product-name-display {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: var(--surface);
+  min-height: 2rem;
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+}
+
 .inline-product-creator-actions {
   display: flex;
   gap: 0.4rem;
   justify-content: flex-end;
+  align-items: center;
 }
 
 .instance-missing-product {

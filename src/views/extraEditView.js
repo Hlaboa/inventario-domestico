@@ -51,7 +51,7 @@
   function buildRow(product, stripe, context) {
     const refs = context.refs || {};
     const helpers = context.helpers || {};
-    const rowTemplate = refs.rowTemplate;
+    const rowTemplate = null; // no template reuse; build DOM manually to ensure column order
 
     const famSel = helpers.createFamilySelect
       ? helpers.createFamilySelect(product.block || "")
@@ -77,48 +77,6 @@
     });
     buyCheckbox.dataset.id = product.id;
 
-    if (
-      rowTemplate &&
-      window.AppComponents &&
-      typeof window.AppComponents.buildRowWithTemplate === "function"
-    ) {
-      const row = window.AppComponents.buildRowWithTemplate({
-        template: rowTemplate,
-        stripe,
-        dataset: { id: product.id },
-        text: {
-          "[data-field='selectionText']": helpers.getSelectionLabelForProduct
-            ? helpers.getSelectionLabelForProduct(product)
-            : "",
-          "[data-field='stores']": helpers.getSelectionStoresForProduct
-            ? helpers.getSelectionStoresForProduct(product)
-            : "",
-        },
-        actions: {
-          "[data-role='selection-btn']": {
-            action: "select-selection",
-            id: product.id,
-          },
-          "[data-role='move']": { action: "move-to-almacen", id: product.id },
-          "[data-role='delete']": { action: "delete", id: product.id },
-        },
-        replacements: {
-          "[data-slot='name']": makeInput(helpers, "name", product.name),
-          "[data-slot='block']": famSel,
-          "[data-slot='type']": typeSel,
-          "[data-slot='quantity']": makeInput(
-            helpers,
-            "quantity",
-            product.quantity
-          ),
-          "[data-slot='buy']": buyCheckbox,
-          "[data-slot='notes']": makeTextarea(helpers, "notes", product.notes || ""),
-          "[data-role='selection-btn']": selectionBtn,
-        },
-      });
-      if (row) return row;
-    }
-
     const tr = document.createElement("tr");
     tr.dataset.id = product.id;
     tr.classList.add(`family-stripe-${stripe}`);
@@ -135,10 +93,18 @@
     td.appendChild(typeSel);
     tr.appendChild(td);
 
+    // Comprar (4ª columna)
+    td = document.createElement("td");
+    buyCheckbox.checked = !!product.buy;
+    td.appendChild(buyCheckbox);
+    tr.appendChild(td);
+
+    // Cantidad (5ª)
     td = document.createElement("td");
     td.appendChild(makeInput(helpers, "quantity", product.quantity));
     tr.appendChild(td);
 
+    // Selección (6ª)
     td = document.createElement("td");
     td.className = "selection-td";
     const selCell = document.createElement("div");
@@ -153,41 +119,40 @@
     td.appendChild(selCell);
     tr.appendChild(td);
 
+    // Tiendas (7ª)
     td = document.createElement("td");
     const spanStores = document.createElement("span");
+    spanStores.className = "stores-text";
     spanStores.textContent = helpers.getSelectionStoresForProduct
       ? helpers.getSelectionStoresForProduct(product)
       : "";
     td.appendChild(spanStores);
     tr.appendChild(td);
 
-    td = document.createElement("td");
-    buyCheckbox.checked = !!product.buy;
-    td.appendChild(buyCheckbox);
-    tr.appendChild(td);
-
+    // Notas (8ª)
     td = document.createElement("td");
     td.appendChild(makeTextarea(helpers, "notes", product.notes || ""));
     tr.appendChild(td);
 
-  td = document.createElement("td");
-  const moveBtn = document.createElement("button");
-  moveBtn.className = "btn btn-small btn-icon";
-  moveBtn.textContent = "→";
-  moveBtn.title = "Mover a almacén";
-  moveBtn.setAttribute("aria-label", "Mover a almacén");
-  moveBtn.dataset.action = "move-to-almacen";
-  moveBtn.dataset.id = product.id;
-  td.appendChild(moveBtn);
+    // Acciones (9ª)
+    td = document.createElement("td");
+    const moveBtn = document.createElement("button");
+    moveBtn.className = "btn btn-small btn-icon";
+    moveBtn.textContent = "→";
+    moveBtn.title = "Mover a almacén";
+    moveBtn.setAttribute("aria-label", "Mover a almacén");
+    moveBtn.dataset.action = "move-to-almacen";
+    moveBtn.dataset.id = product.id;
+    td.appendChild(moveBtn);
 
-  const delBtn = document.createElement("button");
-  delBtn.className = "btn btn-small btn-danger";
-  delBtn.textContent = "✕";
-  delBtn.title = "Eliminar producto";
-  delBtn.setAttribute("aria-label", "Eliminar producto");
-  delBtn.dataset.action = "delete";
-  delBtn.dataset.id = product.id;
-  td.appendChild(delBtn);
+    const delBtn = document.createElement("button");
+    delBtn.className = "btn btn-small btn-danger";
+    delBtn.textContent = "✕";
+    delBtn.title = "Eliminar producto";
+    delBtn.setAttribute("aria-label", "Eliminar producto");
+    delBtn.dataset.action = "delete";
+    delBtn.dataset.id = product.id;
+    td.appendChild(delBtn);
     tr.appendChild(td);
 
     return tr;
@@ -198,6 +163,8 @@
     const refs = context.refs || {};
     const tableBody = refs.tableBody;
     if (!tableBody) return;
+
+    tableBody.innerHTML = "";
 
     const items =
       (typeof context.getProducts === "function"
@@ -212,6 +179,8 @@
       window.AppComponents &&
       typeof window.AppComponents.renderTable === "function"
     ) {
+      // Asegurar que la tabla se reconstruya con el orden correcto del template
+      tableBody.innerHTML = "";
       window.AppComponents.renderTable(tableBody, items, {
         template: refs.rowTemplate,
         emptyMessage:
