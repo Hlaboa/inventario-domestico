@@ -8,6 +8,24 @@
 
   const stripeClassRegex = /^family-stripe-/;
 
+  function hasActiveFilters(refs = {}) {
+    const search = (refs.filterSearchInput?.value || "").trim();
+    const block = refs.filterBlockSelect?.value || "";
+    const type = refs.filterTypeSelect?.value || "";
+    const shelf = refs.filterShelfSelect?.value || "";
+    const store = refs.filterStoreSelect?.value || "";
+    const status = refs.filterStatusSelect?.value || "all";
+    return (
+      search ||
+      block ||
+      type ||
+      shelf ||
+      store ||
+      status === "have" ||
+      status === "missing"
+    );
+  }
+
   function getStripeMap(items, helpers) {
     const signature = items
       .map((p) => ((p.block || "").trim() || "__none__"))
@@ -475,13 +493,18 @@
     }
 
     if (summaryInfo) {
-      const visible = rows.filter((tr) => tr.style.display !== "none" && tr.dataset.id);
       const totalAll = (state.products || []).filter(Boolean).length;
+      const visible = rows.filter((tr) => tr.style.display !== "none" && tr.dataset.id);
       const missingVisible = visible.filter((tr) => {
         const p = map.get(tr.dataset.id);
         return p && !p.have;
       }).length;
-      summaryInfo.textContent = `Total: ${totalAll} · Visible: ${visible.length} · Faltan: ${missingVisible}`;
+      const filtered = hasActiveFilters(refs) || visible.length !== totalAll;
+      if (filtered) {
+        summaryInfo.textContent = `Total: ${totalAll} · Visibles: ${visible.length} · Faltan: ${missingVisible}`;
+      } else {
+        summaryInfo.textContent = `Total: ${totalAll} · Faltan: ${missingVisible}`;
+      }
     }
   }
 

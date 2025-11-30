@@ -28,6 +28,7 @@ const EXTRA_RENDER_DEBOUNCE = 140;
 let pendingExtrasUnified = null;
 let extrasUpdateTimer = null;
 const EXTRA_UPDATE_DEBOUNCE = 180;
+let extrasIdleHandle = null;
 let skipExtraControllerUntil = 0;
 let skipInventoryControllerUntil = 0;
 let pendingInventoryUnified = null;
@@ -38,6 +39,9 @@ let inventorySummaryTimer = null;
 const INVENTORY_SUMMARY_DEBOUNCE = 200;
 let suppressStoreSync = false;
 let suppressStoreSyncTimer = null;
+let shoppingIdleHandle = null;
+let shoppingRenderTimer = null;
+const SHOPPING_RENDER_DEBOUNCE = 160;
 const stateAdapter = window.StateAdapter || null;
 const appUtils = window.AppUtils || {};
 const debounce =
@@ -483,15 +487,8 @@ function updateExtraBuyFlag(id, checked) {
   if (extraSummaryInfo) {
     renderExtraSummary();
   }
-  clearTimeout(extraRerenderTimer);
-  extraRerenderTimer = setTimeout(() => {
-    renderShoppingList();
-  }, EXTRA_RENDER_DEBOUNCE);
-
-  clearTimeout(extrasUpdateTimer);
-  extrasUpdateTimer = setTimeout(() => {
-    flushExtrasUpdates();
-  }, EXTRA_UPDATE_DEBOUNCE);
+  scheduleShoppingListRender();
+  scheduleExtrasFlush(flushExtrasUpdates);
 }
 
 function flushInventoryUpdates() {
@@ -545,16 +542,60 @@ function scheduleInventoryFlush() {
   }
 }
 
-function queueInventorySummaryUpdate() {
+function scheduleExtrasFlush(flushFn) {
+  if (typeof cancelIdleCallback === "function" && extrasIdleHandle) {
+    cancelIdleCallback(extrasIdleHandle);
+    extrasIdleHandle = null;
+  }
+  clearTimeout(extrasUpdateTimer);
+  const run = () => {
+    extrasIdleHandle = null;
+    flushFn();
+  };
+  if (typeof requestIdleCallback === "function") {
+    extrasIdleHandle = requestIdleCallback(run, { timeout: EXTRA_UPDATE_DEBOUNCE });
+  } else {
+    extrasUpdateTimer = setTimeout(run, EXTRA_UPDATE_DEBOUNCE);
+  }
+}
+
+function scheduleShoppingListRender() {
+  if (typeof cancelIdleCallback === "function" && shoppingIdleHandle) {
+    cancelIdleCallback(shoppingIdleHandle);
+    shoppingIdleHandle = null;
+  }
+  clearTimeout(shoppingRenderTimer);
+  const run = () => {
+    shoppingIdleHandle = null;
+    renderShoppingList();
+  };
+  if (typeof requestIdleCallback === "function") {
+    shoppingIdleHandle = requestIdleCallback(run, { timeout: SHOPPING_RENDER_DEBOUNCE });
+  } else {
+    shoppingRenderTimer = setTimeout(run, SHOPPING_RENDER_DEBOUNCE);
+  }
+}
+
+function queueInventorySummaryUpdate(baseUnified) {
   if (!summaryInfo || !productTableBody) return;
   clearTimeout(inventorySummaryTimer);
   inventorySummaryTimer = setTimeout(() => {
+    const unifiedList =
+      Array.isArray(baseUnified) && baseUnified.length
+        ? baseUnified
+        : pendingInventoryUnified || getUnifiedForWrite();
+    const baseProducts = (unifiedList || []).filter((p) => p && p.scope === "almacen");
+    const totalAll = baseProducts.length;
     const visible = Array.from(productTableBody.querySelectorAll("tr[data-id]")).filter(
       (tr) => tr.style.display !== "none"
     );
-    const totalAll = (products || []).length;
     const missingVisible = visible.filter((tr) => tr.dataset.have !== "1").length;
-    summaryInfo.textContent = `Total: ${totalAll} · Visible: ${visible.length} · Faltan: ${missingVisible}`;
+    const filtered = areInventoryFiltersActive() || visible.length !== totalAll;
+    if (filtered) {
+      summaryInfo.textContent = `Total: ${totalAll} · Visibles: ${visible.length} · Faltan: ${missingVisible}`;
+    } else {
+      summaryInfo.textContent = `Total: ${totalAll} · Faltan: ${missingVisible}`;
+    }
   }, INVENTORY_SUMMARY_DEBOUNCE);
 }
 
@@ -614,7 +655,7 @@ function updateInventoryHaveFlag(id, checked) {
     applyInventoryFiltersToRow(row, updatedProduct);
   }
 
-  queueInventorySummaryUpdate();
+  queueInventorySummaryUpdate(updatedUnified);
 
   skipInventoryControllerUntil = Date.now() + INVENTORY_UPDATE_DEBOUNCE + 400;
   if (inventoryViewContext && inventoryViewContext.refs) {
@@ -627,9 +668,7 @@ function updateInventoryHaveFlag(id, checked) {
   }
 
   clearTimeout(extraRerenderTimer);
-  extraRerenderTimer = setTimeout(() => {
-    renderShoppingList();
-  }, EXTRA_RENDER_DEBOUNCE);
+  scheduleShoppingListRender();
 
   scheduleInventoryFlush();
 }
@@ -669,6 +708,40 @@ function isStoreActive() {
   return !!(
     (stateAdapter && typeof stateAdapter.subscribe === "function") ||
     (window.AppStore && typeof window.AppStore.subscribe === "function")
+  );
+}
+
+function areInventoryFiltersActive() {
+  const search = (filterSearchInput?.value || "").trim();
+  const block = filterBlockSelect?.value || "";
+  const type = filterTypeSelect?.value || "";
+  const shelf = filterShelfSelect?.value || "";
+  const store = filterStoreSelect?.value || "";
+  const status = filterStatusSelect?.value || "all";
+  return (
+    search ||
+    block ||
+    type ||
+    shelf ||
+    store ||
+    status === "have" ||
+    status === "missing"
+  );
+}
+
+function areExtraFiltersActive() {
+  const search = (extraFilterSearchInput?.value || "").trim();
+  const family = extraFilterFamilySelect?.value || "";
+  const type = extraFilterTypeSelect?.value || "";
+  const store = extraFilterStoreSelect?.value || "";
+  const buy = extraFilterBuySelect?.value || "all";
+  return (
+    search ||
+    family ||
+    type ||
+    store ||
+    buy === "yes" ||
+    buy === "no"
   );
 }
 
@@ -1352,24 +1425,29 @@ document.addEventListener("DOMContentLoaded", () => {
       linkFamilyTypeSelects,
       createSelectionButton,
       getSelectionLabelForProduct,
-      getSelectionStoresForProduct,
-    },
-    getSelectionInstanceForProduct,
-    getStoreNames,
-    persistUnified,
-    getPantryProducts,
-    onToggleBuy: updateExtraBuyFlag,
-    onChange: () => {
-      renderProducts();
-      renderExtraQuickTable();
-      renderExtraEditTable();
-      renderShoppingList();
-      renderShelfOptions();
-      renderBlockOptions();
-      renderTypeOptions();
-      renderProductsDatalist();
-    },
-    onSelectSelection: (id) => openSelectionPopupForProduct(id),
+    getSelectionStoresForProduct,
+  },
+  getSelectionInstanceForProduct,
+  getStoreNames,
+  persistUnified,
+  getPantryProducts,
+  onToggleBuy: updateExtraBuyFlag,
+  onChange: () => {
+    renderProducts();
+    renderExtraQuickTable();
+    renderExtraEditTable();
+    renderShoppingList();
+    renderShelfOptions();
+    renderBlockOptions();
+    renderTypeOptions();
+    renderProductsDatalist();
+  },
+  onFilter: () => {
+    if (extraSummaryInfo) {
+      renderExtraSummary();
+    }
+  },
+  onSelectSelection: (id) => openSelectionPopupForProduct(id),
     onEdit: (id) => startEditExtra(id),
     onSaveDraft: (id) => commitDraftExtras(id ? [id] : null),
     onMoveToAlmacen: (id) => {
@@ -5207,7 +5285,12 @@ function renderExtraSummary() {
   const visible = rows.filter((tr) => tr.style.display !== "none");
   const totalAll = getOtherProducts().length;
   const buyVisible = visible.filter((tr) => tr.dataset.buy === "1").length;
-  extraSummaryInfo.textContent = `Total: ${totalAll} · Visible: ${visible.length} · A comprar: ${buyVisible}`;
+  const filtered = areExtraFiltersActive() || visible.length !== totalAll;
+  if (filtered) {
+    extraSummaryInfo.textContent = `Total: ${totalAll} · Visibles: ${visible.length} · A comprar: ${buyVisible}`;
+  } else {
+    extraSummaryInfo.textContent = `Total: ${totalAll} · A comprar: ${buyVisible}`;
+  }
 }
 
 function handleShoppingListClick(e) {

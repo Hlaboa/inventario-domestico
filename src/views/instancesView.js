@@ -501,6 +501,7 @@
     nextHashMap.forEach((hash, id) => hashMap.set(id, hash));
 
     tableBody.appendChild(frag);
+    context.__lastItemsCount = items.length;
 
     if (typeof context.attachMultiSelectToggle === "function") {
       Array.from(tableBody.querySelectorAll('select[multiple][data-field="storeIds"]')).forEach(
@@ -708,15 +709,7 @@
 
     const rows = Array.from(tableBody.querySelectorAll("tr"));
     const hasFilters = !!(search || filterFamily || filterProducerId || filterStoreId);
-    if (!hasFilters && !filtersActive) return;
-    if (!hasFilters && filtersActive) {
-      rows.forEach((row) => {
-        row.style.display = "";
-      });
-      filtersActive = false;
-      return;
-    }
-    filtersActive = true;
+    filtersActive = hasFilters;
     rows.forEach((row) => {
       const name =
         (row.querySelector('input[data-field="productName"]')?.value || "").toLowerCase();
@@ -748,15 +741,29 @@
       }
 
       let visible = true;
-      if (filterFamily && family !== filterFamily) visible = false;
-      if (visible && filterProducerId && producerId !== filterProducerId) visible = false;
-      if (visible && filterStoreId && !storeIds.includes(filterStoreId)) visible = false;
-      if (visible && search) {
-        const haystack = `${name} ${brand} ${notes} ${family} ${producerName} ${storeNames.join(" ")}`.toLowerCase();
-        if (!haystack.includes(search)) visible = false;
+      if (hasFilters) {
+        if (filterFamily && family !== filterFamily) visible = false;
+        if (visible && filterProducerId && producerId !== filterProducerId) visible = false;
+        if (visible && filterStoreId && !storeIds.includes(filterStoreId)) visible = false;
+        if (visible && search) {
+          const haystack = `${name} ${brand} ${notes} ${family} ${producerName} ${storeNames.join(" ")}`.toLowerCase();
+          if (!haystack.includes(search)) visible = false;
+        }
       }
       row.style.display = visible ? "" : "none";
     });
+
+    if (refs.summary) {
+      const rowCount = rows.filter((tr) => tr.dataset.id).length;
+      const total = Array.isArray(context.data?.instances)
+        ? context.data.instances.length || rowCount
+        : typeof context.__lastItemsCount === "number"
+        ? context.__lastItemsCount || rowCount
+        : rowCount;
+      const visible = rows.filter((tr) => tr.style.display !== "none" && tr.dataset.id).length;
+      const filtered = hasFilters || visible !== total;
+      refs.summary.textContent = `Total: ${total}${filtered ? ` · Visibles: ${visible}` : ""}`;
+    }
   }
 
   function bindFilters(context) {

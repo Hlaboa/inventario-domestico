@@ -133,15 +133,6 @@
     }
 
     filterRows(context);
-    if (refs.summary) {
-      const total = items.length;
-      const visible = Array.from(tableBody.querySelectorAll("tr")).filter(
-        (tr) => tr.style.display !== "none" || !tr.dataset.id
-      ).length;
-      refs.summary.textContent = `Total: ${total}${
-        visible !== total ? ` · Visibles: ${visible}` : ""
-      }`;
-    }
   }
 
   function addRow(c) {
@@ -313,6 +304,17 @@
 
       tr.style.display = "";
     });
+
+    if (refs.summary) {
+      const dataRows = Array.from(tableBody.querySelectorAll("tr[data-id]"));
+      const total =
+        typeof context.getProducers === "function"
+          ? (context.getProducers() || []).length
+          : dataRows.length;
+      const visible = dataRows.filter((tr) => tr.style.display !== "none").length;
+      const filtered = visible !== total || (search || "").trim() || filterLoc;
+      refs.summary.textContent = `Total: ${total}${filtered ? ` · Visibles: ${visible}` : ""}`;
+    }
   }
 
   function save(c) {

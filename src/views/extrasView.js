@@ -588,6 +588,12 @@
       if (visible && search && !haystack.includes(search)) visible = false;
       row.style.display = visible ? "" : "none";
     });
+
+    if (context && context.onFilter) {
+      try {
+        context.onFilter();
+      } catch {}
+    }
   }
 
   function handleClick(e) {
