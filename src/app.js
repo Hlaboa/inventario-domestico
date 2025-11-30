@@ -988,6 +988,7 @@ let importBackupButton;
 let backupFileInput;
 let exportAlmacenCsvButton;
 let exportOtrosCsvButton;
+let exportStoresCsvButton;
 
 // Toggle lista compra
 let toggleShoppingPanelButton;
@@ -1215,6 +1216,7 @@ document.addEventListener("DOMContentLoaded", () => {
     backupFileInput,
     exportAlmacenCsvButton,
     exportOtrosCsvButton,
+    exportStoresCsvButton,
     toggleShoppingPanelButton,
     selectionPopupOverlay,
     selectionPopup,
@@ -1267,6 +1269,7 @@ document.addEventListener("DOMContentLoaded", () => {
       handleBackupFileChange,
       handleExportAlmacenCsv,
       handleExportOtrosCsv,
+      handleExportStoresCsv,
       handleToggleShoppingPanel,
       triggerImportBackup: () => backupFileInput && backupFileInput.click(),
     });
@@ -1730,6 +1733,8 @@ document.addEventListener("DOMContentLoaded", () => {
       rowTemplate: instancesRowTemplate,
       summary: instancesSummaryInfo,
     },
+    attachButtonHandlers:
+      !(window.InstancesFeature && typeof window.InstancesFeature.init === "function"),
     data: {
       instances: getInstancesList(),
       producers: getProducersList(),
@@ -5546,6 +5551,16 @@ function handleExportOtrosCsv() {
       getSelectionLabel: getSelectionLabelForProduct,
       getSelectionStores: getSelectionStoresForProduct,
       comparer: compareShelfBlockTypeName,
+    });
+  }
+}
+
+function handleExportStoresCsv() {
+  if (window.BackupUtils && typeof window.BackupUtils.exportStoresCsv === "function") {
+    window.BackupUtils.exportStoresCsv({
+      stores: getSuppliersList(),
+      filename: "tiendas.xlsx",
+      sheetName: "Tiendas",
     });
   }
 }

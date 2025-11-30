@@ -38,6 +38,33 @@
     XLSX.writeFile(wb, filename || "productos.xlsx");
   }
 
+  function exportStoresCsv({ stores, getSnapshot, filename, sheetName } = {}) {
+    if (typeof XLSX === "undefined") {
+      alert("La librería XLSX no está disponible.");
+      return;
+    }
+    const snap = typeof getSnapshot === "function" ? getSnapshot() : {};
+    const list =
+      (Array.isArray(stores) && stores.length ? stores : snap.suppliers) || [];
+    const rows = list
+      .slice()
+      .sort((a, b) =>
+        (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" })
+      )
+      .map((s) => ({
+        Tienda: s.name || "",
+        Tipo: s.type || "",
+        Ubicación: s.location || "",
+        Web: s.website || "",
+        Notas: s.notes || "",
+      }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, sheetName || "Tiendas");
+    XLSX.writeFile(wb, filename || "tiendas.xlsx");
+  }
+
   function exportBackup({ snapshot }) {
     const snap = snapshot || {};
     const data = {
@@ -107,5 +134,6 @@
     exportBackup,
     importBackup,
     exportUnifiedCsv,
+    exportStoresCsv,
   };
 })();

@@ -793,12 +793,15 @@
     const context = getCtx(c);
     const refs = context.refs || {};
     bindFilters(context);
+    const attachButtons = context.attachButtonHandlers !== false;
     const refilterOnEdit =
       window.AppUtils && typeof window.AppUtils.debounce === "function"
         ? window.AppUtils.debounce(() => filterRows(context), 120)
         : () => filterRows(context);
-    refs.addButton?.addEventListener("click", () => addRow());
-    refs.saveButton?.addEventListener("click", () => save());
+    if (attachButtons) {
+      refs.addButton?.addEventListener("click", () => addRow());
+      refs.saveButton?.addEventListener("click", () => save());
+    }
     refs.tableBody?.addEventListener("click", handleClick);
     const markEdit = () => {
       lastEditTs = Date.now();

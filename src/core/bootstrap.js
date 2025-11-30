@@ -130,6 +130,7 @@
       backupFileInput: document.getElementById("backupFileInput"),
       exportAlmacenCsvButton: document.getElementById("exportAlmacenCsvButton"),
       exportOtrosCsvButton: document.getElementById("exportOtrosCsvButton"),
+      exportStoresCsvButton: document.getElementById("exportStoresCsvButton"),
 
       // Toggle lista compra
       toggleShoppingPanelButton: document.getElementById("toggleShoppingPanelButton"),
@@ -203,6 +204,7 @@
       handleBackupFileChange,
       handleExportAlmacenCsv,
       handleExportOtrosCsv,
+      handleExportStoresCsv,
       handleToggleShoppingPanel,
       triggerImportBackup,
     } = handlers;
@@ -222,6 +224,7 @@
       backupFileInput,
       exportAlmacenCsvButton,
       exportOtrosCsvButton,
+      exportStoresCsvButton,
     } = refs || {};
 
     const rerenderInstances = renderInstancesTable || (() => {});
@@ -264,6 +267,9 @@
     }
     if (exportOtrosCsvButton && handleExportOtrosCsv) {
       exportOtrosCsvButton.addEventListener("click", handleExportOtrosCsv);
+    }
+    if (exportStoresCsvButton && handleExportStoresCsv) {
+      exportStoresCsvButton.addEventListener("click", handleExportStoresCsv);
     }
 
   }
