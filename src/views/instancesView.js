@@ -133,7 +133,17 @@
       if (tr.dataset.id) existingRows.set(tr.dataset.id, tr);
     });
 
-    let items = instances.slice();
+    let items = instances
+      .slice()
+      .sort((a, b) => {
+        const famA = (a.block || getFamilyForInstance(a) || "").toLowerCase();
+        const famB = (b.block || getFamilyForInstance(b) || "").toLowerCase();
+        const cmpFam = famA.localeCompare(famB, "es", { sensitivity: "base" });
+        if (cmpFam !== 0) return cmpFam;
+        return (a.productName || "").localeCompare(b.productName || "", "es", {
+          sensitivity: "base",
+        });
+      });
 
     // Enriquecer con familia calculada (y actualizar instancia en memoria)
     items = items.map((inst) => {

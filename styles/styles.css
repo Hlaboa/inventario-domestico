@@ -34,7 +34,7 @@
 
 body {
   margin: 0;
-  padding: var(--top-sticky-offset) 0 1.5rem 0;
+  padding: var(--top-sticky-offset) 0 0.5rem 0;
   font-family: var(--font-sans);
   background: linear-gradient(180deg, #fbf5ed 0%, #fef9f3 45%, #fdf9f4 100%);
   color: var(--text);
@@ -61,7 +61,7 @@ body.lock-scroll {
   width: 100%;
   max-width: var(--content-max-width);
   margin: 0 auto;
-  padding: 0 calc(var(--app-padding) + 18px) 2rem;
+  padding: 0 calc(var(--app-padding) + 18px) 0.75rem;
   position: relative;
   min-height: calc(100vh - var(--top-sticky-offset));
   height: auto;
