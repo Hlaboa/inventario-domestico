@@ -760,18 +760,11 @@ function ensureSaveShortcutBinding() {
   if (saveShortcutBound) return;
   saveShortcutBound = true;
   const options = { capture: true, passive: false };
-  const events = ["keydown", "keypress", "keyup"];
-  events.forEach((evt) => {
-    window.addEventListener(evt, handleGlobalSaveShortcut, options);
-    document.addEventListener(evt, handleGlobalSaveShortcut, options);
-    if (document.body) {
-      document.body.addEventListener(evt, handleGlobalSaveShortcut, options);
-    }
-  });
-  // Fallback para navegadores que ignoran capture en addEventListener
-  window.onkeydown = handleGlobalSaveShortcut;
-  document.onkeydown = handleGlobalSaveShortcut;
-  if (document.body) document.body.onkeydown = handleGlobalSaveShortcut;
+  // Escucha keydown en captura sobre window/document/body para cortar Ctrl/Cmd+S
+  const handler = handleGlobalSaveShortcut;
+  window.addEventListener("keydown", handler, options);
+  document.addEventListener("keydown", handler, options);
+  if (document.body) document.body.addEventListener("keydown", handler, options);
 }
 
 function getInventoryContext() {
@@ -3953,17 +3946,40 @@ function handleInstancesDependencies() {
   renderShoppingList();
 }
 
+function isSaveShortcut(e) {
+  const keyRaw = (e.key || "").toLowerCase();
+  const keyCode = e.keyCode || e.which;
+  const isS = keyRaw === "s" || keyCode === 83;
+  if (!isS) return false;
+  return !!(e.metaKey || e.ctrlKey);
+}
+
+function blockNativeSave(e) {
+  if (!isSaveShortcut(e)) return;
+  try {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation?.();
+    e.cancelBubble = true;
+    e.returnValue = false;
+  } catch {}
+  e.__saveHandled = true;
+  return false;
+}
+
 function handleGlobalSaveShortcut(e) {
+  if (!isSaveShortcut(e)) return;
   if (e && e.__saveHandled) return false;
-  const key = (e.key || e.code || "").toLowerCase();
-  const isSaveKey = key === "s" || key === "keys";
-  if (!isSaveKey || (!e.metaKey && !e.ctrlKey)) return;
-  if (typeof e.preventDefault === "function") e.preventDefault();
-  if (typeof e.stopPropagation === "function") e.stopPropagation();
-  if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
-  e.cancelBubble = true;
-  e.returnValue = false;
-  if (e) e.__saveHandled = true;
+  if (e && e.cancelable === false) return false;
+  try {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation?.();
+    e.cancelBubble = true;
+    e.returnValue = false;
+    e.__saveHandled = true;
+  } catch {}
+
   commitDraftProducts();
   commitDraftExtras();
   if (almacenEditPanel && almacenEditPanel.classList.contains("active")) {
