@@ -163,6 +163,10 @@
     const refs = context.refs || {};
     const tableBody = refs.tableBody;
     if (!tableBody) return;
+    if (context.__skipNextRender) {
+      context.__skipNextRender = false;
+      return;
+    }
 
     tableBody.innerHTML = "";
 

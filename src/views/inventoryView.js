@@ -85,6 +85,10 @@
       summaryInfo,
       inventoryRowTemplate,
     } = refs;
+    if (refs && refs.__skipNextRender) {
+      refs.__skipNextRender = false;
+      return;
+    }
     const { products, productDrafts } = state;
     const editingIds = new Set(
       (productDrafts || [])
@@ -472,12 +476,12 @@
 
     if (summaryInfo) {
       const visible = rows.filter((tr) => tr.style.display !== "none" && tr.dataset.id);
-      const haveCount = visible.filter((tr) => {
+      const totalAll = (state.products || []).filter(Boolean).length;
+      const missingVisible = visible.filter((tr) => {
         const p = map.get(tr.dataset.id);
-        return p && p.have;
+        return p && !p.have;
       }).length;
-      const total = visible.length;
-      summaryInfo.textContent = `Total: ${total} · Tengo: ${haveCount} · Faltan: ${Math.max(total - haveCount, 0)}`;
+      summaryInfo.textContent = `Total: ${totalAll} · Visible: ${visible.length} · Faltan: ${missingVisible}`;
     }
   }
 

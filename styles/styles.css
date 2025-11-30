@@ -1260,6 +1260,9 @@ textarea:focus-visible {
   justify-content: flex-end;
   gap: 0.4rem;
   align-items: center;
+  align-self: start;
+  justify-self: end;
+  margin-top: 0.25rem;
 }
 
 .inline-form-group {
@@ -1278,18 +1281,41 @@ textarea:focus-visible {
 
 .selection-inline-subform h4 {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
+  line-height: 1.1;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+
+.selection-inline-subform label,
+.selection-inline-form label {
+  font-size: 0.78rem;
 }
 
 .selection-subform-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 0.5rem;
   cursor: pointer;
 }
 
+.actions-inline-header {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 0.35rem;
+}
+
+.selection-inline-subform.collapsed .actions-inline-header {
+  display: none;
+}
+
+.selection-inline-subform:not(.collapsed) .actions-inline-header {
+  display: inline-flex;
+}
+
 .selection-subform-toggle {
+  display: none;
   width: 2.1rem;
   height: 2.1rem;
   border-radius: 999px;
@@ -1322,6 +1348,19 @@ textarea:focus-visible {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 0.6rem;
   margin-top: 0.45rem;
+}
+
+.store-subform-content {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.45rem;
+  align-items: flex-end;
+  overflow-x: auto;
+}
+.store-subform-content .inline-form-group {
+  flex: 1 0 130px;
+  min-width: 120px;
+  max-width: 180px;
 }
 
 .selection-inline-subform.collapsed .selection-subform-content {

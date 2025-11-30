@@ -23,6 +23,21 @@ let extraDrafts = [];
 let pendingInstancesList = null;
 let instancesUpdateTimer = null;
 const INSTANCE_UPDATE_DEBOUNCE = 200;
+let extraRerenderTimer = null;
+const EXTRA_RENDER_DEBOUNCE = 140;
+let pendingExtrasUnified = null;
+let extrasUpdateTimer = null;
+const EXTRA_UPDATE_DEBOUNCE = 180;
+let skipExtraControllerUntil = 0;
+let skipInventoryControllerUntil = 0;
+let pendingInventoryUnified = null;
+let inventoryUpdateTimer = null;
+let inventoryIdleHandle = null;
+const INVENTORY_UPDATE_DEBOUNCE = 600;
+let inventorySummaryTimer = null;
+const INVENTORY_SUMMARY_DEBOUNCE = 200;
+let suppressStoreSync = false;
+let suppressStoreSyncTimer = null;
 const stateAdapter = window.StateAdapter || null;
 const appUtils = window.AppUtils || {};
 const debounce =
@@ -372,7 +387,7 @@ function getUnifiedForWrite() {
 function updateExtraBuyFlag(id, checked) {
   const targetId = id !== undefined && id !== null ? String(id) : "";
   if (!targetId) return;
-  const unified = getUnifiedForWrite();
+  const unified = pendingExtrasUnified || getUnifiedForWrite();
   const nowIsoVal = nowIsoString();
   let touched = false;
   const updatedUnified = unified.map((p) => {
@@ -417,34 +432,206 @@ function updateExtraBuyFlag(id, checked) {
     }
   };
 
-  // Si hay store activo, delegamos en él para evitar doble render pesado
-  if (isStoreActive()) {
-    if (window.AppStore && window.AppStore.actions && typeof window.AppStore.actions.setUnifiedProducts === "function") {
-      try {
-        window.AppStore.actions.setUnifiedProducts(updatedUnified);
-        setTimeout(persistLegacy, 0);
-        return;
-      } catch {}
+  pendingExtrasUnified = updatedUnified;
+  if (extrasViewContext) extrasViewContext.__skipNextRender = true;
+  if (extraEditViewContext) extraEditViewContext.__skipNextRender = true;
+  if (window.ExtrasFeature && typeof window.ExtrasFeature.skipNextRender === "function") {
+    try {
+      window.ExtrasFeature.skipNextRender();
+    } catch {}
+  }
+  skipExtraControllerUntil = Date.now() + 350;
+
+  const flushExtrasUpdates = () => {
+    const payload = pendingExtrasUnified;
+    pendingExtrasUnified = null;
+    unifiedProducts = payload;
+    refreshProductsFromUnified();
+    suppressStoreSync = true;
+    if (suppressStoreSyncTimer) clearTimeout(suppressStoreSyncTimer);
+    suppressStoreSyncTimer = setTimeout(() => {
+      suppressStoreSync = false;
+    }, EXTRA_UPDATE_DEBOUNCE * 2);
+
+    // Si hay store activo, delegamos en él para evitar doble render pesado
+    if (isStoreActive()) {
+      if (window.AppStore && window.AppStore.actions && typeof window.AppStore.actions.setUnifiedProducts === "function") {
+        try {
+          window.AppStore.actions.setUnifiedProducts(payload);
+          setTimeout(persistLegacy, 0);
+          return;
+        } catch {}
+      }
+      if (window.DataService && typeof window.DataService.setUnifiedProducts === "function") {
+        try {
+          window.DataService.setUnifiedProducts(payload);
+          setTimeout(persistLegacy, 0);
+          return;
+        } catch {}
+      }
     }
-    if (window.DataService && typeof window.DataService.setUnifiedProducts === "function") {
-      try {
-        window.DataService.setUnifiedProducts(updatedUnified);
-        setTimeout(persistLegacy, 0);
-        return;
-      } catch {}
+
+    // Modo sin store: persistimos local y renderizamos
+    setUnifiedList(payload);
+    saveExtraProducts();
+    persistLegacy();
+    if (extraSummaryInfo) {
+      renderExtraSummary();
     }
+  };
+
+  if (extraSummaryInfo) {
+    renderExtraSummary();
+  }
+  clearTimeout(extraRerenderTimer);
+  extraRerenderTimer = setTimeout(() => {
+    renderShoppingList();
+  }, EXTRA_RENDER_DEBOUNCE);
+
+  clearTimeout(extrasUpdateTimer);
+  extrasUpdateTimer = setTimeout(() => {
+    flushExtrasUpdates();
+  }, EXTRA_UPDATE_DEBOUNCE);
+}
+
+function flushInventoryUpdates() {
+  if (!pendingInventoryUnified) return;
+  const payload = pendingInventoryUnified;
+  pendingInventoryUnified = null;
+  unifiedProducts = payload;
+  refreshProductsFromUnified();
+  suppressStoreSync = true;
+  if (suppressStoreSyncTimer) clearTimeout(suppressStoreSyncTimer);
+  suppressStoreSyncTimer = setTimeout(() => {
+    suppressStoreSync = false;
+  }, INVENTORY_UPDATE_DEBOUNCE * 2);
+  if (
+    window.AppStore &&
+    window.AppStore.actions &&
+    typeof window.AppStore.actions.setUnifiedProducts === "function"
+  ) {
+    try {
+      window.AppStore.actions.setUnifiedProducts(payload);
+      return;
+    } catch {}
+  }
+  if (
+    window.DataService &&
+    typeof window.DataService.setUnifiedProducts === "function"
+  ) {
+    try {
+      window.DataService.setUnifiedProducts(payload);
+      return;
+    } catch {}
+  }
+  setUnifiedList(payload);
+  saveProducts();
+}
+
+function scheduleInventoryFlush() {
+  if (typeof cancelIdleCallback === "function" && inventoryIdleHandle) {
+    cancelIdleCallback(inventoryIdleHandle);
+    inventoryIdleHandle = null;
+  }
+  clearTimeout(inventoryUpdateTimer);
+  const run = () => {
+    inventoryIdleHandle = null;
+    flushInventoryUpdates();
+  };
+  if (typeof requestIdleCallback === "function") {
+    inventoryIdleHandle = requestIdleCallback(run, { timeout: INVENTORY_UPDATE_DEBOUNCE });
+  } else {
+    inventoryUpdateTimer = setTimeout(run, INVENTORY_UPDATE_DEBOUNCE);
+  }
+}
+
+function queueInventorySummaryUpdate() {
+  if (!summaryInfo || !productTableBody) return;
+  clearTimeout(inventorySummaryTimer);
+  inventorySummaryTimer = setTimeout(() => {
+    const visible = Array.from(productTableBody.querySelectorAll("tr[data-id]")).filter(
+      (tr) => tr.style.display !== "none"
+    );
+    const totalAll = (products || []).length;
+    const missingVisible = visible.filter((tr) => tr.dataset.have !== "1").length;
+    summaryInfo.textContent = `Total: ${totalAll} · Visible: ${visible.length} · Faltan: ${missingVisible}`;
+  }, INVENTORY_SUMMARY_DEBOUNCE);
+}
+
+function applyInventoryFiltersToRow(row, product) {
+  if (!row || !product) return;
+  const search = (filterSearchInput?.value || "").toLowerCase();
+  const filterBlock = filterBlockSelect?.value || "";
+  const filterType = filterTypeSelect?.value || "";
+  const filterShelf = filterShelfSelect?.value || "";
+  const filterStoreId = filterStoreSelect?.value || "";
+  const status = filterStatusSelect?.value || "all";
+
+  let visible = true;
+  if (filterBlock && (product.block || "") !== filterBlock) visible = false;
+  if (visible && filterType && (product.type || "") !== filterType) visible = false;
+  if (visible && filterShelf && (product.shelf || "") !== filterShelf) visible = false;
+  if (visible && filterStoreId && !productMatchesStore(product, filterStoreId)) visible = false;
+  if (visible && status === "have" && !product.have) visible = false;
+  if (visible && status === "missing" && product.have) visible = false;
+  if (visible && search) {
+    const haystack = `${product.name || ""} ${product.block || ""} ${product.type || ""} ${product.shelf || ""} ${product.quantity || ""} ${product.notes || ""} ${getSelectionLabelForProduct(product)} ${getSelectionStoresForProduct(product)}`.toLowerCase();
+    if (!haystack.includes(search)) visible = false;
+  }
+  row.style.display = visible ? "" : "none";
+}
+
+function updateInventoryHaveFlag(id, checked) {
+  const targetId = id !== undefined && id !== null ? String(id) : "";
+  if (!targetId) return;
+  const nowDate = todayDateString();
+  const nowIsoVal = nowIsoString();
+  const unified = pendingInventoryUnified || getUnifiedForWrite();
+  let touched = false;
+  let updatedProduct = null;
+  const updatedUnified = unified.map((p) => {
+    if (!p || String(p.id) !== targetId) return p;
+    touched = true;
+    const wasHave = !!p.have;
+    const nextAcq = !wasHave && checked ? nowDate : p.acquisitionDate;
+    const next = { ...p, have: !!checked, acquisitionDate: nextAcq, updatedAt: nowIsoVal };
+    updatedProduct = next;
+    return next;
+  });
+  if (!touched) return;
+
+  pendingInventoryUnified = updatedUnified;
+
+  const row = productTableBody?.querySelector(`tr[data-id="${targetId}"]`);
+  if (row) {
+    row.dataset.have = checked ? "1" : "0";
+    const chk = row.querySelector('input[data-field="have"]');
+    if (chk) chk.checked = !!checked;
+    if (updatedProduct) {
+      const acqCell = row.querySelector("[data-field='acquisitionDate']");
+      if (acqCell) acqCell.textContent = updatedProduct.acquisitionDate || "";
+    }
+    applyInventoryFiltersToRow(row, updatedProduct);
   }
 
-  // Modo sin store: persistimos local y renderizamos
-  setUnifiedList(updatedUnified);
-  saveExtraProducts();
-  persistLegacy();
+  queueInventorySummaryUpdate();
 
-  requestAnimationFrame(() => {
-    renderExtraQuickTable();
-    renderExtraEditTable();
+  skipInventoryControllerUntil = Date.now() + INVENTORY_UPDATE_DEBOUNCE + 400;
+  if (inventoryViewContext && inventoryViewContext.refs) {
+    inventoryViewContext.refs.__skipNextRender = true;
+  }
+  if (window.InventoryFeature && typeof window.InventoryFeature.skipNextRender === "function") {
+    try {
+      window.InventoryFeature.skipNextRender();
+    } catch {}
+  }
+
+  clearTimeout(extraRerenderTimer);
+  extraRerenderTimer = setTimeout(() => {
     renderShoppingList();
-  });
+  }, EXTRA_RENDER_DEBOUNCE);
+
+  scheduleInventoryFlush();
 }
 
 function updateUnifiedWithProducts(list) {
@@ -639,6 +826,7 @@ let classificationTableBody;
 let addClassificationButton;
 let saveClassificationsButton;
 let classificationViewContext;
+let inventoryViewContext;
 let producersViewContext;
 let storesViewContext;
 let instancesViewContext;
@@ -816,6 +1004,7 @@ function getInventoryContext() {
       filterStatusSelect,
       summaryInfo,
       inventoryRowTemplate,
+      __skipNextRender: false,
     },
     state: {
       products: getPantryProducts(),
@@ -1040,6 +1229,10 @@ document.addEventListener("DOMContentLoaded", () => {
   loadAllData();
 
   const syncFromState = (next) => {
+    if (suppressStoreSync) {
+      suppressStoreSync = false;
+      return;
+    }
     isSyncingFromStore = true;
     applyStateSnapshot(next || {});
     ensureInstanceFamilies({ persist: false });
@@ -1501,11 +1694,13 @@ document.addEventListener("DOMContentLoaded", () => {
             createSelectionButton,
             handleInventoryTableClick,
           },
+          shouldSkip: () =>
+            Date.now() < skipInventoryControllerUntil || !!pendingInventoryUnified,
         })
       : null;
 
   if (inventoryController) {
-    inventoryController.setRefs({
+    const inventoryRefs = {
       productTableBody,
       filterSearchInput,
       filterShelfSelect,
@@ -1514,7 +1709,9 @@ document.addEventListener("DOMContentLoaded", () => {
       filterStoreSelect,
       filterStatusSelect,
       summaryInfo,
-    });
+    };
+    inventoryViewContext = { refs: inventoryRefs };
+    inventoryController.setRefs(inventoryRefs);
     inventoryController.setDrafts(productDrafts);
     inventoryController.render();
   } else if (window.InventoryFeature && typeof window.InventoryFeature.init === "function") {
@@ -1526,52 +1723,7 @@ document.addEventListener("DOMContentLoaded", () => {
       getDrafts: () => productDrafts,
       getInventoryContext,
       actions: {
-        toggleHave: (id, checked) => {
-          const nowDate = todayDateString();
-          const nowIsoVal = nowIsoString();
-          const unified = getUnifiedForWrite();
-          let touched = false;
-          const updatedUnified = unified.map((p) => {
-            if (p.id !== id) return p;
-            touched = true;
-            const wasHave = !!p.have;
-            const nextAcq = !wasHave && checked ? nowDate : p.acquisitionDate;
-            return { ...p, have: !!checked, acquisitionDate: nextAcq, updatedAt: nowIsoVal };
-          });
-          if (!touched) return;
-
-          unifiedProducts = updatedUnified;
-          refreshProductsFromUnified();
-          try {
-            if (window.AppStorage?.saveUnifiedProducts) {
-              window.AppStorage.saveUnifiedProducts(updatedUnified);
-            } else if (typeof appUtils.saveList === "function") {
-              appUtils.saveList("productosCocinaUnificados", updatedUnified);
-            } else {
-              localStorage.setItem("productosCocinaUnificados", JSON.stringify(updatedUnified));
-            }
-          } catch {}
-
-          // Ajuste rápido en UI para feedback inmediato
-          const row = productTableBody?.querySelector(`tr[data-id="${id}"]`);
-          if (row) {
-            row.dataset.have = checked ? "1" : "0";
-            const chk = row.querySelector('input[data-field="have"]');
-            if (chk) chk.checked = !!checked;
-          }
-          if (summaryInfo && productTableBody) {
-            const visible = Array.from(productTableBody.querySelectorAll("tr[data-id]")).filter(
-              (tr) => tr.style.display !== "none"
-            );
-            const haveCount = visible.filter((tr) => tr.dataset.have === "1").length;
-            const total = visible.length;
-            summaryInfo.textContent = `Total: ${total} · Tengo: ${haveCount} · Faltan: ${Math.max(
-              total - haveCount,
-              0
-            )}`;
-          }
-          requestAnimationFrame(() => renderShoppingList());
-        },
+        toggleHave: (id, checked) => updateInventoryHaveFlag(id, checked),
         moveToExtra: moveProductToExtra,
         selectSelection: openSelectionPopupForProduct,
         cancelDraft: (id) => {
@@ -1590,7 +1742,10 @@ document.addEventListener("DOMContentLoaded", () => {
     window.ExtraController && window.ExtraController.create
       ? window.ExtraController.create({
           store: window.AppStore || window.AppState,
+          shouldSkip: () =>
+            Date.now() < skipExtraControllerUntil || !!pendingExtrasUnified,
           onRender: () => {
+            if (Date.now() < skipExtraControllerUntil) return;
             renderExtraQuickTable();
             renderExtraEditTable();
             renderShoppingList();
@@ -1618,11 +1773,8 @@ document.addEventListener("DOMContentLoaded", () => {
       persistUnified,
       getPantryProducts,
       onChange: () => {
-        renderExtraQuickTable();
-        renderExtraEditTable();
+        renderExtraSummary();
         renderShoppingList();
-        renderProducts();
-        renderProductsDatalist();
       },
       actions: {
         toggleBuy: (id, checked) => {
@@ -3302,8 +3454,8 @@ function openSelectionPopupForProduct(productId) {
 
     inline.appendChild(producerWrap);
     inline.appendChild(brandWrap);
-    inline.appendChild(storesWrap);
     inline.appendChild(inlineActions);
+    inline.appendChild(storesWrap);
     resetInlineSelectionForm();
 
     selectionPopupBody.appendChild(inline);
@@ -3323,10 +3475,10 @@ function openSelectionPopupForProduct(productId) {
     prodNotes.innerHTML =
       '<label>Notas</label><input type="text" id="inlineNewProducerNotes" />';
     const prodActions = document.createElement("div");
-    prodActions.className = "selection-inline-actions";
+    prodActions.className = "selection-inline-actions actions-inline-header";
     const prodSave = document.createElement("button");
-    prodSave.className = "btn btn-primary btn-small";
-    prodSave.textContent = "Añadir";
+    prodSave.className = "btn btn-small btn-success";
+    prodSave.textContent = "✓";
     prodSave.title = "Añadir y seleccionar";
     prodSave.setAttribute("aria-label", "Añadir y seleccionar");
     prodSave.addEventListener("click", () => {
@@ -3338,14 +3490,25 @@ function openSelectionPopupForProduct(productId) {
       addQuickProducer(data, inlineProducerSelect || producerSel);
     });
     prodActions.appendChild(prodSave);
+    if (producerSub.wrapper) {
+      const toggle = producerSub.wrapper.querySelector(".selection-subform-toggle");
+      if (toggle) prodActions.prepend(toggle);
+    }
+    const prodHeader = producerSub.wrapper.querySelector(".selection-subform-header");
     producerSub.content.appendChild(prodName);
     producerSub.content.appendChild(prodLoc);
     producerSub.content.appendChild(prodNotes);
-    producerSub.content.appendChild(prodActions);
+    if (prodHeader) {
+      prodActions.addEventListener("click", (e) => e.stopPropagation());
+      prodHeader.appendChild(prodActions);
+    } else {
+      producerSub.content.appendChild(prodActions);
+    }
     selectionPopupBody.appendChild(producerSub.wrapper);
 
     // Subform tienda
     const storeSub = buildCollapsibleSubform("Crear tienda");
+    storeSub.content.classList.add("store-subform-content");
     const storeName = document.createElement("div");
     storeName.className = "inline-form-group";
     storeName.innerHTML =
@@ -3372,10 +3535,10 @@ function openSelectionPopupForProduct(productId) {
     storeNotes.innerHTML =
       '<label>Notas</label><input type="text" id="inlineNewStoreNotes" />';
     const storeActions = document.createElement("div");
-    storeActions.className = "selection-inline-actions";
+    storeActions.className = "selection-inline-actions actions-inline-header";
     const storeSave = document.createElement("button");
-    storeSave.className = "btn btn-primary btn-small";
-    storeSave.textContent = "Añadir";
+    storeSave.className = "btn btn-small btn-success";
+    storeSave.textContent = "✓";
     storeSave.title = "Añadir y seleccionar";
     storeSave.setAttribute("aria-label", "Añadir y seleccionar");
     storeSave.addEventListener("click", () => {
@@ -3389,12 +3552,22 @@ function openSelectionPopupForProduct(productId) {
       addQuickStore(data, inlineStoresSelect || storesSel);
     });
     storeActions.appendChild(storeSave);
+    if (storeSub.wrapper) {
+      const toggle = storeSub.wrapper.querySelector(".selection-subform-toggle");
+      if (toggle) storeActions.prepend(toggle);
+    }
+    const storeHeader = storeSub.wrapper.querySelector(".selection-subform-header");
     storeSub.content.appendChild(storeName);
     storeSub.content.appendChild(storeType);
     storeSub.content.appendChild(storeLoc);
     storeSub.content.appendChild(storeWeb);
     storeSub.content.appendChild(storeNotes);
-    storeSub.content.appendChild(storeActions);
+    if (storeHeader) {
+      storeActions.addEventListener("click", (e) => e.stopPropagation());
+      storeHeader.appendChild(storeActions);
+    } else {
+      storeSub.content.appendChild(storeActions);
+    }
     selectionPopupBody.appendChild(storeSub.wrapper);
 
   }
@@ -3948,7 +4121,6 @@ function renderProducts() {
 }
 
 function handleInventoryTableClick(e) {
-  refreshProductsFromUnified();
   const target = e.target.closest("button,[data-action],[data-role]") || e.target;
   const roleActionMap = {
     "selection-btn": "select-selection",
@@ -3976,18 +4148,11 @@ function handleInventoryTableClick(e) {
 
   if (target.matches('input[type="checkbox"][data-field="have"]')) {
     const id = target.dataset.id;
-    const product = products.find((p) => p.id === id);
-    if (!product) return;
-    const wasHave = !!product.have;
-    product.have = target.checked;
-    if (!wasHave && product.have) {
-      product.acquisitionDate = todayDateString();
-    }
-    saveProducts();
-    renderProducts();
-    renderShoppingList();
+    updateInventoryHaveFlag(id, target.checked);
     return;
   }
+
+  refreshProductsFromUnified();
 
   if (!action) return;
 
@@ -5038,12 +5203,11 @@ function renderShoppingList() {
 
 function renderExtraSummary() {
   if (!extraSummaryInfo || !extraListTableBody) return;
-  const rows = Array.from(extraListTableBody.querySelectorAll("tr[data-id]")).filter(
-    (tr) => tr.style.display !== "none"
-  );
-  const total = rows.length;
-  const buyCount = rows.filter((tr) => tr.dataset.buy === "1").length;
-  extraSummaryInfo.textContent = `Total: ${total} · Comprar: ${buyCount}`;
+  const rows = Array.from(extraListTableBody.querySelectorAll("tr[data-id]"));
+  const visible = rows.filter((tr) => tr.style.display !== "none");
+  const totalAll = getOtherProducts().length;
+  const buyVisible = visible.filter((tr) => tr.dataset.buy === "1").length;
+  extraSummaryInfo.textContent = `Total: ${totalAll} · Visible: ${visible.length} · A comprar: ${buyVisible}`;
 }
 
 function handleShoppingListClick(e) {

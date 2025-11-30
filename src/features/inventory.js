@@ -1,5 +1,6 @@
 (() => {
   let ctx = {};
+  let skipNext = false;
 
   function init(options = {}) {
     ctx = options;
@@ -20,6 +21,10 @@
 
   function render() {
     if (!window.InventoryView || typeof window.InventoryView.render !== "function") return;
+    if (skipNext) {
+      skipNext = false;
+      return;
+    }
     const viewCtx =
       typeof ctx.getInventoryContext === "function"
         ? ctx.getInventoryContext()
@@ -92,5 +97,8 @@
     init,
     render,
     handleClick,
+    skipNextRender: () => {
+      skipNext = true;
+    },
   };
 })();

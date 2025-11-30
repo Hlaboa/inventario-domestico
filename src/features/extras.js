@@ -1,6 +1,7 @@
 (() => {
   let ctx = {};
   let actions = {};
+  let skipNext = false;
 
   function init(options = {}) {
     ctx = options;
@@ -23,6 +24,10 @@
 
   function render() {
     if (!window.ExtrasView || typeof window.ExtrasView.render !== "function") return;
+    if (skipNext) {
+      skipNext = false;
+      return;
+    }
     const viewCtx =
       typeof ctx.getContext === "function"
         ? ctx.getContext()
@@ -166,5 +171,8 @@
     handleClick,
     state: getState,
     getActions: () => actions,
+    skipNextRender: () => {
+      skipNext = true;
+    },
   };
 })();

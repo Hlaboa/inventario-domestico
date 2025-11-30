@@ -3,13 +3,16 @@
    * Controlador de inventario: escucha AppStore y usa InventoryView.
    * Separa render y eventos de app.js.
    */
-  function create({ store, view, helpers }) {
+  function create({ store, view, helpers, shouldSkip }) {
     if (!store || !view || typeof view.render !== "function") {
       return { dispose() {} };
     }
 
     const ctx = {};
-    const render = () => {
+    let timer = null;
+    const DEBOUNCE_MS = 100;
+
+    const run = () => {
       const state = store.getState ? store.getState() : {};
       ctx.refs = ctx.refs || {};
       view.render({
@@ -20,6 +23,12 @@
         },
         helpers,
       });
+    };
+
+    const render = () => {
+      if (typeof shouldSkip === "function" && shouldSkip()) return;
+      clearTimeout(timer);
+      timer = setTimeout(run, DEBOUNCE_MS);
     };
 
     const unsubscribe =
