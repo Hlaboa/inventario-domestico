@@ -1006,6 +1006,8 @@ let instancesTableWrapper;
 let inlineProducerSelect;
 let inlineBrandInput;
 let inlineStoresSelect;
+let instancesRefreshTimer = null;
+const INSTANCES_REFRESH_DELAY = 80;
 
 // Memos para evitar recalcular opciones cuando no cambian
 let memoShelves = [];
@@ -3203,11 +3205,7 @@ function openSelectionPopupForProduct(productId) {
       updatedAt: now,
     };
     persistInstances(list.map((i) => (i.id === inlineSelectionEditId ? updated : i)));
-    renderInstancesTable();
-    renderProducts();
-    renderExtraQuickTable();
-    renderExtraEditTable();
-    renderShoppingList();
+    refreshInstancesViews({ immediate: false });
     showToast("Selección actualizada", "success");
     resetInlineSelectionForm();
     openSelectionPopupForProduct(productId);
@@ -3341,7 +3339,7 @@ function openSelectionPopupForProduct(productId) {
           e.stopPropagation();
           const ok = window.confirm("¿Eliminar esta selección?");
           if (!ok) return;
-          removeInstanceById(inst.id);
+          removeInstanceById(inst.id, { deferRefresh: true });
           openSelectionPopupForProduct(productId);
         });
         actions.appendChild(deleteBtn);
@@ -4651,24 +4649,18 @@ function persistInstances(list, options = {}) {
   cleanupSelectionsWithInstances();
 }
 
-function removeInstanceById(id) {
+function removeInstanceById(id, options = {}) {
   const list = getInstancesList();
   const filtered = list.filter((i) => i.id !== id);
   if (filtered.length === list.length) return;
   setInstancesList(filtered);
   cleanupSelectionsWithInstances();
-  renderInstancesTable();
-  renderProducts();
-  renderExtraQuickTable();
-  renderExtraEditTable();
+  const defer = options.deferRefresh === true;
+  refreshInstancesViews({ immediate: !defer });
 }
 
 function handleInstancesDependencies() {
-  renderInstancesTable();
-  renderProducts();
-  renderExtraQuickTable();
-  renderExtraEditTable();
-  renderShoppingList();
+  refreshInstancesViews({ immediate: true });
 }
 
 function isSaveShortcut(e) {
@@ -4856,6 +4848,23 @@ function renderInstancesTable() {
     }
     window.InstancesView.render(instancesViewContext);
   }
+}
+
+function refreshInstancesViews({ immediate = false } = {}) {
+  const run = () => {
+    instancesRefreshTimer = null;
+    renderInstancesTable();
+    renderProducts();
+    renderExtraQuickTable();
+    renderExtraEditTable();
+    renderShoppingList();
+  };
+  if (immediate) {
+    run();
+    return;
+  }
+  if (instancesRefreshTimer) clearTimeout(instancesRefreshTimer);
+  instancesRefreshTimer = setTimeout(run, INSTANCES_REFRESH_DELAY);
 }
 
 function handleAddInstanceRow() {

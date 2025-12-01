@@ -8,6 +8,7 @@
   let lastEditTs = 0;
 
   const stripeClassRegex = /^family-stripe-/;
+  const storeNamesSep = " · ";
 
   const getCtx = (c) => c || ctx || {};
   const getNow = (c) =>
@@ -60,6 +61,55 @@
     const now = Date.now();
     if (now - lastEditTs < 450) return true;
     return false;
+  }
+
+  function getSelectedStoreData(sel) {
+    if (!sel) return { ids: [], names: [], namesLower: "" };
+    const opts = sel.selectedOptions && sel.selectedOptions.length
+      ? Array.from(sel.selectedOptions)
+      : Array.from(sel.options || sel.children || []);
+    const ids = [];
+    const names = [];
+    opts.forEach((o) => {
+      if (!o || !o.selected) return;
+      const id = o.value;
+      if (id) ids.push(id);
+      const name = (o.textContent || "").trim();
+      if (name) names.push(name);
+    });
+    const namesLower = names.map((n) => n.toLowerCase()).join(storeNamesSep);
+    return { ids, names, namesLower };
+  }
+
+  function hydrateRowDataset(row, refs = {}) {
+    if (!row) return;
+    const { inputNameEl, brandInput, notesArea, selProducer, selStores, familyCellEl } = refs;
+    if (inputNameEl) {
+      row.dataset.name = (inputNameEl.value || "").trim().toLowerCase();
+    }
+    if (brandInput) {
+      row.dataset.brand = (brandInput.value || "").trim().toLowerCase();
+    }
+    if (notesArea) {
+      row.dataset.notes = (notesArea.value || "").trim().toLowerCase();
+    }
+    if (familyCellEl) {
+      const famText = (familyCellEl.textContent || "").trim();
+      row.dataset.family = famText;
+    }
+    if (selProducer) {
+      row.dataset.producerId = selProducer.value || "";
+      const name =
+        selProducer.options && selProducer.selectedIndex >= 0
+          ? (selProducer.options[selProducer.selectedIndex].textContent || "").trim()
+          : "";
+      row.dataset.producerName = (name || "").toLowerCase();
+    }
+    if (selStores) {
+      const { ids, namesLower } = getSelectedStoreData(selStores);
+      row.dataset.storeIds = ids.join(",");
+      row.dataset.storeNames = namesLower;
+    }
   }
 
   function render(c) {
@@ -485,10 +535,19 @@
           if (familyCellEl) {
             const famText = getFamilyForName(inputNameEl.value) || "—";
             familyCellEl.textContent = famText;
+            row.dataset.family = famText;
           }
           if (createBtnEl) {
             createBtnEl.style.display = known ? "none" : "inline-flex";
           }
+          hydrateRowDataset(row, {
+            inputNameEl,
+            familyCellEl,
+            brandInput,
+            notesArea,
+            selProducer,
+            selStores,
+          });
         };
         if (inputNameEl.__missingHandler) {
           inputNameEl.removeEventListener("input", inputNameEl.__missingHandler);
@@ -497,6 +556,21 @@
         inputNameEl.addEventListener("input", updateMissingState);
         updateMissingState();
       }
+
+      const updateDataset = () =>
+        hydrateRowDataset(row, {
+          inputNameEl,
+          brandInput,
+          notesArea,
+          selProducer,
+          selStores,
+          familyCellEl,
+        });
+      brandInput?.addEventListener("input", updateDataset);
+      notesArea?.addEventListener("input", updateDataset);
+      selProducer?.addEventListener("change", updateDataset);
+      selStores?.addEventListener("change", updateDataset);
+      updateDataset();
 
       frag.appendChild(row);
       nextRowMap.set(inst.id, row);
@@ -721,29 +795,21 @@
     const hasFilters = !!(search || filterFamily || filterProducerId || filterStoreId);
     filtersActive = hasFilters;
     rows.forEach((row) => {
-      const name =
-        (row.querySelector('input[data-field="productName"]')?.value || "").toLowerCase();
-      const brand =
-        (row.querySelector('input[data-field="brand"]')?.value || "").toLowerCase();
-      const notes =
-        (row.querySelector('textarea[data-field="notes"]')?.value || "").toLowerCase();
+      const name = row.dataset.name || "";
+      const brand = row.dataset.brand || "";
+      const notes = row.dataset.notes || "";
       const family =
-        (row.querySelector('[data-field="family"]')?.textContent || "").trim() ||
         row.dataset.family ||
+        (row.querySelector('[data-field="family"]')?.textContent || "").trim() ||
         "";
-      const producerId =
-        row.querySelector('select[data-field="producerId"]')?.value || "";
-      const producerName =
-        row
-          .querySelector('select[data-field="producerId"] option:checked')
-          ?.textContent?.toLowerCase() || "";
-      const storeSelect = row.querySelector('select[data-field="storeIds"]');
-      const storeIds = storeSelect
-        ? Array.from(storeSelect.selectedOptions || []).map((o) => o.value)
-        : [];
-      const storeNames = storeSelect
-        ? Array.from(storeSelect.selectedOptions || []).map((o) => o.textContent || "")
-        : [];
+      const familyLower = family.toLowerCase();
+      const producerId = row.dataset.producerId || "";
+      const producerName = row.dataset.producerName || "";
+      const storeIds =
+        row.dataset.storeIds && row.dataset.storeIds.length
+          ? row.dataset.storeIds.split(",").filter(Boolean)
+          : [];
+      const storeNames = row.dataset.storeNames || "";
 
       if (row.dataset.isNew === "1") {
         row.style.display = "";
@@ -756,7 +822,7 @@
         if (visible && filterProducerId && producerId !== filterProducerId) visible = false;
         if (visible && filterStoreId && !storeIds.includes(filterStoreId)) visible = false;
         if (visible && search) {
-          const haystack = `${name} ${brand} ${notes} ${family} ${producerName} ${storeNames.join(" ")}`.toLowerCase();
+          const haystack = `${name} ${brand} ${notes} ${familyLower} ${producerName} ${storeNames}`;
           if (!haystack.includes(search)) visible = false;
         }
       }
@@ -772,7 +838,10 @@
         : rowCount;
       const visible = rows.filter((tr) => tr.style.display !== "none" && tr.dataset.id).length;
       const filtered = hasFilters || visible !== total;
-      refs.summary.textContent = `Total: ${total}${filtered ? ` · Visibles: ${visible}` : ""}`;
+      const missing = rows.filter((tr) => tr.dataset.missing === "1").length;
+      refs.summary.textContent = `Total: ${total}${filtered ? ` · Visibles: ${visible}` : ""}${
+        missing > 0 ? ` · No conciliados: ${missing}` : ""
+      }`;
     }
   }
 
