@@ -5563,6 +5563,7 @@ function openInlineProductCreator(row) {
 
   const form = document.createElement("div");
   form.className = "inline-product-creator";
+  let escHandler = null;
 
   const fgName = document.createElement("div");
   fgName.className = "form-group";
@@ -5622,6 +5623,10 @@ function openInlineProductCreator(row) {
   btnSave.setAttribute("aria-label", "Crear producto");
   const closeCreator = () => {
     tr.remove();
+    if (escHandler) {
+      window.removeEventListener("keydown", escHandler, true);
+      escHandler = null;
+    }
   };
 
   btnSave.addEventListener("click", () => {
@@ -5688,6 +5693,25 @@ function openInlineProductCreator(row) {
   btnCancel.title = "Cancelar";
   btnCancel.setAttribute("aria-label", "Cancelar");
   btnCancel.addEventListener("click", closeCreator);
+  escHandler = (e) => {
+    if (e.key === "Escape") {
+      closeCreator();
+    }
+  };
+  window.addEventListener("keydown", escHandler, { capture: true });
+
+  const preventTableRenderBubble = (el) => {
+    if (!el) return;
+    ["input", "change"].forEach((evt) => {
+      el.addEventListener(evt, (e) => {
+        e.stopPropagation();
+      });
+    });
+  };
+  preventTableRenderBubble(selFam);
+  preventTableRenderBubble(selType);
+  preventTableRenderBubble(inpQty);
+  preventTableRenderBubble(inpNotes);
 
   actions.appendChild(btnCancel);
   actions.appendChild(btnSave);

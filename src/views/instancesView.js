@@ -149,6 +149,8 @@
     const sortedStores = storesList
       .slice()
       .sort((a, b) => (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" }));
+    const producerSignature = sortedProducers.map((p) => `${p.id || ""}::${p.name || ""}`).join("|");
+    const storeSignature = sortedStores.map((s) => `${s.id || ""}::${s.name || ""}`).join("|");
     const producerById = new Map(sortedProducers.map((p) => [p.id, p]));
     const producerOptionsHtml = sortedProducers
       .map((p) => `<option value="${p.id}">${p.name || "(sin nombre)"}</option>`)
@@ -210,85 +212,71 @@
     removeScrollHandler();
     context.__pageSize = 20;
 
-    const normKey =
-      instances.length +
-      ":" +
-      instances
-        .map((i) => {
-          const fam = (i.block || getFamilyForInstance(i) || "").trim();
-          const stores =
-            Array.isArray(i.storeIds) && i.storeIds.length
-              ? i.storeIds.slice().sort().join(",")
-              : "";
-          return `${i.id || ""}-${i.updatedAt || ""}-${i.productName || ""}-${fam}-${stores}`;
-        })
-        .join("|");
-    let items;
-    if (context.__normKey === normKey && Array.isArray(context.__normalized)) {
-      items = context.__normalized;
-    } else {
-      const normalized = instances.slice().map((inst) => {
-        const familyRaw = inst.block || getFamilyForInstance(inst) || "";
-        const lower = (inst.productName || "").trim().toLowerCase();
-        const matchById = inst.productId ? productById.get(inst.productId) : null;
-        const matchByName = lower ? productByName.get(lower) : null;
-        const idMatchesName =
-          !!(matchById && lower && (matchById.name || "").trim().toLowerCase() === lower);
-        const familyResolved =
-          familyRaw ||
-          (matchByName && matchByName.block) ||
-          (idMatchesName && matchById && matchById.block) ||
-          "";
-        const family = (familyResolved || "").trim();
+    const normalized = instances.slice().map((inst) => {
+      const familyRaw = inst.block || getFamilyForInstance(inst) || "";
+      const lower = (inst.productName || "").trim().toLowerCase();
+      const matchById = inst.productId ? productById.get(inst.productId) : null;
+      const matchByName = lower ? productByName.get(lower) : null;
+      const idMatchesName =
+        !!(matchById && lower && (matchById.name || "").trim().toLowerCase() === lower);
+      const familyResolved =
+        familyRaw ||
+        (matchByName && matchByName.block) ||
+        (idMatchesName && matchById && matchById.block) ||
+        "";
+      const family = (familyResolved || "").trim();
 
-        const producerName = getProducerName(inst.producerId) || "";
-        const storeNames = storeNamesFor(inst.storeIds);
-        const haystack = [
-          inst.productName || "",
-          inst.brand || "",
-          inst.notes || "",
-          family || "",
-          producerName,
-          storeNames,
-        ]
-          .join(" ")
-          .toLowerCase();
+      const producerName =
+        (inst.producerName || "").trim() ||
+        (inst.producerId ? (producerById.get(inst.producerId)?.name || "") : "") ||
+        getProducerName(inst.producerId) ||
+        "";
+      const storeNames = storeNamesFor(inst.storeIds);
+      const haystack = [
+        inst.productName || "",
+        inst.brand || "",
+        inst.notes || "",
+        family || "",
+        producerName,
+        storeNames,
+      ]
+        .join(" ")
+        .toLowerCase();
 
-        const knownFromId = inst.productId ? productById.get(inst.productId) : null;
-        const knownFromName = matchByName;
-        const knownFromHelper =
-          typeof context.isKnownProduct === "function"
-            ? context.isKnownProduct(inst.productName, inst.productId)
-            : false;
-        const missing = !(knownFromId || knownFromName || knownFromHelper);
+      const knownFromId = inst.productId ? productById.get(inst.productId) : null;
+      const knownFromName = matchByName;
+      const knownFromHelper =
+        typeof context.isKnownProduct === "function"
+          ? context.isKnownProduct(inst.productName, inst.productId)
+          : false;
+      const missing = !(knownFromId || knownFromName || knownFromHelper);
 
-        return {
-          ...inst,
-          block: family || inst.block || "",
-          __familySort: (family || "__none__").toLowerCase(),
-          __producerName: producerName,
-          __storeNames: storeNames,
-          __haystack: haystack,
-          __missing: missing ? "1" : "0",
-        };
-      });
-      const sortByFamilyProduct = (a, b) => {
-        const cmpFam = (a.__familySort || "").localeCompare(b.__familySort || "", "es", {
-          sensitivity: "base",
-        });
-        if (cmpFam !== 0) return cmpFam;
-        return (a.productName || "").localeCompare(b.productName || "", "es", {
-          sensitivity: "base",
-        });
+      return {
+        ...inst,
+        block: family || inst.block || "",
+        __familySort: (family || "__none__").toLowerCase(),
+        __producerName: producerName,
+        __storeNames: storeNames,
+        __haystack: haystack,
+        __missing: missing ? "1" : "0",
       };
-      items = normalized.sort(sortByFamilyProduct);
-      context.__normKey = normKey;
-      context.__normalized = items;
-      if (context.data) {
-        context.data.instances = items.slice();
-        context.__currentItems = items.slice();
-        context.__filteredItems = null;
-      }
+    });
+    const sortByFamilyProduct = (a, b) => {
+      const cmpFam = (a.__familySort || "").localeCompare(b.__familySort || "", "es", {
+        sensitivity: "base",
+      });
+      if (cmpFam !== 0) return cmpFam;
+      return (a.productName || "").localeCompare(b.productName || "", "es", {
+        sensitivity: "base",
+      });
+    };
+    const items = normalized.sort(sortByFamilyProduct);
+    context.__normKey = null;
+    context.__normalized = items;
+    if (context.data) {
+      context.data.instances = items.slice();
+      context.__currentItems = items.slice();
+      context.__filteredItems = null;
     }
 
     const filterSearch = (refs.searchInput?.value || "").toLowerCase();
@@ -407,6 +395,7 @@
         chips.className = "inline-store-chips instances-store-chips visually-hidden";
         chips.style.display = "none";
         renderChips();
+        let escHandler = null;
         selStores.addEventListener("change", () => {
           ensureOptions();
           const selectedIds = Array.from(selStores.selectedOptions || [])
@@ -416,6 +405,20 @@
           renderSummary();
           renderChips();
         });
+        const hideChips = () => {
+          chips.style.display = "none";
+          chips.classList.add("visually-hidden");
+          if (escHandler) {
+            window.removeEventListener("keydown", escHandler, true);
+            escHandler = null;
+          }
+        };
+        escHandler = (e) => {
+          if (e.key === "Escape") {
+            hideChips();
+          }
+        };
+        chips.__hideChips = hideChips;
         return chips;
       };
 
@@ -434,6 +437,13 @@
         }
         c.style.display = "flex";
         c.classList.remove("visually-hidden");
+        if (typeof c.__hideChips === "function") {
+          window.addEventListener("keydown", (e) => {
+            if (e.key === "Escape") {
+              c.__hideChips();
+            }
+          }, { once: true, capture: true });
+        }
         ensureOptions();
         renderChips();
       });
@@ -1012,6 +1022,36 @@
     render(context);
   }
 
+  function cancelNewRow(context) {
+    const ctx = getCtx(context);
+    const refs = ctx.refs || {};
+    const tableBody = refs.tableBody;
+    if (!tableBody) return;
+    const rows = Array.from(tableBody.querySelectorAll("tr[data-is-new='1']"));
+    if (!rows.length) return;
+    const isEmptyRow = (tr) => {
+      const getVal = (sel) => (tr.querySelector(sel)?.value || "").trim();
+      const name = getVal("input[data-field='productName']");
+      const brand = getVal("input[data-field='brand']");
+      const notes = getVal("textarea[data-field='notes']");
+      const selStores = tr.querySelector('select[data-field="storeIds"]');
+      const stores =
+        selStores && selStores.selectedOptions
+          ? Array.from(selStores.selectedOptions).map((o) => o.value).filter(Boolean)
+          : [];
+      return !name && !brand && !notes && stores.length === 0;
+    };
+    const targetRow = rows.find(isEmptyRow) || rows[rows.length - 1];
+    const id = targetRow?.dataset?.id;
+    if (id && ctx.data && Array.isArray(ctx.data.instances)) {
+      ctx.data.instances = ctx.data.instances.filter((inst) => inst.id !== id);
+    }
+    if (targetRow) {
+      targetRow.remove();
+    }
+    render(ctx);
+  }
+
   function handleClick(e) {
     let target = e.target;
     if (
@@ -1129,6 +1169,13 @@
     refs.familyFilter?.addEventListener("change", handle);
     refs.producerFilter?.addEventListener("change", handle);
     refs.storeFilter?.addEventListener("change", handle);
+
+    const escHandler = (e) => {
+      if (e.key === "Escape") {
+        cancelNewRow(context);
+      }
+    };
+    refs.tableBody?.addEventListener("keydown", escHandler, { capture: true });
   }
 
   function init(c) {
