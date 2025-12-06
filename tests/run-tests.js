@@ -570,6 +570,65 @@ register("InventoryView no duplica filas al cambiar datos", () => {
   }
 });
 
+register("InventoryView usa getProducts al filtrar tras mover un producto", () => {
+  const mod = path.join(__dirname, "..", "src", "views", "inventoryView.js");
+  delete require.cache[mod];
+  const productTableBody = new StubElement("tbody");
+  const refs = {
+    productTableBody,
+    filterSearchInput: new StubElement("input"),
+    filterShelfSelect: new StubElement("select"),
+    filterBlockSelect: new StubElement("select"),
+    filterTypeSelect: new StubElement("select"),
+    filterStoreSelect: new StubElement("select"),
+    filterStatusSelect: new StubElement("select"),
+    summaryInfo: new StubElement("div"),
+  };
+  refs.filterStatusSelect.value = "all";
+  const stubDocument = createStubDocument();
+  global.window = { document: stubDocument };
+  global.document = stubDocument;
+  require(mod);
+
+  let products = [];
+  const baseState = {
+    getProducts: () => products,
+    products,
+    productDrafts: [],
+  };
+  const helpers = {
+    compareShelfBlockTypeName: () => 0,
+    buildFamilyStripeMap: () => ({}),
+    createFamilySelect: () => new StubElement("select"),
+    createTypeSelect: () => new StubElement("select"),
+    createTableInput: () => new StubElement("input"),
+    createTableTextarea: () => new StubElement("textarea"),
+    linkFamilyTypeSelects: () => {},
+    productMatchesStore: () => true,
+    getSelectionLabelForProduct: () => "",
+    getSelectionStoresForProduct: () => "",
+    createSelectionButton: () => new StubElement("button"),
+    handleInventoryTableClick: () => {},
+  };
+
+  global.window.InventoryView.init({ refs, state: baseState, helpers });
+
+  products = [{ id: "p-moved", name: "Latas", block: "", type: "", shelf: "", quantity: "1" }];
+  const renderState = { getProducts: () => products, products, productDrafts: [] };
+  global.window.InventoryView.render({ refs, state: renderState, helpers });
+
+  const handler = refs.filterSearchInput._handlers?.input;
+  if (!handler) throw new Error("No se registró handler de input");
+  refs.filterSearchInput.value = "zzz";
+  handler({ target: refs.filterSearchInput });
+
+  const row = productTableBody.children.find?.((c) => c.tag === "tr");
+  if (!row) throw new Error("No se creó fila tras render");
+  if (row.style.display !== "none") {
+    throw new Error("Filtro debería ocultar fila usando productos actualizados");
+  }
+});
+
 register("InstancesView.render crea filas para instancias", () => {
   const mod = path.join(__dirname, "..", "src", "views", "instancesView.js");
   delete require.cache[mod];

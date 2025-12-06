@@ -1026,6 +1026,17 @@ let filtersDefaultsApplied = false;
 let selectionDragCleanup = null;
 let selectionPopupInitialized = false;
 
+function syncInventoryDrafts() {
+  if (inventoryController && typeof inventoryController.setDrafts === "function") {
+    inventoryController.setDrafts(productDrafts);
+  }
+}
+
+function setProductDrafts(next) {
+  productDrafts = Array.isArray(next) ? next : [];
+  syncInventoryDrafts();
+}
+
 function showToast(message, timeout = 1800) {
   if (window.UIHelpers && typeof window.UIHelpers.showToast === "function") {
     window.UIHelpers.showToast(message, timeout);
@@ -1083,6 +1094,8 @@ function getInventoryContext() {
       __skipNextRender: false,
     },
     state: {
+      getProducts: () => getPantryProducts(),
+      getDrafts: () => productDrafts,
       products: getPantryProducts(),
       productDrafts,
     },
@@ -1812,7 +1825,7 @@ document.addEventListener("DOMContentLoaded", () => {
         moveToExtra: moveProductToExtra,
         selectSelection: openSelectionPopupForProduct,
         cancelDraft: (id) => {
-          productDrafts = productDrafts.filter((d) => d.id !== id);
+          setProductDrafts(productDrafts.filter((d) => d.id !== id));
           renderProducts();
         },
         saveDraft: (id) => commitDraftProducts(id ? [id] : null),
@@ -4217,7 +4230,7 @@ function handleInventoryTableClick(e) {
 
   if (action === "cancel-draft-product") {
     const id = target.dataset.id;
-    productDrafts = productDrafts.filter((d) => d.id !== id);
+    setProductDrafts(productDrafts.filter((d) => d.id !== id));
     renderProducts();
     return;
   }
@@ -4264,7 +4277,7 @@ function moveProductToExtra(id) {
   saveExtraProducts();
 
   // Limpia borradores asociados al producto movido
-  productDrafts = productDrafts.filter((d) => d.originalId !== id && d.id !== id);
+  setProductDrafts(productDrafts.filter((d) => d.originalId !== id && d.id !== id));
 
   renderProducts();
   if (!isStoreActive()) {
@@ -4340,18 +4353,22 @@ function handleAddQuickProduct() {
   const defShelf = filterShelfSelect?.value || "";
   const status = filterStatusSelect?.value || "all";
   const defHave = status === "have" ? true : status === "missing" ? false : false;
-  productDrafts.unshift({
-    id,
-    name: "",
-    block: defBlock,
-    type: defType,
-    shelf: defShelf,
-    quantity: "",
-    have: defHave,
-    acquisitionDate: "",
-    expiryText: "",
-    notes: "",
-  });
+  const nextDrafts = [
+    {
+      id,
+      name: "",
+      block: defBlock,
+      type: defType,
+      shelf: defShelf,
+      quantity: "",
+      have: defHave,
+      acquisitionDate: "",
+      expiryText: "",
+      notes: "",
+    },
+    ...productDrafts,
+  ];
+  setProductDrafts(nextDrafts);
   renderProducts();
   highlightTopRow(productTableBody);
 }
@@ -4361,24 +4378,28 @@ function startEditProduct(id) {
   const list = getPantryProducts();
   const prod = list.find((p) => p.id === id);
   if (!prod) return;
-  productDrafts = productDrafts.filter((d) => d.originalId !== id);
   const draftId =
     (crypto.randomUUID ? crypto.randomUUID() : "draft-edit-" + Date.now()) +
     "-" +
     Math.random().toString(36).slice(2);
-  productDrafts.unshift({
-    id: draftId,
-    originalId: id,
-    name: prod.name || "",
-    block: prod.block || "",
-    type: prod.type || "",
-    shelf: prod.shelf || "",
-    quantity: prod.quantity || "",
-    have: !!prod.have,
-    acquisitionDate: prod.acquisitionDate || "",
-    expiryText: prod.expiryText || "",
-    notes: prod.notes || "",
-  });
+  const filteredDrafts = productDrafts.filter((d) => d.originalId !== id);
+  const nextDrafts = [
+    {
+      id: draftId,
+      originalId: id,
+      name: prod.name || "",
+      block: prod.block || "",
+      type: prod.type || "",
+      shelf: prod.shelf || "",
+      quantity: prod.quantity || "",
+      have: !!prod.have,
+      acquisitionDate: prod.acquisitionDate || "",
+      expiryText: prod.expiryText || "",
+      notes: prod.notes || "",
+    },
+    ...filteredDrafts,
+  ];
+  setProductDrafts(nextDrafts);
   const scrollParent =
     (productTableBody && productTableBody.closest(".table-scroll")) || null;
   const prevScroll = scrollParent ? scrollParent.scrollTop : window.scrollY;
@@ -4391,7 +4412,7 @@ function deleteProduct(id) {
   if (!id) return;
   const ok = confirm("¿Eliminar este producto?");
   if (!ok) return;
-  productDrafts = productDrafts.filter((d) => d.originalId !== id && d.id !== id);
+  setProductDrafts(productDrafts.filter((d) => d.originalId !== id && d.id !== id));
   removeProductById(id);
 }
 
@@ -4432,7 +4453,7 @@ function commitDraftProducts(ids) {
     return;
   }
   if (!res || !res.unified) return;
-  productDrafts = res.drafts || [];
+  setProductDrafts(res.drafts || []);
   renderProducts();
   if (!isStoreActive()) renderGridRows();
   renderShelfOptions();
@@ -4735,7 +4756,7 @@ function handleGlobalEscape(e) {
   // No cerrar si popup selección visible
   if (selectionPopupOverlay && selectionPopupOverlay.classList.contains("visible")) return;
   if (productDrafts.length > 0) {
-    productDrafts = [];
+    setProductDrafts([]);
     renderProducts();
     return;
   }

@@ -7,6 +7,28 @@
   let stripeCache = {};
 
   const stripeClassRegex = /^family-stripe-/;
+  const EXPECTED_COLUMNS = 12;
+
+  const resolveProducts = (state) => {
+    if (state && typeof state.getProducts === "function") {
+      try {
+        const res = state.getProducts();
+        if (Array.isArray(res)) return res;
+      } catch {}
+    }
+    return Array.isArray(state?.products) ? state.products : [];
+  };
+
+  const resolveDrafts = (state) => {
+    if (Array.isArray(state?.productDrafts)) return state.productDrafts;
+    if (state && typeof state.getDrafts === "function") {
+      try {
+        const drafts = state.getDrafts();
+        if (Array.isArray(drafts)) return drafts;
+      } catch {}
+    }
+    return [];
+  };
 
   function hasActiveFilters(refs = {}) {
     const search = (refs.filterSearchInput?.value || "").trim();
@@ -89,8 +111,6 @@
     }
   }
 
-  const EXPECTED_COLUMNS = 12;
-
   function render({ refs, state, helpers }) {
     const {
       productTableBody,
@@ -107,7 +127,8 @@
       refs.__skipNextRender = false;
       return;
     }
-    const { products, productDrafts } = state;
+    const products = resolveProducts(state);
+    const productDrafts = resolveDrafts(state);
     const editingIds = new Set(
       (productDrafts || [])
         .map((d) => d && d.originalId)
@@ -461,7 +482,8 @@
     const filterShelf = filterShelfSelect.value || "";
     const filterStoreId = filterStoreSelect.value || "";
     const status = filterStatusSelect.value || "all";
-    const map = new Map((state.products || []).map((p) => [p.id, p]));
+    const products = resolveProducts(state);
+    const map = new Map(products.map((p) => [p.id, p]));
 
     const predicate = (tr) => {
       const id = tr.dataset.id;
@@ -493,7 +515,7 @@
     }
 
     if (summaryInfo) {
-      const totalAll = (state.products || []).filter(Boolean).length;
+      const totalAll = products.filter(Boolean).length;
       const visible = rows.filter((tr) => tr.style.display !== "none" && tr.dataset.id);
       const missingVisible = visible.filter((tr) => {
         const p = map.get(tr.dataset.id);
