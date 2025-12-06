@@ -11,6 +11,9 @@
     const ctx = context || {};
 
     const render = () => {
+      if (typeof ctx.shouldRender === "function" && !ctx.shouldRender()) {
+        return;
+      }
       const state = store.getState ? store.getState() : {};
       if (ctx.data) {
         ctx.data.instances = state.productInstances || ctx.data.instances || [];

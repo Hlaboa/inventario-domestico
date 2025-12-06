@@ -2,6 +2,7 @@
   const { nowIsoString, safeLoadList, saveList } = window.AppUtils;
 
   const STORAGE_KEY_SUPPLIERS = "proveedoresCocina";
+  const STORAGE_KEY_SUPPLIERS_BACKUP = "proveedoresCocina_backup";
   const STORAGE_KEY_PRODUCERS = "productoresCocina";
   const STORAGE_KEY_INSTANCES = "instanciasProductosCocina";
   const STORAGE_KEY_CLASSIFICATIONS = "clasificacionesProductosCocina";
@@ -145,7 +146,12 @@
 
   const loadProducts = () => [];
   const loadExtraProducts = () => [];
-  const loadSuppliers = () => safeLoadList(STORAGE_KEY_SUPPLIERS, normalizeSupplier);
+  const loadSuppliers = () => {
+    const list = safeLoadList(STORAGE_KEY_SUPPLIERS, normalizeSupplier);
+    if (Array.isArray(list) && list.length > 0) return list;
+    const backup = safeLoadList(STORAGE_KEY_SUPPLIERS_BACKUP, normalizeSupplier);
+    return Array.isArray(backup) ? backup : [];
+  };
   const loadProducers = () => safeLoadList(STORAGE_KEY_PRODUCERS, normalizeProducer);
   const loadClassifications = () => safeLoadList(STORAGE_KEY_CLASSIFICATIONS, normalizeClassification);
   const loadProductInstances = () => safeLoadList(STORAGE_KEY_INSTANCES, normalizeInstance);
@@ -157,7 +163,12 @@
   };
 
   function saveSuppliers(list) {
-    saveList(STORAGE_KEY_SUPPLIERS, list);
+    const data = Array.isArray(list) ? list : [];
+    saveList(STORAGE_KEY_SUPPLIERS, data);
+    if (data.length > 0) {
+      // Guardar copia de seguridad para evitar pérdidas accidentales
+      saveList(STORAGE_KEY_SUPPLIERS_BACKUP, data);
+    }
   }
   function saveProducers(list) {
     saveList(STORAGE_KEY_PRODUCERS, list);

@@ -5,9 +5,13 @@
   const selectionStoresCache = new Map();
   let stripeCacheKey = "";
   let stripeCache = {};
+  let pendingChunkHandle = null;
+  let pendingChunkTimeout = null;
 
   const stripeClassRegex = /^family-stripe-/;
   const EXPECTED_COLUMNS = 12;
+  const CHUNK_THRESHOLD = 200;
+  const CHUNK_BUDGET_MS = 12;
 
   const resolveProducts = (state) => {
     if (state && typeof state.getProducts === "function") {
@@ -111,6 +115,17 @@
     }
   }
 
+  function cancelPendingChunk() {
+    if (typeof cancelIdleCallback === "function" && pendingChunkHandle) {
+      cancelIdleCallback(pendingChunkHandle);
+    }
+    if (pendingChunkTimeout) {
+      clearTimeout(pendingChunkTimeout);
+    }
+    pendingChunkHandle = null;
+    pendingChunkTimeout = null;
+  }
+
   function render({ refs, state, helpers }) {
     const {
       productTableBody,
@@ -145,6 +160,8 @@
     productTableBody.querySelectorAll("tr[data-id]").forEach((tr) => {
       if (tr.dataset.id) existingRows.set(tr.dataset.id, tr);
     });
+
+    cancelPendingChunk();
 
     const components = window.AppComponents || {};
     const canUseTemplate =
@@ -242,19 +259,19 @@
       addCellText(p.expiryText || "");
       addCellText(p.notes || "");
 
-    td = document.createElement("td");
-    const editBtn = document.createElement("button");
-    editBtn.className = "btn btn-small btn-icon";
-    editBtn.textContent = "✎";
-    editBtn.title = "Editar producto";
-    editBtn.setAttribute("aria-label", "Editar producto");
-    editBtn.dataset.action = "edit-product";
-    editBtn.dataset.id = p.id;
-    td.appendChild(editBtn);
+      td = document.createElement("td");
+      const editBtn = document.createElement("button");
+      editBtn.className = "btn btn-small btn-icon";
+      editBtn.textContent = "✎";
+      editBtn.title = "Editar producto";
+      editBtn.setAttribute("aria-label", "Editar producto");
+      editBtn.dataset.action = "edit-product";
+      editBtn.dataset.id = p.id;
+      td.appendChild(editBtn);
 
-    tr.appendChild(td);
-    return tr;
-  };
+      tr.appendChild(td);
+      return tr;
+    };
 
     const draftsByOriginal = new Map();
     const orphanDrafts = [];
@@ -286,126 +303,124 @@
       }
     });
 
-    orderedEntries.forEach((entry) => {
-      if (entry.type === "draft") {
-        const d = entry.draft;
-        const tr = document.createElement("tr");
-        tr.className = "product-draft-row";
-        tr.dataset.draftId = d.id;
-        if (d.originalId) tr.dataset.originalId = d.originalId;
-        const stripe = stripeMap[(d.block || "").trim() || "__none__"] || 0;
-        applyStripe(tr, stripe);
+    const renderDraftEntry = (d, dest) => {
+      const tr = document.createElement("tr");
+      tr.className = "product-draft-row";
+      tr.dataset.draftId = d.id;
+      if (d.originalId) tr.dataset.originalId = d.originalId;
+      const stripe = stripeMap[(d.block || "").trim() || "__none__"] || 0;
+      applyStripe(tr, stripe);
 
-        let td = document.createElement("td");
-        td.appendChild(helpers.createTableInput("name", d.name || ""));
-        tr.appendChild(td);
+      let td = document.createElement("td");
+      td.appendChild(helpers.createTableInput("name", d.name || ""));
+      tr.appendChild(td);
 
-        td = document.createElement("td");
-        const famSel = helpers.createFamilySelect(d.block || "");
-        famSel.dataset.field = "block";
-        td.appendChild(famSel);
-        tr.appendChild(td);
+      td = document.createElement("td");
+      const famSel = helpers.createFamilySelect(d.block || "");
+      famSel.dataset.field = "block";
+      td.appendChild(famSel);
+      tr.appendChild(td);
 
-        td = document.createElement("td");
-        const typeSel = helpers.createTypeSelect(d.block || "", d.type || "");
-        typeSel.dataset.field = "type";
-        helpers.linkFamilyTypeSelects(famSel, typeSel);
-        td.appendChild(typeSel);
-        tr.appendChild(td);
+      td = document.createElement("td");
+      const typeSel = helpers.createTypeSelect(d.block || "", d.type || "");
+      typeSel.dataset.field = "type";
+      helpers.linkFamilyTypeSelects(famSel, typeSel);
+      td.appendChild(typeSel);
+      tr.appendChild(td);
 
-        td = document.createElement("td");
-        const haveChk = helpers.createTableInput(
-          "have",
-          d.have ? "on" : "",
-          "checkbox"
-        );
-        haveChk.checked = !!d.have;
-        td.appendChild(haveChk);
-        tr.appendChild(td);
+      td = document.createElement("td");
+      const haveChk = helpers.createTableInput(
+        "have",
+        d.have ? "on" : "",
+        "checkbox"
+      );
+      haveChk.checked = !!d.have;
+      td.appendChild(haveChk);
+      tr.appendChild(td);
 
-        td = document.createElement("td");
-        td.appendChild(helpers.createTableInput("shelf", d.shelf || ""));
-        tr.appendChild(td);
+      td = document.createElement("td");
+      td.appendChild(helpers.createTableInput("shelf", d.shelf || ""));
+      tr.appendChild(td);
 
-        td = document.createElement("td");
-        td.appendChild(helpers.createTableInput("quantity", d.quantity || ""));
-        tr.appendChild(td);
+      td = document.createElement("td");
+      td.appendChild(helpers.createTableInput("quantity", d.quantity || ""));
+      tr.appendChild(td);
 
-        td = document.createElement("td");
-        td.textContent = "—";
-        tr.appendChild(td);
+      td = document.createElement("td");
+      td.textContent = "—";
+      tr.appendChild(td);
 
-        td = document.createElement("td");
-        td.textContent = "—";
-        tr.appendChild(td);
+      td = document.createElement("td");
+      td.textContent = "—";
+      tr.appendChild(td);
 
-        td = document.createElement("td");
-        const adq = helpers.createTableInput(
-          "acquisitionDate",
-          d.acquisitionDate || "",
-          "date"
-        );
-        td.appendChild(adq);
-        tr.appendChild(td);
+      td = document.createElement("td");
+      const adq = helpers.createTableInput(
+        "acquisitionDate",
+        d.acquisitionDate || "",
+        "date"
+      );
+      td.appendChild(adq);
+      tr.appendChild(td);
 
-        td = document.createElement("td");
-        td.appendChild(helpers.createTableInput("expiryText", d.expiryText || ""));
-        tr.appendChild(td);
+      td = document.createElement("td");
+      td.appendChild(helpers.createTableInput("expiryText", d.expiryText || ""));
+      tr.appendChild(td);
 
-        td = document.createElement("td");
-        td.appendChild(helpers.createTableTextarea("notes", d.notes || ""));
-        tr.appendChild(td);
+      td = document.createElement("td");
+      td.appendChild(helpers.createTableTextarea("notes", d.notes || ""));
+      tr.appendChild(td);
 
-        td = document.createElement("td");
-        const saveBtn = document.createElement("button");
-        saveBtn.type = "button";
-        saveBtn.className = "btn btn-small btn-success";
-        saveBtn.dataset.action = "save-draft-product";
-        saveBtn.dataset.id = d.id;
-        saveBtn.title = "Guardar producto";
-        saveBtn.setAttribute("aria-label", "Guardar producto");
-        saveBtn.textContent = "✓";
-        td.appendChild(saveBtn);
+      td = document.createElement("td");
+      const saveBtn = document.createElement("button");
+      saveBtn.type = "button";
+      saveBtn.className = "btn btn-small btn-success";
+      saveBtn.dataset.action = "save-draft-product";
+      saveBtn.dataset.id = d.id;
+      saveBtn.title = "Guardar producto";
+      saveBtn.setAttribute("aria-label", "Guardar producto");
+      saveBtn.textContent = "✓";
+      td.appendChild(saveBtn);
 
-        const cancelBtn = document.createElement("button");
-        cancelBtn.type = "button";
-        cancelBtn.className = "btn btn-small btn-danger";
-        cancelBtn.dataset.action = "cancel-draft-product";
-        cancelBtn.dataset.id = d.id;
-        cancelBtn.textContent = "✕";
-        cancelBtn.title = "Cancelar";
-        cancelBtn.setAttribute("aria-label", "Cancelar");
-        td.appendChild(cancelBtn);
+      const cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.className = "btn btn-small btn-danger";
+      cancelBtn.dataset.action = "cancel-draft-product";
+      cancelBtn.dataset.id = d.id;
+      cancelBtn.textContent = "✕";
+      cancelBtn.title = "Cancelar";
+      cancelBtn.setAttribute("aria-label", "Cancelar");
+      td.appendChild(cancelBtn);
 
-        if (d.originalId) {
-          const moveBtn = document.createElement("button");
-          moveBtn.type = "button";
-          moveBtn.className = "btn btn-small btn-icon";
-          moveBtn.dataset.action = "move-to-extra";
-          moveBtn.dataset.id = d.originalId || d.id;
-          moveBtn.dataset.originalId = d.originalId || "";
-          moveBtn.title = "Mover a otros productos";
-          moveBtn.setAttribute("aria-label", "Mover a otros productos");
-          moveBtn.textContent = "→";
-          td.appendChild(moveBtn);
+      if (d.originalId) {
+        const moveBtn = document.createElement("button");
+        moveBtn.type = "button";
+        moveBtn.className = "btn btn-small btn-icon";
+        moveBtn.dataset.action = "move-to-extra";
+        moveBtn.dataset.id = d.originalId || d.id;
+        moveBtn.dataset.originalId = d.originalId || "";
+        moveBtn.title = "Mover a otros productos";
+        moveBtn.setAttribute("aria-label", "Mover a otros productos");
+        moveBtn.textContent = "→";
+        td.appendChild(moveBtn);
 
-          const delBtn = document.createElement("button");
-          delBtn.type = "button";
-          delBtn.className = "btn btn-small btn-danger btn-trash";
-          delBtn.dataset.action = "delete-product";
-          delBtn.dataset.id = d.originalId || d.id;
-          delBtn.dataset.originalId = d.originalId || "";
-          delBtn.textContent = "🗑";
-          delBtn.title = "Eliminar producto";
-          delBtn.setAttribute("aria-label", "Eliminar producto");
-          td.appendChild(delBtn);
-        }
-        tr.appendChild(td);
-        target.appendChild(tr);
-        return;
+        const delBtn = document.createElement("button");
+        delBtn.type = "button";
+        delBtn.className = "btn btn-small btn-danger btn-trash";
+        delBtn.dataset.action = "delete-product";
+        delBtn.dataset.id = d.originalId || d.id;
+        delBtn.dataset.originalId = d.originalId || "";
+        delBtn.textContent = "🗑";
+        delBtn.title = "Eliminar producto";
+        delBtn.setAttribute("aria-label", "Eliminar producto");
+        td.appendChild(delBtn);
       }
+      tr.appendChild(td);
+      if (dest) dest.appendChild(tr);
+      return tr;
+    };
 
-      const p = entry.product;
+    const renderProductEntry = (p, dest) => {
       const stripe = stripeMap[(p.block || "").trim() || "__none__"] || 0;
       const hash = getRowHash(p, helpers);
       const existing = existingRows.get(p.id);
@@ -430,38 +445,127 @@
         const storesLabel = getSelectionStoresCached(p, helpers) || "";
         tr.dataset.search = `${p.name || ""} ${p.block || ""} ${p.type || ""} ${p.shelf || ""} ${p.quantity || ""} ${p.notes || ""} ${selectionLabel} ${storesLabel}`.toLowerCase();
 
-        if (target) target.appendChild(tr);
+        if (dest) dest.appendChild(tr);
         rows.push({ row: tr, product: p });
         nextRowMap.set(p.id, tr);
         nextHashMap.set(p.id, hash);
       }
-    });
+      return tr;
+    };
 
-    existingRows.forEach((row, id) => {
-      if (!nextRowMap.has(id)) {
-        row.remove();
+    const finalizeAfterRender = () => {
+      existingRows.forEach((row, id) => {
+        if (!nextRowMap.has(id)) {
+          row.remove();
+        }
+      });
+
+      rowMap.clear();
+      nextRowMap.forEach((row, id) => rowMap.set(id, row));
+      hashMap.clear();
+      nextHashMap.forEach((hash, id) => hashMap.set(id, hash));
+
+      if (rows.length === 0) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 12;
+        td.textContent = "No hay productos que coincidan con los filtros.";
+        tr.appendChild(td);
+        target.appendChild(tr);
       }
+
+      if (frag) {
+        productTableBody.appendChild(frag);
+      }
+
+      filterRows({ refs, state, helpers });
+    };
+
+    const useChunked = orderedEntries.length > CHUNK_THRESHOLD;
+
+    if (useChunked && typeof requestIdleCallback === "function") {
+      productTableBody.innerHTML = "";
+      let fragChunk =
+        typeof document !== "undefined" && document.createDocumentFragment
+          ? document.createDocumentFragment()
+          : null;
+      let idx = 0;
+      const step = (deadline) => {
+        const start = performance.now();
+        while (
+          idx < orderedEntries.length &&
+          (deadline?.timeRemaining?.() ?? 0) > 1 &&
+          performance.now() - start < CHUNK_BUDGET_MS
+        ) {
+          const entry = orderedEntries[idx++];
+          if (entry.type === "draft") {
+            renderDraftEntry(entry.draft, fragChunk || productTableBody);
+          } else {
+            renderProductEntry(entry.product, fragChunk || productTableBody);
+          }
+        }
+        if (fragChunk && fragChunk.childNodes.length) {
+          productTableBody.appendChild(fragChunk);
+          fragChunk =
+            typeof document !== "undefined" && document.createDocumentFragment
+              ? document.createDocumentFragment()
+              : null;
+        }
+        if (idx < orderedEntries.length) {
+          pendingChunkHandle = requestIdleCallback(step, { timeout: 50 });
+          return;
+        }
+        pendingChunkHandle = null;
+        finalizeAfterRender();
+      };
+      pendingChunkHandle = requestIdleCallback(step, { timeout: 50 });
+      return;
+    }
+
+    if (useChunked) {
+      productTableBody.innerHTML = "";
+      let fragChunk =
+        typeof document !== "undefined" && document.createDocumentFragment
+          ? document.createDocumentFragment()
+          : null;
+      let idx = 0;
+      const stepTimeout = () => {
+        const start = performance.now();
+        while (idx < orderedEntries.length && performance.now() - start < CHUNK_BUDGET_MS) {
+          const entry = orderedEntries[idx++];
+          if (entry.type === "draft") {
+            renderDraftEntry(entry.draft, fragChunk || productTableBody);
+          } else {
+            renderProductEntry(entry.product, fragChunk || productTableBody);
+          }
+        }
+        if (fragChunk && fragChunk.childNodes.length) {
+          productTableBody.appendChild(fragChunk);
+          fragChunk =
+            typeof document !== "undefined" && document.createDocumentFragment
+              ? document.createDocumentFragment()
+              : null;
+        }
+        if (idx < orderedEntries.length) {
+          pendingChunkTimeout = setTimeout(stepTimeout, 16);
+          return;
+        }
+        pendingChunkTimeout = null;
+        finalizeAfterRender();
+      };
+      pendingChunkTimeout = setTimeout(stepTimeout, 0);
+      return;
+    }
+
+    orderedEntries.forEach((entry) => {
+      if (entry.type === "draft") {
+        renderDraftEntry(entry.draft, target);
+        return;
+      }
+      renderProductEntry(entry.product, target);
     });
 
-    rowMap.clear();
-    nextRowMap.forEach((row, id) => rowMap.set(id, row));
-    hashMap.clear();
-    nextHashMap.forEach((hash, id) => hashMap.set(id, hash));
-
-    if (rows.length === 0) {
-      const tr = document.createElement("tr");
-      const td = document.createElement("td");
-      td.colSpan = 12;
-      td.textContent = "No hay productos que coincidan con los filtros.";
-      tr.appendChild(td);
-      target.appendChild(tr);
-    }
-
-    if (frag) {
-      productTableBody.appendChild(frag);
-    }
-
-    filterRows({ refs, state, helpers });
+    finalizeAfterRender();
   }
 
   function filterRows({ refs, state, helpers }) {

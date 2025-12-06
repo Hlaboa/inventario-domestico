@@ -249,7 +249,19 @@
     };
   }
 
-  function persistEntity(name, list) {
+  const pendingPersists = new Map();
+  let persistIdleHandle = null;
+  let persistTimer = null;
+  const PERSIST_DEBOUNCE = 140;
+  const PERF_LOG_THRESHOLD = 0; // log todo para diagnóstico
+  const perfLog = (label, duration, extra = "") => {
+    if (duration < PERF_LOG_THRESHOLD) return;
+    const suffix = extra ? ` ${extra}` : "";
+    console.log(`[perf] ${label}: ${duration.toFixed(1)}ms${suffix}`);
+  };
+
+  function persistEntityImmediate(name, list) {
+    const t0 = performance.now();
     const key = storageKeys[name];
     const tryFallbackSave = () => {
       if (!key) return;
@@ -262,13 +274,47 @@
     if (typeof saveFn === "function") {
       try {
         saveFn(list);
+        const duration = performance.now() - t0;
+        perfLog(`persistEntityImmediate:${name}`, duration, `items=${Array.isArray(list) ? list.length : 0}`);
         return;
       } catch {
         tryFallbackSave();
+        const duration = performance.now() - t0;
+        perfLog(`persistEntityImmediate:${name}`, duration, `fallback items=${Array.isArray(list) ? list.length : 0}`);
         return;
       }
     }
     tryFallbackSave();
+    const duration = performance.now() - t0;
+    perfLog(`persistEntityImmediate:${name}`, duration, `items=${Array.isArray(list) ? list.length : 0}`);
+  }
+
+  function flushPendingPersists() {
+    const entries = Array.from(pendingPersists.entries());
+    pendingPersists.clear();
+    entries.forEach(([name, data]) => persistEntityImmediate(name, data));
+  }
+
+  function schedulePersist() {
+    if (typeof cancelIdleCallback === "function" && persistIdleHandle) {
+      cancelIdleCallback(persistIdleHandle);
+      persistIdleHandle = null;
+    }
+    clearTimeout(persistTimer);
+    const run = () => {
+      persistIdleHandle = null;
+      flushPendingPersists();
+    };
+    if (typeof requestIdleCallback === "function") {
+      persistIdleHandle = requestIdleCallback(run, { timeout: PERSIST_DEBOUNCE });
+    } else {
+      persistTimer = setTimeout(run, PERSIST_DEBOUNCE);
+    }
+  }
+
+  function persistEntity(name, list) {
+    pendingPersists.set(name, Array.isArray(list) ? list : []);
+    schedulePersist();
   }
 
   function persistState(nextState) {
@@ -280,21 +326,6 @@
     );
 
     persistEntity("unifiedProducts", unified);
-    // Compat: seguir guardando las listas separadas mientras migramos vistas
-    persistEntity(
-      "products",
-      normalizeList(
-        (state.products || []).map((p) => ({ ...p, scope: "almacen" })),
-        normalizers.product
-      )
-    );
-    persistEntity(
-      "extraProducts",
-      normalizeList(
-        (state.extraProducts || []).map((p) => ({ ...p, scope: "otros" })),
-        normalizers.extraProduct
-      )
-    );
     persistEntity(
       "suppliers",
       normalizeList(state.suppliers, normalizers.supplier)
@@ -331,6 +362,7 @@
         name === "unifiedProducts" ? normalized : state.unifiedProducts
       );
       persistEntity("unifiedProducts", unified);
+      return normalized;
     }
 
     persistEntity(name, normalized);

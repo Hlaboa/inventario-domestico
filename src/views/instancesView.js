@@ -6,15 +6,26 @@
   let stripeCache = {};
   let filtersActive = false;
   let lastEditTs = 0;
-
+  let currentScrollHandler = null;
   const stripeClassRegex = /^family-stripe-/;
   const storeNamesSep = " · ";
+  const DEFAULT_ROW_HEIGHT = 64;
+  const BUFFER_ROWS = 1;
+  const FULL_RENDER_THRESHOLD = 320;
+  const scrollSelector = ".table-scroll";
 
   const getCtx = (c) => c || ctx || {};
   const getNow = (c) =>
     (c && typeof c.nowIsoString === "function"
       ? c.nowIsoString()
       : new Date().toISOString());
+
+  const removeScrollHandler = () => {
+    if (currentScrollHandler) {
+      window.removeEventListener("scroll", currentScrollHandler);
+      currentScrollHandler = null;
+    }
+  };
 
   function getStripeMap(context, items, getFamilyForInstance) {
     const signature = items
@@ -132,6 +143,20 @@
     } = context.data || {};
     const producersList = (context.data && context.data.producers) || [];
     const storesList = (context.data && context.data.stores) || [];
+    const sortedProducers = producersList
+      .slice()
+      .sort((a, b) => (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" }));
+    const sortedStores = storesList
+      .slice()
+      .sort((a, b) => (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" }));
+    const producerById = new Map(sortedProducers.map((p) => [p.id, p]));
+    const producerOptionsHtml = sortedProducers
+      .map((p) => `<option value="${p.id}">${p.name || "(sin nombre)"}</option>`)
+      .join("");
+    const storeById = new Map(sortedStores.map((s) => [s.id, s]));
+    const storeOptionsHtml = sortedStores
+      .map((s) => `<option value="${s.id}">${s.name || "(sin nombre)"}</option>`)
+      .join("");
     const allProducts =
       (typeof context.getAllProducts === "function" && context.getAllProducts()) ||
       context.data?.allProducts ||
@@ -171,122 +196,257 @@
       if (!Array.isArray(ids)) return "";
       const names = ids
         .map((id) => {
-          const store = storesList.find((s) => s.id === id);
+          const store = storeById.get(id);
           return store ? store.name || "" : "";
         })
         .filter(Boolean);
       return names.join(", ");
     };
 
-    const existingRows = new Map();
-    tableBody.querySelectorAll("tr[data-id]").forEach((tr) => {
-      if (tr.dataset.id) existingRows.set(tr.dataset.id, tr);
-    });
+    // Renderizamos siempre limpio para respetar el orden por familia
+    tableBody.innerHTML = "";
+    rowMap.clear();
+    hashMap.clear();
+    removeScrollHandler();
+    context.__pageSize = 20;
 
-    let items = instances
-      .slice()
-      .sort((a, b) => {
-        const famA = (a.block || getFamilyForInstance(a) || "").toLowerCase();
-        const famB = (b.block || getFamilyForInstance(b) || "").toLowerCase();
-        const cmpFam = famA.localeCompare(famB, "es", { sensitivity: "base" });
+    const normKey =
+      instances.length +
+      ":" +
+      instances
+        .map((i) => {
+          const fam = (i.block || getFamilyForInstance(i) || "").trim();
+          const stores =
+            Array.isArray(i.storeIds) && i.storeIds.length
+              ? i.storeIds.slice().sort().join(",")
+              : "";
+          return `${i.id || ""}-${i.updatedAt || ""}-${i.productName || ""}-${fam}-${stores}`;
+        })
+        .join("|");
+    let items;
+    if (context.__normKey === normKey && Array.isArray(context.__normalized)) {
+      items = context.__normalized;
+    } else {
+      const normalized = instances.slice().map((inst) => {
+        const familyRaw = inst.block || getFamilyForInstance(inst) || "";
+        const lower = (inst.productName || "").trim().toLowerCase();
+        const matchById = inst.productId ? productById.get(inst.productId) : null;
+        const matchByName = lower ? productByName.get(lower) : null;
+        const idMatchesName =
+          !!(matchById && lower && (matchById.name || "").trim().toLowerCase() === lower);
+        const familyResolved =
+          familyRaw ||
+          (matchByName && matchByName.block) ||
+          (idMatchesName && matchById && matchById.block) ||
+          "";
+        const family = (familyResolved || "").trim();
+
+        const producerName = getProducerName(inst.producerId) || "";
+        const storeNames = storeNamesFor(inst.storeIds);
+        const haystack = [
+          inst.productName || "",
+          inst.brand || "",
+          inst.notes || "",
+          family || "",
+          producerName,
+          storeNames,
+        ]
+          .join(" ")
+          .toLowerCase();
+
+        const knownFromId = inst.productId ? productById.get(inst.productId) : null;
+        const knownFromName = matchByName;
+        const knownFromHelper =
+          typeof context.isKnownProduct === "function"
+            ? context.isKnownProduct(inst.productName, inst.productId)
+            : false;
+        const missing = !(knownFromId || knownFromName || knownFromHelper);
+
+        return {
+          ...inst,
+          block: family || inst.block || "",
+          __familySort: (family || "__none__").toLowerCase(),
+          __producerName: producerName,
+          __storeNames: storeNames,
+          __haystack: haystack,
+          __missing: missing ? "1" : "0",
+        };
+      });
+      const sortByFamilyProduct = (a, b) => {
+        const cmpFam = (a.__familySort || "").localeCompare(b.__familySort || "", "es", {
+          sensitivity: "base",
+        });
         if (cmpFam !== 0) return cmpFam;
         return (a.productName || "").localeCompare(b.productName || "", "es", {
           sensitivity: "base",
         });
-      });
+      };
+      items = normalized.sort(sortByFamilyProduct);
+      context.__normKey = normKey;
+      context.__normalized = items;
+      if (context.data) {
+        context.data.instances = items.slice();
+        context.__currentItems = items.slice();
+        context.__filteredItems = null;
+      }
+    }
 
-    // Enriquecer con familia calculada (y actualizar instancia en memoria)
-    items = items.map((inst) => {
-      const lower = (inst.productName || "").trim().toLowerCase();
-      const matchById = inst.productId ? productById.get(inst.productId) : null;
-      const matchByName = lower ? productByName.get(lower) : null;
-      const idMatchesName =
-        !!(matchById && lower && (matchById.name || "").trim().toLowerCase() === lower);
-      const family =
-        inst.block ||
-        (matchByName && matchByName.block) ||
-        (idMatchesName && matchById && matchById.block) ||
-        getFamilyForInstance(inst);
-      if (family && !inst.block) inst.block = family;
-      return { ...inst, block: family };
-    });
+    const filterSearch = (refs.searchInput?.value || "").toLowerCase();
+    const filterFamily = refs.familyFilter?.value || "";
+    const filterProducerId = refs.producerFilter?.value || "";
+    const filterStoreId = refs.storeFilter?.value || "";
+    const filterMissing =
+      typeof context.getMissingFilterActive === "function"
+        ? !!context.getMissingFilterActive()
+        : false;
+    const filterSignature = `${filterSearch}|${filterFamily}|${filterProducerId}|${filterStoreId}|${filterMissing}`;
+    if (context.__lastFilterSignature !== filterSignature) {
+      context.__lastFilterSignature = filterSignature;
+      context.__pageIndex = 0;
+      context.__forceScrollTop = true;
+    }
+    const matchesFilters = (inst) => {
+      if (!inst) return false;
+      if (filterFamily && (inst.block || "") !== filterFamily) return false;
+      if (filterProducerId && (inst.producerId || "") !== filterProducerId) return false;
+      if (filterStoreId) {
+        const ids = Array.isArray(inst.storeIds) ? inst.storeIds : [];
+        if (!ids.includes(filterStoreId)) return false;
+      }
+      if (filterMissing && inst.__missing !== "1") return false;
+      if (filterSearch) {
+        const hay = inst.__haystack || "";
+        if (!hay.includes(filterSearch)) return false;
+      }
+      return true;
+    };
 
-    const stripeMap = getStripeMap(context, items, getFamilyForInstance);
+    const filteredItems = items.filter((inst) => matchesFilters(inst));
+    context.__filteredItems = filteredItems.slice();
+
+    const stripeMap = getStripeMap(context, filteredItems.slice(0, BUFFER_ROWS * 2 + 100), getFamilyForInstance);
 
     const frag = document.createDocumentFragment();
     const nextRowMap = new Map();
     const nextHashMap = new Map();
+    const shouldRenderChips = filteredItems.length <= 120;
 
     const buildStoreSelector = (inst) => {
       const selStores = document.createElement("select");
       selStores.className = "table-input inline-stores-select visually-hidden";
+      selStores.setAttribute("aria-hidden", "true");
+      selStores.tabIndex = -1;
       selStores.multiple = true;
       selStores.dataset.field = "storeIds";
       selStores.dataset.id = inst.id;
-      const storeOptions = context.data?.stores || [];
+      let optionsLoaded = false;
+      const ensureOptions = () => {
+        if (optionsLoaded) return;
+        selStores.innerHTML = storeOptionsHtml;
+        Array.from(selStores.options || []).forEach((o) => {
+          o.selected = Array.isArray(inst.storeIds) && inst.storeIds.includes(o.value);
+        });
+        optionsLoaded = true;
+      };
       const getOptions = () =>
-        Array.from(
-          (selStores && (selStores.options || selStores.children)) || []
-        );
+        Array.from((selStores && (selStores.options || selStores.children)) || []);
       const getSelectedOptions = () => {
+        ensureOptions();
         const opts = selStores ? selStores.selectedOptions : null;
         if (opts && typeof opts.length !== "undefined" && opts.length > 0) {
           return Array.from(opts);
         }
         return getOptions().filter((o) => o && o.selected);
       };
-      storeOptions
-        .slice()
-        .sort((a, b) =>
-          (a.name || "").localeCompare(b.name || "", "es", {
-            sensitivity: "base",
-          })
-        )
-        .forEach((s) => {
-          const o = document.createElement("option");
-          o.value = s.id;
-          o.textContent = s.name || "(sin nombre)";
-          o.selected = Array.isArray(inst.storeIds) && inst.storeIds.includes(s.id);
-          selStores.appendChild(o);
-        });
-
-      const chips = document.createElement("div");
-      chips.className = "inline-store-chips instances-store-chips";
-      const renderChips = () => {
-        const selectedIds = new Set(getSelectedOptions().map((o) => o.value));
-        chips.innerHTML = "";
-        storeOptions
-          .slice()
-          .sort((a, b) =>
-            (a.name || "").localeCompare(b.name || "", "es", {
-              sensitivity: "base",
-            })
-          )
-          .forEach((s) => {
-            const chip = document.createElement("button");
-            chip.type = "button";
-            chip.className = "store-chip-toggle";
-            chip.textContent = s.name || "(sin nombre)";
-            chip.dataset.id = s.id;
-            const isSelected = selectedIds.has(s.id);
-            chip.classList.toggle("selected", isSelected);
-            chip.addEventListener("click", () => {
-              const opt = getOptions().find((o) => o.value === s.id);
-              if (opt) {
-                opt.selected = !opt.selected;
-                selStores.dispatchEvent(new Event("change", { bubbles: true }));
-              }
-            });
-            chips.appendChild(chip);
-          });
-      };
-      selStores.addEventListener("change", renderChips);
-      renderChips();
 
       const wrapper = document.createElement("div");
       wrapper.className = "stores-chip-wrapper instances-stores-wrapper";
       wrapper.appendChild(selStores);
-      wrapper.appendChild(chips);
+
+      const summary = document.createElement("div");
+      summary.className = "instances-stores-summary";
+      const renderSummary = () => {
+        const names = Array.isArray(inst.storeIds)
+          ? inst.storeIds
+              .map((id) => (storeById.get(id)?.name || "").trim())
+              .filter(Boolean)
+          : [];
+        summary.textContent = names.length ? names.join(" · ") : "Sin tiendas";
+      };
+      renderSummary();
+
+      let chips = null;
+      const renderChips = () => {
+        if (!chips) return;
+        ensureOptions();
+        const selectedIds = new Set(getSelectedOptions().map((o) => o.value));
+        chips.innerHTML = "";
+        sortedStores.forEach((s) => {
+          const chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "store-chip-toggle";
+          chip.textContent = s.name || "(sin nombre)";
+          chip.dataset.id = s.id;
+          const isSelected = selectedIds.has(s.id);
+          chip.classList.toggle("selected", isSelected);
+          chip.addEventListener("click", () => {
+            ensureOptions();
+            const opt = getOptions().find((o) => o.value === s.id);
+            if (opt) {
+              opt.selected = !opt.selected;
+              selStores.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+          });
+          chips.appendChild(chip);
+        });
+      };
+
+      const ensureChips = () => {
+        if (chips) return chips;
+        chips = document.createElement("div");
+        chips.className = "inline-store-chips instances-store-chips visually-hidden";
+        chips.style.display = "none";
+        renderChips();
+        selStores.addEventListener("change", () => {
+          ensureOptions();
+          const selectedIds = Array.from(selStores.selectedOptions || [])
+            .map((o) => o.value)
+            .filter(Boolean);
+          inst.storeIds = selectedIds;
+          renderSummary();
+          renderChips();
+        });
+        return chips;
+      };
+
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.className = "btn btn-icon btn-ghost stores-edit-btn";
+      editBtn.textContent = "✎";
+      editBtn.title = "Editar tiendas";
+      editBtn.setAttribute("aria-label", "Editar tiendas");
+      editBtn.style.minWidth = "28px";
+      editBtn.style.padding = "4px";
+      editBtn.addEventListener("click", () => {
+        const c = ensureChips();
+        if (!wrapper.contains(c)) {
+          wrapper.appendChild(c);
+        }
+        c.style.display = "flex";
+        c.classList.remove("visually-hidden");
+        ensureOptions();
+        renderChips();
+      });
+
+      const summaryRow = document.createElement("div");
+      summaryRow.className = "instances-stores-row";
+      summaryRow.style.display = "flex";
+      summaryRow.style.alignItems = "center";
+      summaryRow.style.justifyContent = "space-between";
+      summaryRow.appendChild(summary);
+      summaryRow.appendChild(editBtn);
+
+      wrapper.appendChild(summaryRow);
 
       return { wrapper, selStores };
     };
@@ -317,13 +477,9 @@
       return area;
     };
 
-    items.forEach((inst) => {
+    const renderRow = (inst) => {
       const hash = getRowHash(inst);
-      const existing = existingRows.get(inst.id);
-      let row = existing && hashMap.get(inst.id) === hash ? existing : null;
-      if (row) {
-        existingRows.delete(inst.id);
-      }
+      let row = null;
       const family = inst.block || getFamilyForInstance(inst) || "";
       const stripeKey = family || "__none__";
       const stripe = stripeMap[stripeKey] || 0;
@@ -335,13 +491,13 @@
       inputName.setAttribute("autocomplete", "off");
       inputName.placeholder = "Escribe para buscar en tu inventario...";
 
-  const createBtn = document.createElement("button");
-  createBtn.type = "button";
-  createBtn.className = "btn btn-small btn-icon";
-  createBtn.textContent = "+";
-  createBtn.title = "Crear producto en 'Otros productos'";
-  createBtn.setAttribute("aria-label", "Crear producto en 'Otros productos'");
-  createBtn.dataset.action = "create-product-selection";
+      const createBtn = document.createElement("button");
+      createBtn.type = "button";
+      createBtn.className = "btn btn-small btn-icon";
+      createBtn.textContent = "+";
+      createBtn.title = "Crear producto en 'Otros productos'";
+      createBtn.setAttribute("aria-label", "Crear producto en 'Otros productos'");
+      createBtn.dataset.action = "create-product-selection";
 
       const familyCell = document.createElement("td");
       familyCell.className = "instances-family-cell";
@@ -351,23 +507,28 @@
       selProducer.className = "table-input";
       selProducer.dataset.field = "producerId";
       selProducer.dataset.id = inst.id;
-      const producerOptions = context.data?.producers || [];
-      const optNone = document.createElement("option");
-      optNone.value = "";
-      optNone.textContent = "Sin productor";
-      selProducer.appendChild(optNone);
-      producerOptions
-        .slice()
-        .sort((a, b) =>
-          (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" })
-        )
-        .forEach((p) => {
-          const o = document.createElement("option");
-          o.value = p.id;
-          o.textContent = p.name || "(sin nombre)";
-          selProducer.appendChild(o);
-        });
-      selProducer.value = inst.producerId || "";
+      selProducer.dataset.selectedProducer = inst.producerId || "";
+      let producerOptionsLoaded = false;
+      const ensureProducerOptions = () => {
+        if (producerOptionsLoaded) return;
+        selProducer.innerHTML = `<option value=\"\">Sin productor</option>${producerOptionsHtml}`;
+        selProducer.value = selProducer.dataset.selectedProducer || "";
+        producerOptionsLoaded = true;
+      };
+      // Mostrar el productor actual sin cargar todas las opciones (se completan al foco/click)
+      if (!producerOptionsLoaded && inst.producerId) {
+        const currentProducer = producerById.get(inst.producerId);
+        if (currentProducer) {
+          const opt = document.createElement("option");
+          opt.value = inst.producerId;
+          opt.textContent = currentProducer.name || "(sin nombre)";
+          selProducer.appendChild(opt);
+          selProducer.value = inst.producerId;
+        }
+      }
+      // Carga perezosa al foco/click para reducir coste inicial
+      selProducer.addEventListener("focus", ensureProducerOptions, { once: true });
+      selProducer.addEventListener("click", ensureProducerOptions, { once: true });
 
       const brandInput = makeInput("brand", inst.brand || "");
 
@@ -464,12 +625,12 @@
       applyStripe(row, stripe);
       row.dataset.family = family || "";
       row.dataset.producerId = inst.producerId || "";
-        row.dataset.storeIds = Array.isArray(inst.storeIds) ? inst.storeIds.join(",") : "";
-        row.dataset.isNew = inst.__isNew ? "1" : "";
+      row.dataset.storeIds = Array.isArray(inst.storeIds) ? inst.storeIds.join(",") : "";
+      row.dataset.isNew = inst.__isNew ? "1" : "";
 
-        const familyCellEl =
-          row.querySelector(".instances-family-cell") ||
-          row.querySelector('[data-field="family"]');
+      const familyCellEl =
+        row.querySelector(".instances-family-cell") ||
+        row.querySelector('[data-field="family"]');
       const createBtnEl =
         row.querySelector('[data-action="create-product-selection"]') || createBtn;
       const inputNameEl =
@@ -572,20 +733,126 @@
       selStores?.addEventListener("change", updateDataset);
       updateDataset();
 
-      frag.appendChild(row);
-      nextRowMap.set(inst.id, row);
-      nextHashMap.set(inst.id, hash);
-    });
+      return { row, hash };
+    };
 
-    existingRows.forEach((row) => row.remove());
+    const ROW_HEIGHT = context.__rowHeight || DEFAULT_ROW_HEIGHT;
+    const calcWindow = () => {
+      const scrollContainer = tableBody.closest(scrollSelector);
+      const viewportH = scrollContainer ? scrollContainer.clientHeight : Math.min(window.innerHeight || 800, 800);
+      const rawScrollTop = scrollContainer ? scrollContainer.scrollTop : Math.max(0, -(tableBody.getBoundingClientRect().top || 0));
+      const maxScroll = Math.max(0, filteredItems.length * ROW_HEIGHT - viewportH);
+      const scrollTop = Math.min(rawScrollTop, maxScroll);
+      if (rawScrollTop !== scrollTop) {
+        context.__forceScrollTop = true;
+      }
+      const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS);
+      const visibleCount = Math.min(25, Math.ceil(viewportH / ROW_HEIGHT) + BUFFER_ROWS * 2);
+      const endIdx = Math.min(filteredItems.length, startIdx + visibleCount);
+      return { startIdx, endIdx, scrollContainer };
+    };
 
-    rowMap.clear();
-    nextRowMap.forEach((row, id) => rowMap.set(id, row));
-    hashMap.clear();
-    nextHashMap.forEach((hash, id) => hashMap.set(id, hash));
+    const renderWindow = () => {
+      const useVirtual = filteredItems.length > FULL_RENDER_THRESHOLD;
+      const { startIdx, endIdx } = calcWindow();
+      const beforeH = startIdx * ROW_HEIGHT;
+      const afterH = Math.max(0, (filteredItems.length - endIdx) * ROW_HEIGHT);
 
-    tableBody.appendChild(frag);
-    context.__lastItemsCount = items.length;
+      const frag = document.createDocumentFragment();
+
+      if (useVirtual && beforeH > 0) {
+        const spacerTop = document.createElement("tr");
+        spacerTop.className = "instances-spacer";
+        const td = document.createElement("td");
+        td.colSpan = 7;
+        td.style.height = `${beforeH}px`;
+        spacerTop.appendChild(td);
+        frag.appendChild(spacerTop);
+      }
+
+      const slice = useVirtual ? filteredItems.slice(startIdx, endIdx) : filteredItems.slice();
+      const inUse = new Set();
+      slice.forEach((inst) => {
+        const hash = getRowHash(inst);
+        let row = rowMap.get(inst.id);
+        if (!row || hashMap.get(inst.id) !== hash) {
+          const built = renderRow(inst);
+          row = built.row;
+          hashMap.set(inst.id, built.hash);
+          rowMap.set(inst.id, row);
+        }
+        frag.appendChild(row);
+        inUse.add(inst.id);
+      });
+
+      if (useVirtual && afterH > 0) {
+        const spacerBottom = document.createElement("tr");
+        spacerBottom.className = "instances-spacer";
+        const td = document.createElement("td");
+        td.colSpan = 7;
+        td.style.height = `${afterH}px`;
+        spacerBottom.appendChild(td);
+        frag.appendChild(spacerBottom);
+      }
+
+      tableBody.innerHTML = "";
+      tableBody.appendChild(frag);
+
+      if (slice.length && !context.__rowHeight) {
+        const first = tableBody.querySelector("tr.instances-spacer ~ tr");
+        if (first) {
+          context.__rowHeight = first.getBoundingClientRect().height || ROW_HEIGHT;
+        }
+      }
+
+      context.__lastItemsCount = filteredItems.length;
+
+      if (typeof context.attachMultiSelectToggle === "function") {
+        Array.from(tableBody.querySelectorAll('select[multiple][data-field="storeIds"]')).forEach(
+          (sel) => {
+            if (sel.dataset.enhanced === "1") return;
+            context.attachMultiSelectToggle(sel);
+            sel.dataset.enhanced = "1";
+          }
+        );
+      }
+
+      filterRows(context);
+    };
+
+    const scheduleWindow = () => {
+      if (context.__windowRaf) return;
+      context.__windowRaf = requestAnimationFrame(() => {
+        context.__windowRaf = null;
+        renderWindow();
+      });
+    };
+
+    if (!context.__scrollBound) {
+      context.__scrollBound = true;
+      window.addEventListener("scroll", scheduleWindow, { passive: true });
+      window.addEventListener("resize", scheduleWindow);
+      const scroller = tableBody.closest(scrollSelector);
+      if (scroller) {
+        scroller.addEventListener("scroll", scheduleWindow, { passive: true });
+      }
+    }
+
+    if (context.__forceScrollTop) {
+      const scrollContainer = tableBody.closest(scrollSelector);
+      if (scrollContainer && typeof scrollContainer.scrollTo === "function") {
+        scrollContainer.scrollTo({ top: 0, behavior: "auto" });
+      } else if (typeof window !== "undefined") {
+        const top =
+          (tableBody.getBoundingClientRect
+            ? tableBody.getBoundingClientRect().top + (window.pageYOffset || 0)
+            : 0) - 60;
+        window.scrollTo({ top: Math.max(top, 0), behavior: "auto" });
+      }
+      context.__forceScrollTop = false;
+    }
+
+    renderWindow();
 
     if (typeof context.attachMultiSelectToggle === "function") {
       Array.from(tableBody.querySelectorAll('select[multiple][data-field="storeIds"]')).forEach(
@@ -790,58 +1057,59 @@
     const filterFamily = refs.familyFilter?.value || "";
     const filterProducerId = refs.producerFilter?.value || "";
     const filterStoreId = refs.storeFilter?.value || "";
+    const filterMissing =
+      typeof ctx.getMissingFilterActive === "function" ? !!ctx.getMissingFilterActive() : false;
 
-    const rows = Array.from(tableBody.querySelectorAll("tr"));
-    const hasFilters = !!(search || filterFamily || filterProducerId || filterStoreId);
+    const allItems =
+      (ctx.__currentItems && Array.isArray(ctx.__currentItems) && ctx.__currentItems) ||
+      (ctx.data && Array.isArray(ctx.data.instances) && ctx.data.instances) ||
+      [];
+
+    const hasFilters = !!(search || filterFamily || filterProducerId || filterStoreId || filterMissing);
     filtersActive = hasFilters;
-    rows.forEach((row) => {
-      const name = row.dataset.name || "";
-      const brand = row.dataset.brand || "";
-      const notes = row.dataset.notes || "";
-      const family =
-        row.dataset.family ||
-        (row.querySelector('[data-field="family"]')?.textContent || "").trim() ||
-        "";
-      const familyLower = family.toLowerCase();
-      const producerId = row.dataset.producerId || "";
-      const producerName = row.dataset.producerName || "";
-      const storeIds =
-        row.dataset.storeIds && row.dataset.storeIds.length
-          ? row.dataset.storeIds.split(",").filter(Boolean)
-          : [];
-      const storeNames = row.dataset.storeNames || "";
 
+    const matches = (item) => {
+      if (!item) return false;
+      if (filterFamily && (item.block || "") !== filterFamily) return false;
+      if (filterProducerId && (item.producerId || "") !== filterProducerId) return false;
+      if (filterStoreId) {
+        const ids = Array.isArray(item.storeIds) ? item.storeIds : [];
+        if (!ids.includes(filterStoreId)) return false;
+      }
+      if (filterMissing && item.__missing !== "1") return false;
+      if (search) {
+        const hay = item.__haystack || "";
+        if (!hay.includes(search)) return false;
+      }
+      return true;
+    };
+
+    // Visibilidad de filas renderizadas
+    const rows = Array.from(tableBody.querySelectorAll("tr"));
+    rows.forEach((row) => {
       if (row.dataset.isNew === "1") {
         row.style.display = "";
         return;
       }
-
-      let visible = true;
-      if (hasFilters) {
-        if (filterFamily && family !== filterFamily) visible = false;
-        if (visible && filterProducerId && producerId !== filterProducerId) visible = false;
-        if (visible && filterStoreId && !storeIds.includes(filterStoreId)) visible = false;
-        if (visible && search) {
-          const haystack = `${name} ${brand} ${notes} ${familyLower} ${producerName} ${storeNames}`;
-          if (!haystack.includes(search)) visible = false;
-        }
-      }
+      const id = row.dataset.id;
+      const item = allItems.find((i) => i && i.id === id);
+      const visible = matches(item);
       row.style.display = visible ? "" : "none";
     });
 
     if (refs.summary) {
-      const rowCount = rows.filter((tr) => tr.dataset.id).length;
-      const total = Array.isArray(context.data?.instances)
-        ? context.data.instances.length || rowCount
-        : typeof context.__lastItemsCount === "number"
-        ? context.__lastItemsCount || rowCount
-        : rowCount;
-      const visible = rows.filter((tr) => tr.style.display !== "none" && tr.dataset.id).length;
-      const filtered = hasFilters || visible !== total;
-      const missing = rows.filter((tr) => tr.dataset.missing === "1").length;
-      refs.summary.textContent = `Total: ${total}${filtered ? ` · Visibles: ${visible}` : ""}${
-        missing > 0 ? ` · No conciliados: ${missing}` : ""
-      }`;
+      const total = allItems.length;
+      const visible = allItems.filter((it) => matches(it)).length;
+      const missing = allItems.filter((it) => it && it.__missing === "1").length;
+      const filtered = hasFilters && visible !== total;
+      const parts = [`Total: ${total}`];
+      if (missing > 0) {
+        parts.push(`No conciliados: ${missing}`);
+      }
+      if (filtered) {
+        parts.push(`Visibles: ${visible}`);
+      }
+      refs.summary.textContent = parts.join(" · ");
     }
   }
 
@@ -849,8 +1117,14 @@
     const refs = context.refs || {};
     const handle =
       window.AppUtils && typeof window.AppUtils.debounce === "function"
-        ? window.AppUtils.debounce(() => filterRows(context), 120)
-        : () => filterRows(context);
+        ? window.AppUtils.debounce(() => {
+            context.__forceScrollTop = true;
+            render(context);
+          }, 120)
+        : () => {
+            context.__forceScrollTop = true;
+            render(context);
+          };
     refs.searchInput?.addEventListener("input", handle);
     refs.familyFilter?.addEventListener("change", handle);
     refs.producerFilter?.addEventListener("change", handle);

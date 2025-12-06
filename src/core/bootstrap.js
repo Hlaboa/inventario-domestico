@@ -101,6 +101,7 @@
       instancesFamilyFilterSelect: document.getElementById("instancesFamilyFilter"),
       instancesProducerFilterSelect: document.getElementById("instancesProducerFilter"),
       instancesStoreFilterSelect: document.getElementById("instancesStoreFilter"),
+      instancesMissingFilterButton: document.getElementById("instancesMissingFilterButton"),
       instancesTableBody: document.getElementById("instancesTableBody"),
       addInstanceButton: document.getElementById("addInstanceButton"),
       saveInstancesButton: document.getElementById("saveInstancesButton"),

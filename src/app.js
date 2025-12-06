@@ -14,6 +14,7 @@ const STORAGE_KEY_CLASSIFICATIONS = "clasificacionesProductosCocina"; // Familia
 let products = []; // almacén (cache derivada)
 let extraProducts = []; // otros productos (cache derivada)
 let unifiedProducts = []; // listado unificado con scope (cache)
+let unifiedDirty = true;
 let suppliers = []; // tiendas (cache)
 let producers = []; // productores (cache)
 let productInstances = []; // selección producto+productor+marca+tiendas (cache)
@@ -21,6 +22,9 @@ let classifications = []; // combinaciones familia/tipo (cache)
 let productDrafts = [];
 let extraDrafts = [];
 let pendingInstancesList = null;
+let instancesInitDone = false;
+let instancesViewInitDone = false;
+let classificationInitDone = false;
 let instancesUpdateTimer = null;
 const INSTANCE_UPDATE_DEBOUNCE = 200;
 let extraRerenderTimer = null;
@@ -42,6 +46,36 @@ let suppressStoreSyncTimer = null;
 let shoppingIdleHandle = null;
 let shoppingRenderTimer = null;
 const SHOPPING_RENDER_DEBOUNCE = 160;
+let persistUnifiedIdleHandle = null;
+let persistUnifiedTimer = null;
+const UNIFIED_PERSIST_DEBOUNCE = 140;
+let extrasPersistCleanupTimer = null;
+let gridRenderHandle = null;
+let extraEditRenderHandle = null;
+let classificationRenderHandle = null;
+let instancesRenderHandle = null;
+const DEFERRED_RENDER_TIMEOUT = 240;
+const PERF_LOG_THRESHOLD = 0; // log todo para diagnóstico
+const perfLog = (label, duration, extra = "") => {
+  if (duration < PERF_LOG_THRESHOLD) return;
+  const suffix = extra ? ` ${extra}` : "";
+  console.log(`[perf] ${label}: ${duration.toFixed(1)}ms${suffix}`);
+};
+const runMeasured = (label, fn) => {
+  const t0 = performance.now();
+  const res = typeof fn === "function" ? fn() : null;
+  perfLog(label, performance.now() - t0);
+  return res;
+};
+let instancesNeedsRender = true;
+let extrasNeedsRender = true;
+let producersNeedsRender = true;
+let storesNeedsRender = true;
+let shoppingNeedsRender = true;
+let firstSyncDone = false;
+let scheduledInitialSync = null;
+let scheduledInitialSyncHandle = null;
+let deferredIdleTasksHandle = null;
 const stateAdapter = window.StateAdapter || null;
 const appUtils = window.AppUtils || {};
 const debounce =
@@ -272,11 +306,16 @@ function setClassificationsList(list) {
   return classifications;
 }
 
-function refreshProductsFromUnified() {
+function refreshProductsFromUnified(force = false) {
+  if (!force && !unifiedDirty) return;
+  const t0 = performance.now();
   const unified = Array.isArray(unifiedProducts) ? unifiedProducts : [];
   unifiedProducts = normalizeExtrasHave(unified.filter(Boolean));
   products = unifiedProducts.filter((p) => p.scope === "almacen");
   extraProducts = unifiedProducts.filter((p) => p.scope === "otros");
+  unifiedDirty = false;
+  const duration = performance.now() - t0;
+  perfLog("refreshProductsFromUnified", duration, `items=${unifiedProducts.length}`);
 }
 
 function getPantryProducts() {
@@ -313,10 +352,15 @@ function normalizeExtrasHave(list = []) {
 }
 
 function setUnifiedList(next) {
+  const t0 = performance.now();
   const cleaned = Array.isArray(next) ? next.filter(Boolean) : [];
   unifiedProducts = normalizeExtrasHave(cleaned);
+  unifiedDirty = true;
   memoProductsDatalistKey = "";
-  refreshProductsFromUnified();
+  refreshProductsFromUnified(true);
+  const duration = performance.now() - t0;
+  perfLog("setUnifiedList", duration, `items=${unifiedProducts.length}`);
+  const storeActive = isStoreActive();
   if (stateAdapter && typeof stateAdapter.setEntity === "function") {
     stateAdapter.setEntity("unifiedProducts", unifiedProducts);
   }
@@ -327,52 +371,8 @@ function setUnifiedList(next) {
   ) {
     window.AppStore.actions.setUnifiedProducts(unifiedProducts);
   }
-  let persisted = false;
-  if (window.AppStorage && typeof window.AppStorage.saveUnifiedProducts === "function") {
-    try {
-      window.AppStorage.saveUnifiedProducts(unifiedProducts);
-      persisted = true;
-    } catch {
-      persisted = false;
-    }
-  }
-  if (!persisted) {
-    try {
-      localStorage.setItem("productosCocinaUnificados", JSON.stringify(unifiedProducts));
-      persisted = true;
-    } catch {
-      persisted = false;
-    }
-  }
-  if (!persisted && typeof appUtils.saveList === "function") {
-    try {
-      appUtils.saveList("productosCocinaUnificados", unifiedProducts);
-    } catch {}
-  }
-
-  // Persistencia redundante en claves legacy para asegurar carga en navegadores que bloquean la clave unificada
-  const legacyProducts = unifiedProducts
-    .filter((p) => p.scope === "almacen")
-    .map((p) => {
-      const { scope, ...rest } = p;
-      return rest;
-    });
-  const legacyExtras = unifiedProducts
-    .filter((p) => p.scope === "otros")
-    .map((p) => {
-      const { scope, ...rest } = p;
-      return rest;
-    });
-  try {
-    localStorage.setItem("inventarioCocinaAlmacen", JSON.stringify(legacyProducts));
-    localStorage.setItem("otrosProductosCompra", JSON.stringify(legacyExtras));
-  } catch {
-    if (typeof appUtils.saveList === "function") {
-      try {
-        appUtils.saveList("inventarioCocinaAlmacen", legacyProducts);
-        appUtils.saveList("otrosProductosCompra", legacyExtras);
-      } catch {}
-    }
+  if (!storeActive) {
+    persistUnifiedLocal(unifiedProducts);
   }
   return unifiedProducts;
 }
@@ -447,9 +447,11 @@ function updateExtraBuyFlag(id, checked) {
   skipExtraControllerUntil = Date.now() + 350;
 
   const flushExtrasUpdates = () => {
+    const t0 = performance.now();
     const payload = pendingExtrasUnified;
     pendingExtrasUnified = null;
     unifiedProducts = payload;
+    unifiedDirty = true;
     refreshProductsFromUnified();
     suppressStoreSync = true;
     if (suppressStoreSyncTimer) clearTimeout(suppressStoreSyncTimer);
@@ -482,47 +484,102 @@ function updateExtraBuyFlag(id, checked) {
     if (extraSummaryInfo) {
       renderExtraSummary();
     }
+    const duration = performance.now() - t0;
+    perfLog("flushExtrasUpdates", duration, `items=${(payload || []).length}`);
   };
 
   if (extraSummaryInfo) {
     renderExtraSummary();
   }
+  flushPendingExtrasImmediate();
+}
+
+function flushPendingExtrasImmediate() {
+  if (!pendingExtrasUnified) return;
+  if (extrasUpdateTimer) {
+    clearTimeout(extrasUpdateTimer);
+    extrasUpdateTimer = null;
+  }
+  if (extrasIdleHandle && typeof cancelIdleCallback === "function") {
+    try {
+      cancelIdleCallback(extrasIdleHandle);
+    } catch {}
+    extrasIdleHandle = null;
+  }
+  if (extrasPersistCleanupTimer) {
+    clearTimeout(extrasPersistCleanupTimer);
+    extrasPersistCleanupTimer = null;
+  }
+  const payload = pendingExtrasUnified;
+  pendingExtrasUnified = null;
+  const now = performance.now();
+  unifiedProducts = payload;
+  unifiedDirty = true;
+  refreshProductsFromUnified();
+  suppressStoreSync = true;
+  if (suppressStoreSyncTimer) clearTimeout(suppressStoreSyncTimer);
+  suppressStoreSyncTimer = setTimeout(() => {
+    suppressStoreSync = false;
+  }, EXTRA_UPDATE_DEBOUNCE * 2);
+
+  const persistLegacy = () => {
+    const legacyExtras = payload
+      .filter((p) => p && p.scope === "otros")
+      .map((p) => {
+        const { scope, ...rest } = p;
+        return rest;
+      });
+    try {
+      localStorage.setItem("otrosProductosCompra", JSON.stringify(legacyExtras));
+    } catch {
+      if (typeof appUtils.saveList === "function") {
+        try {
+          appUtils.saveList("otrosProductosCompra", legacyExtras);
+        } catch {}
+      }
+    }
+  };
+
+  if (isStoreActive()) {
+    if (window.AppStore?.actions?.setUnifiedProducts) {
+      try {
+        window.AppStore.actions.setUnifiedProducts(payload);
+      } catch {}
+    }
+    if (window.DataService?.setUnifiedProducts) {
+      try {
+        window.DataService.setUnifiedProducts(payload);
+      } catch {}
+    }
+  }
+
+  setUnifiedList(payload);
+  saveExtraProducts();
+  persistLegacy();
+  if (extraSummaryInfo) renderExtraSummary();
   scheduleShoppingListRender();
-  scheduleExtrasFlush(flushExtrasUpdates);
+  perfLog("flushPendingExtrasImmediate", performance.now() - now, `items=${(payload || []).length}`);
 }
 
 function flushInventoryUpdates() {
   if (!pendingInventoryUnified) return;
+  const t0 = performance.now();
   const payload = pendingInventoryUnified;
   pendingInventoryUnified = null;
   unifiedProducts = payload;
+  unifiedDirty = true;
   refreshProductsFromUnified();
   suppressStoreSync = true;
   if (suppressStoreSyncTimer) clearTimeout(suppressStoreSyncTimer);
   suppressStoreSyncTimer = setTimeout(() => {
     suppressStoreSync = false;
   }, INVENTORY_UPDATE_DEBOUNCE * 2);
-  if (
-    window.AppStore &&
-    window.AppStore.actions &&
-    typeof window.AppStore.actions.setUnifiedProducts === "function"
-  ) {
-    try {
-      window.AppStore.actions.setUnifiedProducts(payload);
-      return;
-    } catch {}
-  }
-  if (
-    window.DataService &&
-    typeof window.DataService.setUnifiedProducts === "function"
-  ) {
-    try {
-      window.DataService.setUnifiedProducts(payload);
-      return;
-    } catch {}
-  }
+  // Persistimos siempre vía setUnifiedList para unificar rutas y asegurar almacenamiento local
   setUnifiedList(payload);
   saveProducts();
+  persistUnifiedLocal(payload);
+  const duration = performance.now() - t0;
+  perfLog("flushInventoryUpdates", duration, `items=${(payload || []).length}`);
 }
 
 function scheduleInventoryFlush() {
@@ -532,14 +589,11 @@ function scheduleInventoryFlush() {
   }
   clearTimeout(inventoryUpdateTimer);
   const run = () => {
+    if (!selectionPopupOverlay || !selectionPopup || !selectionPopupList) return;
     inventoryIdleHandle = null;
     flushInventoryUpdates();
   };
-  if (typeof requestIdleCallback === "function") {
-    inventoryIdleHandle = requestIdleCallback(run, { timeout: INVENTORY_UPDATE_DEBOUNCE });
-  } else {
-    inventoryUpdateTimer = setTimeout(run, INVENTORY_UPDATE_DEBOUNCE);
-  }
+  inventoryUpdateTimer = setTimeout(run, INVENTORY_UPDATE_DEBOUNCE);
 }
 
 function scheduleExtrasFlush(flushFn) {
@@ -552,12 +606,16 @@ function scheduleExtrasFlush(flushFn) {
     extrasIdleHandle = null;
     flushFn();
   };
-  if (typeof requestIdleCallback === "function") {
-    extrasIdleHandle = requestIdleCallback(run, { timeout: EXTRA_UPDATE_DEBOUNCE });
-  } else {
-    extrasUpdateTimer = setTimeout(run, EXTRA_UPDATE_DEBOUNCE);
-  }
+  extrasUpdateTimer = setTimeout(run, EXTRA_UPDATE_DEBOUNCE);
 }
+
+// Asegurar persistencia de cambios en extras antes de cerrar/navegar
+window.addEventListener("beforeunload", flushPendingExtrasImmediate);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    flushPendingExtrasImmediate();
+  }
+});
 
 function scheduleShoppingListRender() {
   if (typeof cancelIdleCallback === "function" && shoppingIdleHandle) {
@@ -569,11 +627,7 @@ function scheduleShoppingListRender() {
     shoppingIdleHandle = null;
     renderShoppingList();
   };
-  if (typeof requestIdleCallback === "function") {
-    shoppingIdleHandle = requestIdleCallback(run, { timeout: SHOPPING_RENDER_DEBOUNCE });
-  } else {
-    shoppingRenderTimer = setTimeout(run, SHOPPING_RENDER_DEBOUNCE);
-  }
+  shoppingRenderTimer = setTimeout(run, SHOPPING_RENDER_DEBOUNCE);
 }
 
 function queueInventorySummaryUpdate(baseUnified) {
@@ -771,6 +825,7 @@ function applyStateSnapshot(snapshot = {}) {
       ];
 
   unifiedProducts = unified;
+  unifiedDirty = true;
   suppliers = snapshot.suppliers || suppliers || [];
   producers = snapshot.producers || producers || [];
   classifications = snapshot.classifications || classifications || [];
@@ -788,6 +843,45 @@ function syncFromAppStore() {
 
 function persistUnified(list) {
   setUnifiedList(Array.isArray(list) ? list : []);
+}
+
+function persistUnifiedLocal(list) {
+  const run = () => {
+    const t0 = performance.now();
+    const data = Array.isArray(list) ? list : [];
+    let persisted = false;
+    if (window.AppStorage && typeof window.AppStorage.saveUnifiedProducts === "function") {
+      try {
+        window.AppStorage.saveUnifiedProducts(data);
+        persisted = true;
+      } catch {
+        persisted = false;
+      }
+    }
+    if (!persisted) {
+      try {
+        localStorage.setItem("productosCocinaUnificados", JSON.stringify(data));
+        persisted = true;
+      } catch {
+        persisted = false;
+      }
+    }
+    if (!persisted && typeof appUtils.saveList === "function") {
+      try {
+        appUtils.saveList("productosCocinaUnificados", data);
+        persisted = true;
+      } catch {}
+    }
+    const duration = performance.now() - t0;
+    perfLog("persistUnifiedLocal", duration, `items=${data.length}`);
+  };
+
+  if (typeof cancelIdleCallback === "function" && persistUnifiedIdleHandle) {
+    cancelIdleCallback(persistUnifiedIdleHandle);
+    persistUnifiedIdleHandle = null;
+  }
+  clearTimeout(persistUnifiedTimer);
+  persistUnifiedTimer = setTimeout(run, UNIFIED_PERSIST_DEBOUNCE);
 }
 
 // ==============================
@@ -1001,6 +1095,7 @@ let selectionPopupList;
 let selectionPopupClose;
 let selectionPopupHeader;
 let selectionPopupBody;
+let instancesMissingFilterButton;
 let lastSelectionTrigger = null;
 let instancesTableWrapper;
 let inlineProducerSelect;
@@ -1021,10 +1116,16 @@ let memoProducerFilterOptions = "";
 let memoProductsDatalistKey = "";
 let saveShortcutBound = false;
 let lastDuplicateToast = { name: "", ts: 0 };
+let selectionButtonsVisible = true;
+let instancesMissingFilterActive = false;
 
 let filtersDefaultsApplied = false;
 let selectionDragCleanup = null;
 let selectionPopupInitialized = false;
+let instancesWarmupHandle = null;
+let instancesWarmupHandleType = "";
+let instancesWarmupDone = false;
+const INSTANCES_WARMUP_IDLE_TIMEOUT = 180;
 
 function syncInventoryDrafts() {
   if (inventoryController && typeof inventoryController.setDrafts === "function") {
@@ -1120,7 +1221,8 @@ function getInventoryContext() {
 //  INICIALIZACIÓN
 // ==============================
 
-document.addEventListener("DOMContentLoaded", () => {
+function initAfterDom(tStart = performance.now()) {
+  console.log("[perf] DOMContentLoaded start");
   ensureSaveShortcutBinding();
   const refs =
     window.AppBootstrap && typeof window.AppBootstrap.collectRefs === "function"
@@ -1208,6 +1310,7 @@ document.addEventListener("DOMContentLoaded", () => {
     instancesFamilyFilterSelect,
     instancesProducerFilterSelect,
     instancesStoreFilterSelect,
+    instancesMissingFilterButton,
     instancesTableBody,
     addInstanceButton,
     saveInstancesButton,
@@ -1259,6 +1362,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
   ensureSelectionPopupInit();
   document.addEventListener("change", handleGlobalExtraBuyToggle, { capture: true });
+  setSelectionButtonsVisibility(true);
+
+    if (instancesMissingFilterButton) {
+      const toggleMissingFilter = () => {
+        instancesMissingFilterActive = !instancesMissingFilterActive;
+        instancesMissingFilterButton.classList.toggle("active", instancesMissingFilterActive);
+        instancesMissingFilterButton.setAttribute("aria-pressed", instancesMissingFilterActive ? "true" : "false");
+        const activeInstancesTab =
+          isActiveSection(proveedoresSection) &&
+          instancesPanel &&
+          instancesPanel.classList.contains("active");
+        if (activeInstancesTab) {
+          renderInstancesTable(true, { showLoading: true });
+        }
+      };
+      instancesMissingFilterButton.addEventListener("click", toggleMissingFilter);
+    }
 
   if (window.ProductAutocomplete && typeof window.ProductAutocomplete.init === "function") {
     window.ProductAutocomplete.init({
@@ -1267,14 +1387,21 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  const kickoffInit = () => runMainInit(tStart, renderInstancesDebounced, refs);
+  setTimeout(kickoffInit, 0);
+  return;
+}
+
+function runMainInit(tStart, renderInstancesDebounced, refsObj) {
+  const bootRefs = refsObj || {};
   if (window.AppBootstrap) {
-    window.AppBootstrap.initMainNav(refs, {
+    window.AppBootstrap.initMainNav(bootRefs, {
       setMainSection,
       toggleAlmacenEditMode,
       toggleOtrosEditMode,
     });
 
-    window.AppBootstrap.initFilters(refs, {
+    window.AppBootstrap.initFilters(bootRefs, {
       renderInstancesTable: renderInstancesDebounced,
       handleAddQuickProduct,
       handleAddQuickExtra,
@@ -1289,7 +1416,7 @@ document.addEventListener("DOMContentLoaded", () => {
       triggerImportBackup: () => backupFileInput && backupFileInput.click(),
     });
 
-    window.AppBootstrap.initPopups(refs, {
+    window.AppBootstrap.initPopups(bootRefs, {
       closeSelectionPopup,
       handleSelectionPopupResize,
       handleSelectionPopupKeydown,
@@ -1319,7 +1446,23 @@ document.addEventListener("DOMContentLoaded", () => {
   // Carga datos y renderizado inicial
   loadAllData();
 
-  const syncFromState = (next) => {
+  const scheduleInitialSync = (state) => {
+    scheduledInitialSync = state;
+    if (scheduledInitialSyncHandle) return;
+    const run = () => {
+      scheduledInitialSyncHandle = null;
+      const snap = scheduledInitialSync;
+      scheduledInitialSync = null;
+      syncFromState(snap, { force: true });
+    };
+    scheduledInitialSyncHandle = setTimeout(run, 0);
+  };
+
+  const syncFromState = (next, { force = false } = {}) => {
+    if (!firstSyncDone && !force) {
+      scheduleInitialSync(next);
+      return;
+    }
     if (suppressStoreSync) {
       suppressStoreSync = false;
       return;
@@ -1328,762 +1471,742 @@ document.addEventListener("DOMContentLoaded", () => {
     applyStateSnapshot(next || {});
     ensureInstanceFamilies({ persist: false });
     isSyncingFromStore = false;
-    renderShelfOptions();
-    renderBlockOptions();
-    renderTypeOptions();
-    renderStoreOptions();
-    updateProducerFilterOptions();
-    updateStoreFilterOptions();
-    updateInstanceFilterOptions();
-    renderProductsDatalist();
+    runMeasured("renderShelfOptions", renderShelfOptions);
+    runMeasured("renderBlockOptions", renderBlockOptions);
+    runMeasured("renderTypeOptions", renderTypeOptions);
+    runMeasured("renderStoreOptions", renderStoreOptions);
+    runMeasured("updateProducerFilterOptions", updateProducerFilterOptions);
+    runMeasured("updateStoreFilterOptions", updateStoreFilterOptions);
+    runMeasured("updateInstanceFilterOptions", updateInstanceFilterOptions);
+    runMeasured("renderProductsDatalist", renderProductsDatalist);
 
     if (inventoryController) {
       inventoryController.setDrafts(productDrafts);
-      inventoryController.render();
+      runMeasured("inventoryController.render", () => inventoryController.render());
     } else if (window.InventoryFeature && typeof window.InventoryFeature.render === "function") {
-      window.InventoryFeature.render();
+      runMeasured("InventoryFeature.render", () => window.InventoryFeature.render());
     } else {
-      renderProducts();
+      runMeasured("renderProducts", renderProducts);
     }
+    // Render no críticos (otros tabs) se difieren a idle
     if (!isStoreActive()) {
-      renderGridRows();
-      renderExtraQuickTable();
-      renderExtraEditTable();
+      deferNonCriticalRenders();
     }
-    if (window.ProducersFeature && typeof window.ProducersFeature.render === "function") {
-      window.ProducersFeature.render();
-    } else if (window.ProducersView && typeof window.ProducersView.render === "function") {
-      window.ProducersView.render(producersViewContext);
-    }
-    if (window.StoresFeature && typeof window.StoresFeature.render === "function") {
-      window.StoresFeature.render();
-    } else if (window.StoresView && typeof window.StoresView.render === "function") {
-      window.StoresView.render(storesViewContext);
-    }
-    renderClassificationTable();
-    if (instancesController) {
-      instancesController.render();
+    renderProducers();
+    renderStores();
+    // deferir otros renders si no son críticos
+    if (classificationSection?.classList?.contains("active")) {
+      runMeasured("renderClassificationTable", renderClassificationTable);
     } else {
-      renderInstancesTable();
+      deferNonCriticalRenders();
     }
-    renderShoppingList();
-    initResizableTables();
+    const instancesActive =
+      isActiveSection(proveedoresSection) && instancesPanel?.classList?.contains("active");
+    if (instancesActive) {
+      renderInstancesTable(true);
+      instancesNeedsRender = false;
+    } else {
+      instancesNeedsRender = true;
+    }
+    runMeasured("renderShoppingList", renderShoppingList);
+    runMeasured("initResizableTables", initResizableTables);
 
     if (!filtersDefaultsApplied) {
       filtersDefaultsApplied = true;
       if (window.UIHelpers && typeof window.UIHelpers.resetFilters === "function") {
-        window.UIHelpers.resetFilters({
-          filterSearchInput,
-          filterShelfSelect,
-          filterBlockSelect,
-          filterTypeSelect,
-          filterStoreSelect,
-          filterStatusSelect,
-          editFilterSearchInput,
-          editFilterFamilySelect,
-          editFilterTypeSelect,
-          editFilterShelfSelect,
-          editFilterStoreSelect,
-          extraFilterSearchInput,
-          extraFilterFamilySelect,
-          extraFilterTypeSelect,
-          extraFilterStoreSelect,
-          extraFilterBuySelect,
-          extraEditFilterSearchInput,
-          extraEditFilterFamilySelect,
-          extraEditFilterTypeSelect,
-          extraEditFilterStoreSelect,
-          instancesSearchInput,
-          instancesFamilyFilterSelect,
-          instancesProducerFilterSelect,
-          instancesStoreFilterSelect,
-          storesSearchInput,
-          storesTypeFilterSelect,
-          storesLocationFilterSelect,
-          producersSearchInput,
-          producersLocationFilterSelect,
-          classificationSearchInput,
-          classificationFamilyFilterSelect,
-          classificationTypeFilterSelect,
-        });
+        runMeasured("resetFilters", () =>
+          window.UIHelpers.resetFilters({
+            filterSearchInput,
+            filterShelfSelect,
+            filterBlockSelect,
+            filterTypeSelect,
+            filterStoreSelect,
+            filterStatusSelect,
+            editFilterSearchInput,
+            editFilterFamilySelect,
+            editFilterTypeSelect,
+            editFilterShelfSelect,
+            editFilterStoreSelect,
+            extraFilterSearchInput,
+            extraFilterFamilySelect,
+            extraFilterTypeSelect,
+            extraFilterStoreSelect,
+            extraFilterBuySelect,
+            extraEditFilterSearchInput,
+            extraEditFilterFamilySelect,
+            extraEditFilterTypeSelect,
+            extraEditFilterStoreSelect,
+            instancesSearchInput,
+            instancesFamilyFilterSelect,
+            instancesProducerFilterSelect,
+            instancesStoreFilterSelect,
+            storesSearchInput,
+            storesTypeFilterSelect,
+            storesLocationFilterSelect,
+            producersSearchInput,
+            producersLocationFilterSelect,
+            classificationSearchInput,
+            classificationFamilyFilterSelect,
+            classificationTypeFilterSelect,
+          })
+        );
       }
-      renderProducts();
-      renderGridRows();
-      renderExtraQuickTable();
-      renderExtraEditTable();
-      renderInstancesTable();
+      // Render no críticos en idle
+      deferNonCriticalRenders();
+    }
+    if (!firstSyncDone) {
+      firstSyncDone = true;
+      perfLog("DOMContentLoaded:end", performance.now() - tStart);
     }
   };
 
   if (window.AppStore && window.ViewControllers && typeof window.ViewControllers.create === "function") {
     window.ViewControllers.create(window.AppStore, { onState: syncFromState });
   } else if (window.AppState && typeof window.AppState.subscribe === "function") {
-    syncFromState(window.AppState.getState());
+    scheduleInitialSync(window.AppState.getState());
     window.AppState.subscribe(syncFromState);
   }
 
-  extrasViewContext = {
-    refs: {
-      tableBody: extraListTableBody,
-      searchInput: extraFilterSearchInput,
-      familyFilter: extraFilterFamilySelect,
-      typeFilter: extraFilterTypeSelect,
-      storeFilter: extraFilterStoreSelect,
-      buyFilter: extraFilterBuySelect,
-      rowTemplate: extraQuickRowTemplate,
-    },
-    getExtras: () => getOtherProducts(),
-    getDrafts: () => extraDrafts,
-    buildFamilyStripeMap,
-    helpers: {
-      createTableInput,
-      createTableTextarea,
-      createFamilySelect,
-      createTypeSelect,
-      linkFamilyTypeSelects,
-      createSelectionButton,
-      getSelectionLabelForProduct,
-    getSelectionStoresForProduct,
-  },
-  getSelectionInstanceForProduct,
-  getStoreNames,
-  persistUnified,
-  getPantryProducts,
-  onToggleBuy: updateExtraBuyFlag,
-  onChange: () => {
-    renderProducts();
-    renderExtraQuickTable();
-    renderExtraEditTable();
-    renderShoppingList();
-    renderShelfOptions();
-    renderBlockOptions();
-    renderTypeOptions();
-    renderProductsDatalist();
-  },
-  onFilter: () => {
-    if (extraSummaryInfo) {
-      renderExtraSummary();
+  const deferNonCriticalRenders = () => {
+    if (deferredIdleTasksHandle) return;
+    deferredIdleTasksHandle = true;
+    const tasks = [];
+    if (!isStoreActive()) {
+      tasks.push(() => runMeasured("renderGridRows", renderGridRows));
+      tasks.push(() => runMeasured("renderExtraQuickTable", renderExtraQuickTable));
+      tasks.push(() => runMeasured("renderExtraEditTable", renderExtraEditTable));
     }
-  },
-  onSelectSelection: (id) => openSelectionPopupForProduct(id),
-    onEdit: (id) => startEditExtra(id),
-    onSaveDraft: (id) => commitDraftExtras(id ? [id] : null),
-    onMoveToAlmacen: (id) => {
-      const acts = getExtrasActions();
-      if (acts && typeof acts.moveToAlmacen === "function") {
-        acts.moveToAlmacen(id);
+    if (classificationSection && classificationSection.classList.contains("active")) {
+      tasks.push(() => runMeasured("renderClassificationTable", renderClassificationTable));
+    }
+
+    const scheduleNext = () => {
+      if (!tasks.length) {
+        deferredIdleTasksHandle = null;
+        return;
       }
-      // Limpia borradores asociados y refresca vistas
-      extraDrafts = extraDrafts.filter((d) => d.originalId !== id && d.id !== id);
-      renderExtraQuickTable();
-      renderExtraEditTable();
-      renderProducts();
-      renderGridRows();
-      renderShoppingList();
-    },
-    onDelete: (id) => {
-      const acts = getExtrasActions();
-      if (acts && typeof acts.delete === "function") {
-        acts.delete(id);
+      const next = tasks.shift();
+      const exec = () => {
+        next();
+        scheduleNext();
+      };
+      setTimeout(exec, 0);
+    };
+
+    scheduleNext();
+  };
+
+  const initViewsPhase = () => {
+    const tasks = [];
+    let pendingInventoryFeatureConfig = null;
+    const shouldInitClassification = classificationSection && classificationSection.classList.contains("active");
+    const enqueue = (labelOrFn, fnMaybe) => {
+      const isFnOnly = typeof labelOrFn === "function";
+      const label = isFnOnly ? `task-${tasks.length + 1}` : labelOrFn;
+      const fn = isFnOnly ? labelOrFn : fnMaybe;
+      tasks.push({ label, fn });
+    };
+    const runNext = () => {
+      if (!tasks.length) return;
+      const { label, fn } = tasks.shift();
+      setTimeout(() => {
+        const t0 = performance.now();
+        try {
+          fn();
+        } catch (err) {
+          console.error(err);
+        }
+        perfLog(`initViews:${label}`, performance.now() - t0);
+        runNext();
+      }, 0);
+    };
+
+    enqueue("extras-view", () => {
+      extrasViewContext = {
+        refs: {
+          tableBody: extraListTableBody,
+          searchInput: extraFilterSearchInput,
+          familyFilter: extraFilterFamilySelect,
+          typeFilter: extraFilterTypeSelect,
+          storeFilter: extraFilterStoreSelect,
+          buyFilter: extraFilterBuySelect,
+          rowTemplate: extraQuickRowTemplate,
+        },
+        getExtras: () => getOtherProducts(),
+        getDrafts: () => extraDrafts,
+        buildFamilyStripeMap,
+        helpers: {
+          createTableInput,
+          createTableTextarea,
+          createFamilySelect,
+          createTypeSelect,
+          linkFamilyTypeSelects,
+          createSelectionButton,
+          getSelectionLabelForProduct,
+          getSelectionStoresForProduct,
+        },
+        getSelectionInstanceForProduct,
+        getStoreNames,
+        persistUnified,
+        getPantryProducts,
+        onToggleBuy: updateExtraBuyFlag,
+        onChange: () => {
+          renderProducts();
+          renderExtraQuickTable();
+          renderExtraEditTable();
+          renderShoppingList();
+          renderShelfOptions();
+          renderBlockOptions();
+          renderTypeOptions();
+          renderProductsDatalist();
+        },
+        onFilter: () => {
+          if (extraSummaryInfo) {
+            renderExtraSummary();
+          }
+        },
+        onSelectSelection: (id) => openSelectionPopupForProduct(id),
+        onEdit: (id) => startEditExtra(id),
+        onSaveDraft: (id) => commitDraftExtras(id ? [id] : null),
+        onMoveToAlmacen: (id) => {
+          const acts = getExtrasActions();
+          if (acts && typeof acts.moveToAlmacen === "function") {
+            acts.moveToAlmacen(id);
+          }
+          extraDrafts = extraDrafts.filter((d) => d.originalId !== id && d.id !== id);
+          renderExtraQuickTable();
+          renderExtraEditTable();
+          renderProducts();
+          renderGridRows();
+          renderShoppingList();
+        },
+        onDelete: (id) => {
+          const acts = getExtrasActions();
+          if (acts && typeof acts.delete === "function") {
+            acts.delete(id);
+          }
+          extraDrafts = extraDrafts.filter((d) => d.originalId !== id && d.id !== id);
+          renderExtraQuickTable();
+          renderExtraEditTable();
+          renderProducts();
+          renderGridRows();
+          renderShoppingList();
+        },
+        onCancelDraft: (id) => {
+          if (!id) return;
+          extraDrafts = extraDrafts.filter((d) => d.id !== id);
+          renderExtraQuickTable();
+        },
+      };
+      if (window.ExtrasView && typeof window.ExtrasView.init === "function") {
+        window.ExtrasView.init(extrasViewContext);
       }
-      extraDrafts = extraDrafts.filter((d) => d.originalId !== id && d.id !== id);
-      renderExtraQuickTable();
-      renderExtraEditTable();
-      renderProducts();
-      renderGridRows();
-      renderShoppingList();
-    },
-    onCancelDraft: (id) => {
-      if (!id) return;
-      extraDrafts = extraDrafts.filter((d) => d.id !== id);
-      renderExtraQuickTable();
-    },
-  };
-
-  if (window.ExtrasView && typeof window.ExtrasView.init === "function") {
-    window.ExtrasView.init(extrasViewContext);
-  }
-
-  extraEditViewContext = {
-    refs: {
-      tableBody: extraTableBody,
-      addButton: addExtraRowButton,
-      saveButton: saveExtraButton,
-      searchInput: extraEditFilterSearchInput,
-      familyFilter: extraEditFilterFamilySelect,
-      typeFilter: extraEditFilterTypeSelect,
-      storeFilter: extraEditFilterStoreSelect,
-      rowTemplate: extraEditRowTemplate,
-    },
-    getProducts: () => getOtherProducts(),
-    findById: (id) => getOtherProducts().find((p) => p.id === id),
-    buildFamilyStripeMap,
-    sorter: (a, b) =>
-      (a.block || "").localeCompare(b.block || "", "es", { sensitivity: "base" }) ||
-      (a.type || "").localeCompare(b.type || "", "es", { sensitivity: "base" }) ||
-      (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" }),
-    matchesStore: (id, storeId) => {
-      if (!storeId) return true;
-      const product = getOtherProducts().find((p) => p.id === id);
-      if (!product) return true;
-      const inst = getSelectionInstanceForProduct(product);
-      return !!(inst && Array.isArray(inst.storeIds) && inst.storeIds.includes(storeId));
-    },
-    helpers: {
-      createTableInput,
-      createTableTextarea,
-      createFamilySelect,
-      createTypeSelect,
-      linkFamilyTypeSelects,
-      createSelectionButton,
-      getSelectionLabelForProduct,
-      getSelectionStoresForProduct,
-    },
-    persist: (list) => {
-      const nextList = Array.isArray(list) ? list : [];
-      const prods = getPantryProducts();
-      const unified = [
-        ...prods.map((p) => ({ ...p, scope: "almacen" })),
-        ...nextList.map((p) => ({ ...p, scope: "otros" })),
-      ];
-      setUnifiedList(unified);
-    },
-    onAfterSave: () => {
-      renderBlockOptions();
-      renderTypeOptions();
-      updateInstanceFilterOptions();
-      renderProductsDatalist();
-      renderExtraQuickTable();
-      renderShoppingList();
-      setOtrosMode(false);
-      showToast("Otros productos guardados");
-    },
-    onSelectSelection: (id) => openSelectionPopupForProduct(id),
-    onMoveToAlmacen: (id) => {
-      const acts = getExtrasActions();
-      if (acts && typeof acts.moveToAlmacen === "function") {
-        acts.moveToAlmacen(id);
-      }
-      // Limpia borradores asociados y refresca vistas
-      extraDrafts = extraDrafts.filter((d) => d.originalId !== id && d.id !== id);
-      renderExtraQuickTable();
-      renderExtraEditTable();
-      renderProducts();
-      renderGridRows();
-      renderShoppingList();
-    },
-    onDelete: (id) => {
-      const acts = getExtrasActions();
-      if (acts && typeof acts.delete === "function") {
-        acts.delete(id);
-      }
-    },
-    nowIsoString,
-  };
-
-  if (window.ExtraEditView && typeof window.ExtraEditView.init === "function") {
-    window.ExtraEditView.init(extraEditViewContext);
-  }
-
-  inventoryEditViewContext = {
-    refs: {
-      tableBody: gridTableBody,
-      addButton: addGridRowButton,
-      saveButton: saveGridButton,
-      searchInput: editFilterSearchInput,
-      familyFilter: editFilterFamilySelect,
-      typeFilter: editFilterTypeSelect,
-      shelfFilter: editFilterShelfSelect,
-      storeFilter: editFilterStoreSelect,
-      rowTemplate: inventoryEditRowTemplate,
-    },
-    getProducts: () => getPantryProducts(),
-    findById: (id) => getPantryProducts().find((p) => p.id === id),
-    buildFamilyStripeMap,
-    sorter: compareShelfBlockTypeName,
-    matchesStore: (id, storeId) => {
-      if (!storeId) return true;
-      const product = getPantryProducts().find((p) => p.id === id);
-      if (!product) return true;
-      const inst = getSelectionInstanceForProduct(product);
-      return !!(inst && Array.isArray(inst.storeIds) && inst.storeIds.includes(storeId));
-    },
-    helpers: {
-      createTableInput,
-      createTableTextarea,
-      createFamilySelect,
-      createTypeSelect,
-      linkFamilyTypeSelects,
-      createSelectionButton,
-      getSelectionLabelForProduct,
-      getSelectionStoresForProduct,
-    },
-    persist: (list) => {
-      const nextList = Array.isArray(list) ? list : [];
-      const extras = getOtherProducts();
-      const unified = [
-        ...nextList.map((p) => ({ ...p, scope: "almacen" })),
-        ...extras.map((p) => ({ ...p, scope: "otros" })),
-      ];
-      setUnifiedList(unified);
-      saveProducts();
-    },
-    onAfterSave: () => {
-      renderShelfOptions();
-      renderBlockOptions();
-      renderTypeOptions();
-      updateInstanceFilterOptions();
-      renderProductsDatalist();
-      renderProducts();
-      renderShoppingList();
-      setAlmacenMode(false);
-      showToast("Inventario guardado");
-    },
-    onMoveToExtra: (id) => moveProductToExtra(id),
-    onSelectSelection: (id) => openSelectionPopupForProduct(id),
-    onDelete: (id) => removeProductById(id),
-    nowIsoString,
-  };
-
-  if (window.InventoryEditView && typeof window.InventoryEditView.init === "function") {
-    window.InventoryEditView.init(inventoryEditViewContext);
-  }
-
-  classificationViewContext = {
-    refs: {
-      tableBody: classificationTableBody,
-      addButton: addClassificationButton,
-      saveButton: saveClassificationsButton,
-      rowTemplate: classificationRowTemplate,
-      summary: classificationSummaryInfo,
-      searchInput: classificationSearchInput,
-      familyFilter: classificationFamilyFilterSelect,
-      typeFilter: classificationTypeFilterSelect,
-    },
-    getClassifications: () => getClassificationsList(),
-    persist: (list) => {
-      setClassificationsList(Array.isArray(list) ? list : []);
-    },
-    onAfterSave: handleClassificationDependencies,
-    nowIsoString,
-  };
-
-  if (window.ClassificationView && typeof window.ClassificationView.init === "function") {
-    window.ClassificationView.init(classificationViewContext);
-  }
-  updateClassificationFilterOptions();
-
-  producersViewContext = {
-    refs: {
-      tableBody: producersTableBody,
-      addButton: addProducerButton,
-      saveButton: saveProducersButton,
-      searchInput: producersSearchInput,
-      locationFilter: producersLocationFilterSelect,
-      rowTemplate: producersRowTemplate,
-      summary: producersSummaryInfo,
-    },
-    getProducers: () => getProducersList(),
-    persist: (list) => {
-      setProducersList(Array.isArray(list) ? list : []);
-    },
-    onAfterSave: handleProducersDependencies,
-    nowIsoString,
-  };
-
-  if (window.ProducersView && typeof window.ProducersView.init === "function") {
-    window.ProducersView.init(producersViewContext);
-  }
-  if (window.ProducersFeature && typeof window.ProducersFeature.init === "function") {
-    window.ProducersFeature.init({
-      context: producersViewContext,
-      refs: producersViewContext.refs,
-      actions: {
-        save: () => window.ProducersView && window.ProducersView.save && window.ProducersView.save(producersViewContext),
-      },
     });
-  }
 
-  storesViewContext = {
-    refs: {
-      tableBody: storesTableBody,
-      addButton: addStoreButton,
-      saveButton: saveStoresButton,
-      searchInput: storesSearchInput,
-      typeFilter: storesTypeFilterSelect,
-      locationFilter: storesLocationFilterSelect,
-      rowTemplate: storesRowTemplate,
-      summary: storesSummaryInfo,
-    },
-    getStores: () => getSuppliersList(),
-    persist: (list) => {
-      setSuppliersList(Array.isArray(list) ? list : []);
-    },
-    onAfterSave: handleStoresDependencies,
-    nowIsoString,
-  };
-
-  if (window.StoresView && typeof window.StoresView.init === "function") {
-    window.StoresView.init(storesViewContext);
-  }
-  if (window.StoresFeature && typeof window.StoresFeature.init === "function") {
-    window.StoresFeature.init({
-      context: storesViewContext,
-      refs: storesViewContext.refs,
-      actions: {
-        save: () => window.StoresView && window.StoresView.save && window.StoresView.save(storesViewContext),
-      },
+    enqueue("extra-edit-view", () => {
+      extraEditViewContext = {
+        refs: {
+          tableBody: extraTableBody,
+          addButton: addExtraRowButton,
+          saveButton: saveExtraButton,
+          searchInput: extraEditFilterSearchInput,
+          familyFilter: extraEditFilterFamilySelect,
+          typeFilter: extraEditFilterTypeSelect,
+          storeFilter: extraEditFilterStoreSelect,
+          rowTemplate: extraEditRowTemplate,
+        },
+        getProducts: () => getOtherProducts(),
+        findById: (id) => getOtherProducts().find((p) => p.id === id),
+        buildFamilyStripeMap,
+        sorter: (a, b) =>
+          (a.block || "").localeCompare(b.block || "", "es", { sensitivity: "base" }) ||
+          (a.type || "").localeCompare(b.type || "", "es", { sensitivity: "base" }) ||
+          (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" }),
+        matchesStore: (id, storeId) => {
+          if (!storeId) return true;
+          const product = getOtherProducts().find((p) => p.id === id);
+          if (!product) return true;
+          const inst = getSelectionInstanceForProduct(product);
+          return !!(inst && Array.isArray(inst.storeIds) && inst.storeIds.includes(storeId));
+        },
+        helpers: {
+          createTableInput,
+          createTableTextarea,
+          createFamilySelect,
+          createTypeSelect,
+          linkFamilyTypeSelects,
+          createSelectionButton,
+          getSelectionLabelForProduct,
+          getSelectionStoresForProduct,
+        },
+        persist: (list) => {
+          const nextList = Array.isArray(list) ? list : [];
+          const prods = getPantryProducts();
+          const unified = [
+            ...prods.map((p) => ({ ...p, scope: "almacen" })),
+            ...nextList.map((p) => ({ ...p, scope: "otros" })),
+          ];
+          setUnifiedList(unified);
+        },
+        onAfterSave: () => {
+          renderBlockOptions();
+          renderTypeOptions();
+          updateInstanceFilterOptions();
+          renderProductsDatalist();
+          renderExtraQuickTable();
+          renderShoppingList();
+          setOtrosMode(false);
+          showToast("Otros productos guardados");
+        },
+        onSelectSelection: (id) => openSelectionPopupForProduct(id),
+        onMoveToAlmacen: (id) => {
+          const acts = getExtrasActions();
+          if (acts && typeof acts.moveToAlmacen === "function") {
+            acts.moveToAlmacen(id);
+          }
+          extraDrafts = extraDrafts.filter((d) => d.originalId !== id && d.id !== id);
+          renderExtraQuickTable();
+          renderExtraEditTable();
+          renderProducts();
+          renderGridRows();
+          renderShoppingList();
+        },
+        onDelete: (id) => {
+          const acts = getExtrasActions();
+          if (acts && typeof acts.delete === "function") {
+            acts.delete(id);
+          }
+        },
+        nowIsoString,
+      };
+      if (window.ExtraEditView && typeof window.ExtraEditView.init === "function") {
+        window.ExtraEditView.init(extraEditViewContext);
+      }
     });
-  }
 
-  instancesViewContext = {
-    refs: {
-      tableBody: instancesTableBody,
-      addButton: addInstanceButton,
-      saveButton: saveInstancesButton,
-      searchInput: instancesSearchInput,
-      familyFilter: instancesFamilyFilterSelect,
-      producerFilter: instancesProducerFilterSelect,
-      storeFilter: instancesStoreFilterSelect,
-      rowTemplate: instancesRowTemplate,
-      summary: instancesSummaryInfo,
-    },
-    attachButtonHandlers:
-      !(window.InstancesFeature && typeof window.InstancesFeature.init === "function"),
-    data: {
-      instances: getInstancesList(),
-      producers: getProducersList(),
-      stores: getSuppliersList(),
-    },
-    getAllProducts: () => getAllProductsForAssociationList(),
-    getFamilyForInstance,
-    getProducerName,
-    getStoreNames,
-    isKnownProduct,
-    getFamilyByProductName,
-    buildFamilyStripeMap,
-    attachMultiSelectToggle,
-    persist: persistInstances,
-    onCreateProduct: openInlineProductCreator,
-    onAfterSave: handleInstancesDependencies,
-    nowIsoString,
-  };
+    enqueue("inventory-edit-view", () => {
+      inventoryEditViewContext = {
+        refs: {
+          tableBody: gridTableBody,
+          addButton: addGridRowButton,
+          saveButton: saveGridButton,
+          searchInput: editFilterSearchInput,
+          familyFilter: editFilterFamilySelect,
+          typeFilter: editFilterTypeSelect,
+          shelfFilter: editFilterShelfSelect,
+          storeFilter: editFilterStoreSelect,
+          rowTemplate: inventoryEditRowTemplate,
+        },
+        getProducts: () => getPantryProducts(),
+        findById: (id) => getPantryProducts().find((p) => p.id === id),
+        buildFamilyStripeMap,
+        sorter: compareShelfBlockTypeName,
+        matchesStore: (id, storeId) => {
+          if (!storeId) return true;
+          const product = getPantryProducts().find((p) => p.id === id);
+          if (!product) return true;
+          const inst = getSelectionInstanceForProduct(product);
+          return !!(inst && Array.isArray(inst.storeIds) && inst.storeIds.includes(storeId));
+        },
+        helpers: {
+          createTableInput,
+          createTableTextarea,
+          createFamilySelect,
+          createTypeSelect,
+          linkFamilyTypeSelects,
+          createSelectionButton,
+          getSelectionLabelForProduct,
+          getSelectionStoresForProduct,
+        },
+        persist: (list) => {
+          const nextList = Array.isArray(list) ? list : [];
+          const extras = getOtherProducts();
+          const unified = [
+            ...nextList.map((p) => ({ ...p, scope: "almacen" })),
+            ...extras.map((p) => ({ ...p, scope: "otros" })),
+          ];
+          setUnifiedList(unified);
+          saveProducts();
+        },
+        onAfterSave: () => {
+          renderShelfOptions();
+          renderBlockOptions();
+          renderTypeOptions();
+          updateInstanceFilterOptions();
+          renderProductsDatalist();
+          renderProducts();
+          renderShoppingList();
+          setAlmacenMode(false);
+          showToast("Inventario guardado");
+        },
+        onMoveToExtra: (id) => moveProductToExtra(id),
+        onSelectSelection: (id) => openSelectionPopupForProduct(id),
+        onDelete: (id) => removeProductById(id),
+        nowIsoString,
+      };
+      if (window.InventoryEditView && typeof window.InventoryEditView.init === "function") {
+        window.InventoryEditView.init(inventoryEditViewContext);
+      }
+    });
 
-  if (window.InstancesView && typeof window.InstancesView.init === "function") {
-    window.InstancesView.init(instancesViewContext);
-  }
+    enqueue("classification-view", () => {
+      if (shouldInitClassification) {
+        classificationViewContext = {
+          refs: {
+            tableBody: classificationTableBody,
+            addButton: addClassificationButton,
+            saveButton: saveClassificationsButton,
+            rowTemplate: classificationRowTemplate,
+            summary: classificationSummaryInfo,
+            searchInput: classificationSearchInput,
+            familyFilter: classificationFamilyFilterSelect,
+            typeFilter: classificationTypeFilterSelect,
+          },
+          getClassifications: () => getClassificationsList(),
+          persist: (list) => {
+            setClassificationsList(Array.isArray(list) ? list : []);
+          },
+          onAfterSave: handleClassificationDependencies,
+          nowIsoString,
+        };
+        if (window.ClassificationView && typeof window.ClassificationView.init === "function") {
+          window.ClassificationView.init(classificationViewContext);
+        }
+        updateClassificationFilterOptions();
+        classificationInitDone = true;
+      }
+    });
 
-  inventoryController =
-    window.InventoryController && window.InventoryController.create
-      ? window.InventoryController.create({
-          store: window.AppStore || window.AppState,
-          view: window.InventoryView,
+    enqueue("producers-view", () => {
+      producersViewContext = {
+        refs: {
+          tableBody: producersTableBody,
+          addButton: addProducerButton,
+          saveButton: saveProducersButton,
+          searchInput: producersSearchInput,
+          locationFilter: producersLocationFilterSelect,
+          rowTemplate: producersRowTemplate,
+          summary: producersSummaryInfo,
+        },
+        getProducers: () => getProducersList(),
+        persist: (list) => {
+          setProducersList(Array.isArray(list) ? list : []);
+        },
+        onAfterSave: handleProducersDependencies,
+        nowIsoString,
+      };
+      if (window.ProducersView && typeof window.ProducersView.init === "function") {
+        window.ProducersView.init(producersViewContext);
+      }
+      if (window.ProducersFeature && typeof window.ProducersFeature.init === "function") {
+        window.ProducersFeature.init({
+          context: producersViewContext,
+          refs: producersViewContext.refs,
+          actions: {
+            save: () => window.ProducersView && window.ProducersView.save && window.ProducersView.save(producersViewContext),
+          },
+        });
+      }
+    });
+
+    enqueue("stores-view", () => {
+      storesViewContext = {
+        refs: {
+          tableBody: storesTableBody,
+          addButton: addStoreButton,
+          saveButton: saveStoresButton,
+          searchInput: storesSearchInput,
+          typeFilter: storesTypeFilterSelect,
+          locationFilter: storesLocationFilterSelect,
+          rowTemplate: storesRowTemplate,
+          summary: storesSummaryInfo,
+        },
+        getStores: () => getSuppliersList(),
+        persist: (list) => {
+          setSuppliersList(Array.isArray(list) ? list : []);
+        },
+        onAfterSave: handleStoresDependencies,
+        nowIsoString,
+      };
+      if (window.StoresView && typeof window.StoresView.init === "function") {
+        window.StoresView.init(storesViewContext);
+      }
+      if (window.StoresFeature && typeof window.StoresFeature.init === "function") {
+        window.StoresFeature.init({
+          context: storesViewContext,
+          refs: storesViewContext.refs,
+          actions: {
+            save: () => window.StoresView && window.StoresView.save && window.StoresView.save(storesViewContext),
+          },
+        });
+      }
+    });
+
+    enqueue("instances-view", () => {
+      ensureInstancesViewContext();
+      const activeSelection =
+        isActiveSection(proveedoresSection) &&
+        instancesPanel &&
+        instancesPanel.classList.contains("active");
+      if (activeSelection) {
+        ensureInstancesViewInit({ renderAfterInit: false });
+      } else {
+        instancesViewInitDone = false;
+      }
+    });
+
+    enqueue("inventory-controller", () => {
+      inventoryController =
+        window.InventoryController && window.InventoryController.create
+          ? window.InventoryController.create({
+              store: window.AppStore || window.AppState,
+              view: window.InventoryView,
+              helpers: {
+                createTableInput,
+                createTableTextarea,
+                createFamilySelect,
+                createTypeSelect,
+                linkFamilyTypeSelects,
+                buildFamilyStripeMap,
+                compareShelfBlockTypeName,
+                productMatchesStore,
+                getSelectionLabelForProduct,
+                getSelectionStoresForProduct,
+                createSelectionButton,
+                handleInventoryTableClick,
+              },
+              shouldSkip: () =>
+                Date.now() < skipInventoryControllerUntil || !!pendingInventoryUnified,
+            })
+          : null;
+
+      if (inventoryController) {
+        const inventoryRefs = {
+          productTableBody,
+          filterSearchInput,
+          filterShelfSelect,
+          filterBlockSelect,
+          filterTypeSelect,
+          filterStoreSelect,
+          filterStatusSelect,
+          summaryInfo,
+        };
+        inventoryViewContext = { refs: inventoryRefs };
+        inventoryController.setRefs(inventoryRefs);
+        inventoryController.setDrafts(productDrafts);
+        inventoryController.render();
+      } else if (window.InventoryFeature && typeof window.InventoryFeature.init === "function") {
+        pendingInventoryFeatureConfig = {
+          refs: {
+            tableBody: productTableBody,
+          },
+          getProducts: () => getPantryProducts(),
+          getDrafts: () => productDrafts,
+          getInventoryContext,
+          actions: {
+            toggleHave: (id, checked) => updateInventoryHaveFlag(id, checked),
+            moveToExtra: moveProductToExtra,
+            selectSelection: openSelectionPopupForProduct,
+            cancelDraft: (id) => {
+              setProductDrafts(productDrafts.filter((d) => d.id !== id));
+              renderProducts();
+            },
+            saveDraft: (id) => commitDraftProducts(id ? [id] : null),
+            startEdit: (id) => startEditProduct(id),
+            deleteProduct: (id) => deleteProduct(id),
+          },
+        };
+      }
+    });
+
+    enqueue("inventory-feature-fallback", () => {
+      if (!inventoryController && pendingInventoryFeatureConfig) {
+        window.InventoryFeature.init(pendingInventoryFeatureConfig);
+        if (typeof window.InventoryFeature.render === "function") {
+          window.InventoryFeature.render();
+        }
+        pendingInventoryFeatureConfig = null;
+      }
+    });
+
+    enqueue("extras-controller", () => {
+      extraController =
+        window.ExtraController && window.ExtraController.create
+          ? window.ExtraController.create({
+              store: window.AppStore || window.AppState,
+              shouldSkip: () =>
+                Date.now() < skipExtraControllerUntil || !!pendingExtrasUnified,
+              onRender: () => {
+                if (Date.now() < skipExtraControllerUntil) return;
+                renderExtraQuickTable();
+                renderExtraEditTable();
+                renderShoppingList();
+              },
+            })
+          : null;
+      if (window.ExtrasFeature && typeof window.ExtrasFeature.init === "function") {
+        window.ExtrasFeature.init({
+          refs: { tableBody: extraListTableBody },
+          getExtras: () => getOtherProducts(),
+          getDrafts: () => extraDrafts,
+          buildFamilyStripeMap,
           helpers: {
             createTableInput,
             createTableTextarea,
             createFamilySelect,
             createTypeSelect,
             linkFamilyTypeSelects,
-            buildFamilyStripeMap,
-            compareShelfBlockTypeName,
-            productMatchesStore,
+            createSelectionButton,
             getSelectionLabelForProduct,
             getSelectionStoresForProduct,
-            createSelectionButton,
-            handleInventoryTableClick,
           },
-          shouldSkip: () =>
-            Date.now() < skipInventoryControllerUntil || !!pendingInventoryUnified,
-        })
-      : null;
-
-  if (inventoryController) {
-    const inventoryRefs = {
-      productTableBody,
-      filterSearchInput,
-      filterShelfSelect,
-      filterBlockSelect,
-      filterTypeSelect,
-      filterStoreSelect,
-      filterStatusSelect,
-      summaryInfo,
-    };
-    inventoryViewContext = { refs: inventoryRefs };
-    inventoryController.setRefs(inventoryRefs);
-    inventoryController.setDrafts(productDrafts);
-    inventoryController.render();
-  } else if (window.InventoryFeature && typeof window.InventoryFeature.init === "function") {
-    window.InventoryFeature.init({
-      refs: {
-        tableBody: productTableBody,
-      },
-      getProducts: () => getPantryProducts(),
-      getDrafts: () => productDrafts,
-      getInventoryContext,
-      actions: {
-        toggleHave: (id, checked) => updateInventoryHaveFlag(id, checked),
-        moveToExtra: moveProductToExtra,
-        selectSelection: openSelectionPopupForProduct,
-        cancelDraft: (id) => {
-          setProductDrafts(productDrafts.filter((d) => d.id !== id));
-          renderProducts();
-        },
-        saveDraft: (id) => commitDraftProducts(id ? [id] : null),
-        startEdit: (id) => startEditProduct(id),
-        deleteProduct: (id) => deleteProduct(id),
-      },
-    });
-    window.InventoryFeature.render();
-  }
-
-  extraController =
-    window.ExtraController && window.ExtraController.create
-      ? window.ExtraController.create({
-          store: window.AppStore || window.AppState,
-          shouldSkip: () =>
-            Date.now() < skipExtraControllerUntil || !!pendingExtrasUnified,
-          onRender: () => {
-            if (Date.now() < skipExtraControllerUntil) return;
-            renderExtraQuickTable();
-            renderExtraEditTable();
+          getSelectionInstanceForProduct,
+          getStoreNames,
+          persistUnified,
+          getPantryProducts,
+          onChange: () => {
+            renderExtraSummary();
             renderShoppingList();
           },
-        })
-      : null;
-  if (window.ExtrasFeature && typeof window.ExtrasFeature.init === "function") {
-    window.ExtrasFeature.init({
-      refs: { tableBody: extraListTableBody },
-      getExtras: () => getOtherProducts(),
-      getDrafts: () => extraDrafts,
-      buildFamilyStripeMap,
-      helpers: {
-        createTableInput,
-        createTableTextarea,
-        createFamilySelect,
-        createTypeSelect,
-        linkFamilyTypeSelects,
-        createSelectionButton,
-        getSelectionLabelForProduct,
-        getSelectionStoresForProduct,
-      },
-      getSelectionInstanceForProduct,
-      getStoreNames,
-      persistUnified,
-      getPantryProducts,
-      onChange: () => {
-        renderExtraSummary();
-        renderShoppingList();
-      },
-      actions: {
-        toggleBuy: (id, checked) => {
-          updateExtraBuyFlag(id, checked);
-        },
-        selectSelection: (id) => openSelectionPopupForProduct(id),
-        startEdit: (id) => startEditExtra(id),
-        saveDraft: (id) => commitDraftExtras(id ? [id] : null),
-        cancelDraft: (id) => {
-          if (!id) return;
-          extraDrafts = extraDrafts.filter((d) => d.id !== id);
-          renderExtraQuickTable();
-        },
-      },
-      getContext: () => extrasViewContext,
-    });
-  }
-  if (extraController && typeof extraController.render === "function") {
-    extraController.render();
-  } else if (window.ExtrasFeature && typeof window.ExtrasFeature.render === "function") {
-    window.ExtrasFeature.render();
-  }
-
-  instancesController =
-    window.InstancesController && window.InstancesController.create
-      ? window.InstancesController.create({
-          store: window.AppStore || window.AppState,
-          view: window.InstancesView,
-          feature: window.InstancesFeature,
-          context: instancesViewContext,
-        })
-      : null;
-  if (window.InstancesFeature && typeof window.InstancesFeature.init === "function") {
-    window.InstancesFeature.init({
-      refs: {
-        tableBody: instancesTableBody,
-        addButton: addInstanceButton,
-        saveButton: saveInstancesButton,
-      },
-      getContext: () => {
-        if (instancesViewContext && instancesViewContext.data) {
-          instancesViewContext.data.instances = getInstancesList();
-          instancesViewContext.data.producers = getProducersList();
-          instancesViewContext.data.stores = getSuppliersList();
-        }
-        return instancesViewContext;
-      },
-      getInstances: () => getInstancesList(),
-        actions: {
-          delete: (id) => removeInstanceById(id),
-          updateField: (id, field, value) => {
-            if (instancesViewContext) {
-              instancesViewContext.__skipNextRender = true;
-            }
-          const now = nowIsoString();
-          const baseList = pendingInstancesList || getInstancesList();
-          const idx = baseList.findIndex((inst) => inst.id === id);
-          const normalizedValue =
-            field === "storeIds" && Array.isArray(value) ? value.slice() : value;
-          if (idx === -1) {
-            const newInst = {
-              id,
-              productId: "",
-              productName: "",
-              producerId: "",
-              brand: "",
-              storeIds: [],
-              notes: "",
-              block: "",
-              createdAt: now,
-              updatedAt: now,
-              __isNew: true,
-            };
-            if (field === "storeIds" && Array.isArray(normalizedValue)) {
-              newInst.storeIds = normalizedValue;
-            } else {
-              newInst[field] = normalizedValue;
-            }
-            pendingInstancesList = [newInst, ...baseList];
-          } else {
-            const current = baseList[idx];
-            const currentValue =
-              field === "storeIds" && Array.isArray(current.storeIds)
-                ? current.storeIds
-                : current[field];
-            const sameArray =
-              field === "storeIds" &&
-              Array.isArray(normalizedValue) &&
-              Array.isArray(currentValue) &&
-              normalizedValue.length === currentValue.length &&
-              normalizedValue.every((v, i) => v === currentValue[i]);
-            const sameValue =
-              field === "storeIds" ? sameArray : normalizedValue === currentValue;
-            if (sameValue) return;
-
-            if (pendingInstancesList) {
-              const target = pendingInstancesList[idx];
-              if (field === "storeIds" && Array.isArray(normalizedValue)) {
-                target.storeIds = normalizedValue;
-              } else {
-                target[field] = normalizedValue;
-              }
-              target.updatedAt = now;
-            } else {
-              const clone = baseList.slice();
-              clone[idx] = {
-                ...current,
-                [field]:
-                  field === "storeIds" && Array.isArray(normalizedValue)
-                    ? normalizedValue
-                    : normalizedValue,
-                updatedAt: now,
-              };
-              pendingInstancesList = clone;
-            }
-          }
-          clearTimeout(instancesUpdateTimer);
-          instancesUpdateTimer = setTimeout(() => {
-            flushInstancesUpdates();
-          }, INSTANCE_UPDATE_DEBOUNCE);
-        },
-        add: () => handleAddInstanceRow(),
-        save: () => handleSaveInstances(),
-      },
-    });
-  }
-
-  if (instancesController && typeof instancesController.render === "function") {
-    instancesController.render();
-  } else if (window.InstancesFeature && typeof window.InstancesFeature.render === "function") {
-    window.InstancesFeature.render();
-  }
-
-  if (window.InventoryView && typeof window.InventoryView.init === "function") {
-    window.InventoryView.init(getInventoryContext());
-  }
-
-  classificationController =
-    window.ClassificationController && window.ClassificationController.create
-      ? window.ClassificationController.create({
-          store: window.AppStore || window.AppState,
-          onRender: renderClassificationTable,
-        })
-      : null;
-
-  producersController =
-    window.ProducersController && window.ProducersController.create
-      ? window.ProducersController.create({
-          store: window.AppStore || window.AppState,
-          onRender: () => {
-            if (window.ProducersFeature && typeof window.ProducersFeature.render === "function") {
-              window.ProducersFeature.render();
-            } else if (window.ProducersView && typeof window.ProducersView.render === "function") {
-              window.ProducersView.render(producersViewContext);
-            }
-            updateProducerFilterOptions();
+          actions: {
+            toggleBuy: (id, checked) => {
+              updateExtraBuyFlag(id, checked);
+            },
+            selectSelection: (id) => openSelectionPopupForProduct(id),
+            startEdit: (id) => startEditExtra(id),
+            saveDraft: (id) => commitDraftExtras(id ? [id] : null),
+            cancelDraft: (id) => {
+              if (!id) return;
+              extraDrafts = extraDrafts.filter((d) => d.id !== id);
+              renderExtraQuickTable();
+            },
           },
-        })
-      : null;
-
-  storesController =
-    window.StoresController && window.StoresController.create
-      ? window.StoresController.create({
-          store: window.AppStore || window.AppState,
-          onRender: () => {
-            if (window.StoresFeature && typeof window.StoresFeature.render === "function") {
-              window.StoresFeature.render();
-            } else if (window.StoresView && typeof window.StoresView.render === "function") {
-              window.StoresView.render(storesViewContext);
-            }
-            updateStoreFilterOptions();
-            renderStoreOptions();
-            renderShoppingList();
-          },
-        })
-      : null;
-
-  const currentState =
-    (window.AppStore && typeof window.AppStore.getState === "function"
-      ? window.AppStore.getState()
-      : window.AppState && typeof window.AppState.getState === "function"
-      ? window.AppState.getState()
-      : {});
-  syncFromState(currentState);
-  document.addEventListener("keydown", handleGlobalSaveShortcut, { capture: true, passive: false });
-  window.addEventListener("keydown", handleGlobalSaveShortcut, { capture: true, passive: false });
-  document.addEventListener("keypress", handleGlobalSaveShortcut, { capture: true, passive: false });
-  window.addEventListener("keypress", handleGlobalSaveShortcut, { capture: true, passive: false });
-  if (document.body) {
-    document.body.addEventListener("keydown", handleGlobalSaveShortcut, {
-      capture: true,
-      passive: false,
+          getContext: () => extrasViewContext,
+        });
+      }
+      if (extraController && typeof extraController.render === "function") {
+        extraController.render();
+      } else if (window.ExtrasFeature && typeof window.ExtrasFeature.render === "function") {
+        window.ExtrasFeature.render();
+      }
     });
-    document.body.addEventListener("keypress", handleGlobalSaveShortcut, {
-      capture: true,
-      passive: false,
-    });
-  }
-  document.addEventListener("keydown", handleGlobalEscape);
 
-  initNavAccessibility();
-  initFiltersAccessibility();
-  setMainSection("almacen");
-  setAlmacenMode(false);
-  setOtrosMode(false);
-  setProveedoresTab("instances"); // pestaña por defecto: Selección de productos
+    enqueue("instances-controller", () => {
+      instancesController =
+        window.InstancesController && window.InstancesController.create
+          ? window.InstancesController.create({
+              store: window.AppStore || window.AppState,
+              view: window.InstancesView,
+              feature: window.InstancesFeature,
+              context: {
+                ...(instancesViewContext || {}),
+                shouldRender: () =>
+                  isActiveSection(proveedoresSection) &&
+                  instancesPanel &&
+                  instancesPanel.classList.contains("active"),
+              },
+            })
+          : null;
+
+      const activeSelection =
+        proveedoresSection &&
+        proveedoresSection.classList.contains("active") &&
+        instancesPanel &&
+        instancesPanel.classList.contains("active");
+      if (activeSelection) {
+        ensureInstancesViewInit();
+        ensureInstancesFeatureInit();
+      }
+
+      instancesNeedsRender = true;
+    });
+
+    enqueue("controllers", () => {
+      if (window.InventoryView && typeof window.InventoryView.init === "function") {
+        window.InventoryView.init(getInventoryContext());
+      }
+
+      classificationController =
+        window.ClassificationController && window.ClassificationController.create
+          ? window.ClassificationController.create({
+              store: window.AppStore || window.AppState,
+              onRender: renderClassificationTable,
+            })
+          : null;
+
+      producersController =
+        window.ProducersController && window.ProducersController.create
+          ? window.ProducersController.create({
+              store: window.AppStore || window.AppState,
+              onRender: () => {
+                renderProducers();
+                updateProducerFilterOptions();
+              },
+            })
+          : null;
+
+      storesController =
+        window.StoresController && window.StoresController.create
+          ? window.StoresController.create({
+              store: window.AppStore || window.AppState,
+              onRender: () => {
+                renderStores();
+                updateStoreFilterOptions();
+                renderStoreOptions();
+                renderShoppingList();
+              },
+            })
+          : null;
+    });
+
+    enqueue("bootstrap", () => {
+      const currentState =
+        (window.AppStore && typeof window.AppStore.getState === "function"
+          ? window.AppStore.getState()
+          : window.AppState && typeof window.AppState.getState === "function"
+          ? window.AppState.getState()
+          : {});
+      syncFromState(currentState);
+      document.addEventListener("keydown", handleGlobalSaveShortcut, { capture: true, passive: false });
+      window.addEventListener("keydown", handleGlobalSaveShortcut, { capture: true, passive: false });
+      document.addEventListener("keypress", handleGlobalSaveShortcut, { capture: true, passive: false });
+      window.addEventListener("keypress", handleGlobalSaveShortcut, { capture: true, passive: false });
+      if (document.body) {
+        document.body.addEventListener("keydown", handleGlobalSaveShortcut, {
+          capture: true,
+          passive: false,
+        });
+        document.body.addEventListener("keypress", handleGlobalSaveShortcut, {
+          capture: true,
+          passive: false,
+        });
+      }
+      document.addEventListener("keydown", handleGlobalEscape);
+
+      initNavAccessibility();
+      initFiltersAccessibility();
+      setMainSection("almacen");
+      setAlmacenMode(false);
+      setOtrosMode(false);
+      setProveedoresTab("instances"); // pestaña por defecto: Selección de productos
+    });
+
+    runNext();
+  };
+
+  setTimeout(initViewsPhase, 0);
+}
+document.addEventListener("DOMContentLoaded", () => {
+  const start = performance.now();
+  const runInit = () => initAfterDom(start);
+  setTimeout(runInit, 0);
 });
 
 // ==============================
 //  NAVEGACIÓN Y MODOS
 // ==============================
+
+const isActiveSection = (el) => !!(el && el.classList && el.classList.contains("active"));
 
 function setMainSection(section) {
   const isAlmacen = section === "almacen";
@@ -2131,6 +2254,214 @@ function setMainSection(section) {
   if (isSelection) setProveedoresTab("instances");
   if (isProd) setProveedoresTab("producers");
   if (isStores) setProveedoresTab("stores");
+  if (isClassification && !classificationInitDone) {
+    initClassificationOnDemand();
+  }
+  if (isOtros) {
+    if (otrosEditPanel && otrosEditPanel.classList.contains("active")) {
+      renderExtraEditTable();
+    } else {
+      renderExtraQuickTable(true);
+    }
+  }
+  if (isSelection) {
+    resetInstancesFilters();
+    renderInstancesTable(true, { showLoading: true });
+  }
+}
+
+function initClassificationOnDemand() {
+  if (classificationInitDone) return;
+  classificationViewContext = {
+    refs: {
+      tableBody: classificationTableBody,
+      addButton: addClassificationButton,
+      saveButton: saveClassificationsButton,
+      rowTemplate: classificationRowTemplate,
+      summary: classificationSummaryInfo,
+      searchInput: classificationSearchInput,
+      familyFilter: classificationFamilyFilterSelect,
+      typeFilter: classificationTypeFilterSelect,
+    },
+    getClassifications: () => getClassificationsList(),
+    persist: (list) => {
+      setClassificationsList(Array.isArray(list) ? list : []);
+    },
+    onAfterSave: handleClassificationDependencies,
+    nowIsoString,
+  };
+  if (window.ClassificationView && typeof window.ClassificationView.init === "function") {
+    window.ClassificationView.init(classificationViewContext);
+  }
+  updateClassificationFilterOptions();
+  classificationInitDone = true;
+}
+
+function ensureInstancesViewContext() {
+  if (!instancesViewContext) {
+    instancesViewContext = {
+      refs: {
+        tableBody: instancesTableBody,
+        addButton: addInstanceButton,
+        saveButton: saveInstancesButton,
+        searchInput: instancesSearchInput,
+        familyFilter: instancesFamilyFilterSelect,
+        producerFilter: instancesProducerFilterSelect,
+        storeFilter: instancesStoreFilterSelect,
+        missingFilterButton: instancesMissingFilterButton,
+        rowTemplate: instancesRowTemplate,
+        summary: instancesSummaryInfo,
+      },
+      attachButtonHandlers:
+        !(window.InstancesFeature && typeof window.InstancesFeature.init === "function"),
+      data: {
+        instances: [],
+        producers: [],
+        stores: [],
+      },
+      getAllProducts: () => getAllProductsForAssociationList(),
+      getFamilyForInstance,
+      getProducerName,
+      getStoreNames,
+      isKnownProduct,
+      getFamilyByProductName,
+      buildFamilyStripeMap,
+      attachMultiSelectToggle,
+      persist: persistInstances,
+      onCreateProduct: openInlineProductCreator,
+      onAfterSave: handleInstancesDependencies,
+      nowIsoString,
+      getMissingFilterActive: () => instancesMissingFilterActive,
+    };
+  }
+  if (instancesViewContext.data) {
+    instancesViewContext.data.instances = getInstancesList();
+    instancesViewContext.data.producers = getProducersList();
+    instancesViewContext.data.stores = getSuppliersList();
+  }
+  return instancesViewContext;
+}
+
+function ensureInstancesFeatureInit({ renderAfterInit = false } = {}) {
+  if (instancesInitDone) {
+    if (renderAfterInit && window.InstancesFeature && typeof window.InstancesFeature.render === "function") {
+      window.InstancesFeature.render();
+    }
+    return;
+  }
+  if (!window.InstancesFeature || typeof window.InstancesFeature.init !== "function") {
+    instancesInitDone = true;
+    return;
+  }
+  ensureInstancesViewContext();
+  window.InstancesFeature.init({
+    refs: {
+      tableBody: instancesTableBody,
+      addButton: addInstanceButton,
+      saveButton: saveInstancesButton,
+    },
+    getContext: () => {
+      const ctx = ensureInstancesViewContext();
+      if (ctx && ctx.data) {
+        ctx.data.instances = getInstancesList();
+        ctx.data.producers = getProducersList();
+        ctx.data.stores = getSuppliersList();
+      }
+      return ctx;
+    },
+    getInstances: () => getInstancesList(),
+    actions: {
+      delete: (id) => removeInstanceById(id),
+      updateField: (id, field, value) => {
+        const ctx = ensureInstancesViewContext();
+        if (ctx) {
+          ctx.__skipNextRender = true;
+        }
+        const now = nowIsoString();
+        const baseList = pendingInstancesList || getInstancesList();
+        const idx = baseList.findIndex((inst) => inst.id === id);
+        const normalizedValue = field === "storeIds" && Array.isArray(value) ? value.slice() : value;
+        if (idx === -1) {
+          const newInst = {
+            id,
+            productId: "",
+            productName: "",
+            producerId: "",
+            brand: "",
+            storeIds: [],
+            notes: "",
+            block: "",
+            createdAt: now,
+            updatedAt: now,
+            __isNew: true,
+          };
+          if (field === "storeIds" && Array.isArray(normalizedValue)) {
+            newInst.storeIds = normalizedValue;
+          } else {
+            newInst[field] = normalizedValue;
+          }
+          pendingInstancesList = [newInst, ...baseList];
+        } else {
+          const current = baseList[idx];
+          const currentValue =
+            field === "storeIds" && Array.isArray(current.storeIds) ? current.storeIds : current[field];
+          const sameArray =
+            field === "storeIds" &&
+            Array.isArray(normalizedValue) &&
+            Array.isArray(currentValue) &&
+            normalizedValue.length === currentValue.length &&
+            normalizedValue.every((v, i) => v === currentValue[i]);
+          const sameValue = field === "storeIds" ? sameArray : normalizedValue === currentValue;
+          if (sameValue) return;
+
+          if (pendingInstancesList) {
+            const target = pendingInstancesList[idx];
+            if (field === "storeIds" && Array.isArray(normalizedValue)) {
+              target.storeIds = normalizedValue;
+            } else {
+              target[field] = normalizedValue;
+            }
+            target.updatedAt = now;
+          } else {
+            const clone = baseList.slice();
+            clone[idx] = {
+              ...current,
+              [field]: field === "storeIds" && Array.isArray(normalizedValue) ? normalizedValue : normalizedValue,
+              updatedAt: now,
+            };
+            pendingInstancesList = clone;
+          }
+        }
+        clearTimeout(instancesUpdateTimer);
+        instancesUpdateTimer = setTimeout(() => {
+          flushInstancesUpdates();
+        }, INSTANCE_UPDATE_DEBOUNCE);
+      },
+      add: () => handleAddInstanceRow(),
+      save: () => handleSaveInstances(),
+    },
+  });
+  instancesInitDone = true;
+  if (renderAfterInit && typeof window.InstancesFeature.render === "function") {
+    window.InstancesFeature.render();
+  }
+}
+
+function ensureInstancesViewInit({ renderAfterInit = false } = {}) {
+  if (instancesViewInitDone) {
+    if (renderAfterInit && window.InstancesView && typeof window.InstancesView.render === "function") {
+      window.InstancesView.render(ensureInstancesViewContext());
+    }
+    return;
+  }
+  ensureInstancesViewContext();
+  if (window.InstancesView && typeof window.InstancesView.init === "function") {
+    window.InstancesView.init(instancesViewContext);
+    instancesViewInitDone = true;
+    if (renderAfterInit && typeof window.InstancesView.render === "function") {
+      window.InstancesView.render(instancesViewContext);
+    }
+  }
 }
 
 
@@ -2142,6 +2473,9 @@ function setSidePanel(panel) {
 
   if (backupSection) backupSection.classList.toggle("active", backupActive);
   if (shoppingSection) shoppingSection.classList.toggle("active", shoppingActive);
+  if (shoppingActive && shoppingNeedsRender) {
+    renderShoppingList(true);
+  }
 
   if (mainBackupButton) {
     mainBackupButton.classList.toggle("active", backupActive);
@@ -2186,11 +2520,14 @@ function toggleAlmacenEditMode() {
 }
 
 function setOtrosMode(editMode) {
-  if (editMode) {
-    renderExtraEditTable();
-  }
   otrosListPanel.classList.toggle("active", !editMode);
   otrosEditPanel.classList.toggle("active", editMode);
+  const sectionVisible = isActiveSection(otrosSection);
+  if (editMode && sectionVisible) {
+    renderExtraEditTable();
+  } else if (!editMode && sectionVisible) {
+    renderExtraQuickTable(true);
+  }
   otrosEditModeButton.textContent = editMode
     ? "Volver a lista"
     : "Editar lista";
@@ -2205,30 +2542,72 @@ function toggleOtrosEditMode() {
   setOtrosMode(editMode);
 }
 
+function clearInstancesWarmup() {
+  if (!instancesWarmupHandle) return;
+  if (instancesWarmupHandleType === "idle" && typeof cancelIdleCallback === "function") {
+    cancelIdleCallback(instancesWarmupHandle);
+  } else {
+    clearTimeout(instancesWarmupHandle);
+  }
+  instancesWarmupHandle = null;
+  instancesWarmupHandleType = "";
+}
+
+function scheduleInstancesRender({ force = false, immediate = false, replace = false, showLoading = true } = {}) {
+  if (instancesWarmupHandle && !replace) return;
+  if (replace) clearInstancesWarmup();
+  const activeInstancesTab =
+    isActiveSection(proveedoresSection) && instancesPanel && instancesPanel.classList.contains("active");
+  const run = () => {
+    clearInstancesWarmup();
+    ensureInstancesViewContext();
+    ensureInstancesViewInit({ renderAfterInit: false });
+    ensureInstancesFeatureInit({ renderAfterInit: false });
+    renderInstancesTable(force, { showLoading });
+    instancesNeedsRender = false;
+    instancesWarmupDone = true;
+  };
+  if (immediate || activeInstancesTab) {
+    run();
+    return;
+  }
+  if (typeof requestIdleCallback === "function") {
+    instancesWarmupHandle = requestIdleCallback(run, { timeout: INSTANCES_WARMUP_IDLE_TIMEOUT });
+    instancesWarmupHandleType = "idle";
+  } else {
+    instancesWarmupHandle = setTimeout(run, 0);
+    instancesWarmupHandleType = "timeout";
+  }
+}
+
+function markInstancesLoading() {
+  if (instancesSummaryInfo) {
+    instancesSummaryInfo.textContent = "Cargando selecciones...";
+  }
+}
+
 function setProveedoresTab(tab) {
   const isProd = tab === "producers";
   const isStores = tab === "stores";
   const isInstances = tab === "instances";
+  const proveedoresVisible = isActiveSection(proveedoresSection);
 
   producersPanel.classList.toggle("active", isProd);
   storesPanel.classList.toggle("active", isStores);
   instancesPanel.classList.toggle("active", isInstances);
 
-  if (isProd) {
-    if (window.ProducersFeature && typeof window.ProducersFeature.render === "function") {
-      window.ProducersFeature.render();
-    } else if (window.ProducersView && typeof window.ProducersView.render === "function") {
-      window.ProducersView.render(producersViewContext);
-    }
+  if (isProd && producersNeedsRender) {
+    renderProducers(true);
   }
-  if (isStores) {
-    if (window.StoresFeature && typeof window.StoresFeature.render === "function") {
-      window.StoresFeature.render();
-    } else if (window.StoresView && typeof window.StoresView.render === "function") {
-      window.StoresView.render(storesViewContext);
-    }
+  if (isStores && storesNeedsRender) {
+    renderStores(true);
   }
-  if (isInstances && !isStoreActive()) renderInstancesTable();
+  if (isInstances && proveedoresVisible) {
+    markInstancesLoading();
+    scheduleInstancesRender({ force: true, replace: true, immediate: true, showLoading: true });
+  } else if (isInstances) {
+    instancesNeedsRender = true;
+  }
 }
 
 function handleToggleShoppingPanel() {
@@ -2239,6 +2618,21 @@ function handleToggleShoppingPanel() {
   toggleShoppingPanelButton.title = hidden
     ? "Mostrar lista de la compra"
     : "Ocultar lista de la compra";
+  if (!hidden && shoppingNeedsRender) {
+    renderShoppingList(true);
+  }
+}
+
+function resetInstancesFilters() {
+  if (instancesSearchInput) instancesSearchInput.value = "";
+  if (instancesFamilyFilterSelect) instancesFamilyFilterSelect.value = "";
+  if (instancesProducerFilterSelect) instancesProducerFilterSelect.value = "";
+  if (instancesStoreFilterSelect) instancesStoreFilterSelect.value = "";
+  instancesMissingFilterActive = false;
+  if (instancesMissingFilterButton) {
+    instancesMissingFilterButton.classList.remove("active");
+    instancesMissingFilterButton.setAttribute("aria-pressed", "false");
+  }
 }
 
 function saveProducts() {
@@ -2302,6 +2696,7 @@ function saveClassifications() {
 }
 
 function loadAllData() {
+  const t0 = performance.now();
   const loaders = [
     () => stateAdapter && typeof stateAdapter.bootstrap === "function" && stateAdapter.bootstrap(),
     () => window.AppStore && typeof window.AppStore.bootstrap === "function" && window.AppStore.bootstrap(),
@@ -2313,21 +2708,26 @@ function loadAllData() {
   ];
 
   for (const load of loaders) {
+    const tLoad = performance.now();
     let snapshot = null;
     try {
       snapshot = typeof load === "function" ? load() : null;
     } catch {
       snapshot = null;
     }
+    perfLog("loadAllData:loader", performance.now() - tLoad);
     if (hasSnapshotData(snapshot)) {
       applyStateSnapshot(snapshot);
       ensureInstanceFamilies({ persist: false });
+      perfLog("loadAllData:applied", performance.now() - t0);
       return;
     }
   }
 
   unifiedProducts = [];
+  unifiedDirty = true;
   refreshProductsFromUnified();
+  perfLog("loadAllData:emptyState", performance.now() - t0);
 }
 
 // ==============================
@@ -2866,12 +3266,34 @@ function createSelectionButton(selectionId, id) {
   btn.className = "btn btn-small btn-icon";
   btn.dataset.action = "select-selection";
   btn.dataset.id = id;
+  btn.dataset.selectionBtn = "1";
   const hasSel = !!getSelectionInstanceForProduct({ selectionId, id });
   btn.textContent = hasSel ? "⟳" : "+";
   btn.title = hasSel ? "Cambiar selección" : "Añadir selección";
   btn.classList.toggle("btn-selection-empty", !hasSel);
   btn.classList.toggle("btn-selection-update", hasSel);
+  applySelectionButtonVisibility(btn);
   return btn;
+}
+
+function applySelectionButtonVisibility(btn) {
+  if (!btn) return;
+  if (selectionButtonsVisible) {
+    btn.style.visibility = "";
+    btn.style.pointerEvents = "";
+    btn.classList.remove("selection-btn-hidden");
+  } else {
+    btn.style.visibility = "hidden";
+    btn.style.pointerEvents = "none";
+    btn.classList.add("selection-btn-hidden");
+  }
+}
+
+function setSelectionButtonsVisibility(visible) {
+  selectionButtonsVisible = !!visible;
+  document
+    .querySelectorAll('[data-selection-btn="1"]')
+    .forEach((btn) => applySelectionButtonVisibility(btn));
 }
 
 function createEmptySelectionInstance(product, producerId, brand, storeIds) {
@@ -2915,11 +3337,7 @@ function addQuickProducer(data, selectEl) {
   setProducersList([...getProducersList(), producer]);
   memoProducerLocations = []; // forzar recálculo de filtros de localización
   memoProducerFilterOptions = "";
-  if (window.ProducersFeature && typeof window.ProducersFeature.render === "function") {
-    window.ProducersFeature.render();
-  } else if (window.ProducersView && typeof window.ProducersView.render === "function") {
-    window.ProducersView.render(producersViewContext);
-  }
+  renderProducers();
   updateProducerFilterOptions();
   if (!isStoreActive()) renderInstancesTable();
   if (selectEl) {
@@ -2953,11 +3371,7 @@ function addQuickStore(data, selectEl, chipsContainer) {
     updatedAt: now,
   };
   setSuppliersList([...getSuppliersList(), store]);
-  if (window.StoresFeature && typeof window.StoresFeature.render === "function") {
-    window.StoresFeature.render();
-  } else if (window.StoresView && typeof window.StoresView.render === "function") {
-    window.StoresView.render(storesViewContext);
-  }
+  renderStores();
   memoStores = []; // invalidar memo para recalcular en el próximo render
   memoStoreLocations = []; // invalidar memo de ubicaciones
   renderStoreOptions();
@@ -3111,11 +3525,32 @@ function openSelectionPopupForProduct(productId) {
   ensureSelectionPopupInit();
   lastSelectionTrigger = document.activeElement;
 
-  let inlineSelectionEditId = "";
-  let inlineSelectionSaveBtn = null;
-  let inlineSelectionCancelBtn = null;
-  let inlineSelectionBrandInput = null;
-  let inlineSelectionProducerSel = null;
+  if (selectionPopupTitle) {
+    selectionPopupTitle.textContent = "Cargando selección...";
+  }
+  if (selectionPopupList) {
+    selectionPopupList.innerHTML = "";
+    const loading = document.createElement("li");
+    loading.className = "selection-popup-item selection-popup-loading";
+    loading.textContent = "Cargando...";
+    selectionPopupList.appendChild(loading);
+  }
+
+  const run = () => {
+    if (!selectionPopupOverlay || !selectionPopup || !selectionPopupList) return;
+    const showError = (msg) => {
+      selectionPopupList.innerHTML = "";
+      const li = document.createElement("li");
+      li.className = "selection-popup-item";
+      li.textContent = msg || "No se pudieron cargar las selecciones.";
+      selectionPopupList.appendChild(li);
+    };
+
+    let inlineSelectionEditId = "";
+    let inlineSelectionSaveBtn = null;
+    let inlineSelectionCancelBtn = null;
+    let inlineSelectionBrandInput = null;
+    let inlineSelectionProducerSel = null;
   let inlineSelectionStoresSel = null;
 
   const setInlineStoresSelection = (storeIds) => {
@@ -3225,7 +3660,11 @@ function openSelectionPopupForProduct(productId) {
   };
 
   const product = findProductById(productId);
-  if (!product) return;
+  if (!product) {
+    showError("No se encontró el producto seleccionado.");
+    if (selectionPopup) selectionPopupTitle.textContent = "Selección";
+    return;
+  }
   const currentSelectionId = product.selectionId || "";
 
   const isPantry = products.some((p) => p.id === productId);
@@ -3674,6 +4113,20 @@ function openSelectionPopupForProduct(productId) {
     centerSelectionPopup();
     requestAnimationFrame(centerSelectionPopup);
   }
+  };
+
+  try {
+    run();
+  } catch (err) {
+    console.error("openSelectionPopupForProduct error", err);
+    if (selectionPopupList) {
+      selectionPopupList.innerHTML = "";
+      const li = document.createElement("li");
+      li.className = "selection-popup-item";
+      li.textContent = "No se pudieron cargar las selecciones.";
+      selectionPopupList.appendChild(li);
+    }
+  }
 }
 
 function clampSelectionPopupPosition(left, top) {
@@ -4032,6 +4485,51 @@ function renderStoreOptions() {
   });
 }
 
+const shouldRenderProveedoresPanel = (panel) =>
+  isActiveSection(proveedoresSection) && !!(panel && panel.classList && panel.classList.contains("active"));
+
+function renderProducers(force = false) {
+  const active = shouldRenderProveedoresPanel(producersPanel);
+  if (!force && !active) {
+    producersNeedsRender = true;
+    return;
+  }
+  const renderFn =
+    window.ProducersFeature && typeof window.ProducersFeature.render === "function"
+      ? () => window.ProducersFeature.render()
+      : window.ProducersView && typeof window.ProducersView.render === "function"
+      ? () => window.ProducersView.render(producersViewContext)
+      : null;
+  if (!renderFn) return;
+  const label =
+    window.ProducersFeature && typeof window.ProducersFeature.render === "function"
+      ? "ProducersFeature.render"
+      : "ProducersView.render";
+  runMeasured(label, renderFn);
+  producersNeedsRender = false;
+}
+
+function renderStores(force = false) {
+  const active = shouldRenderProveedoresPanel(storesPanel);
+  if (!force && !active) {
+    storesNeedsRender = true;
+    return;
+  }
+  const renderFn =
+    window.StoresFeature && typeof window.StoresFeature.render === "function"
+      ? () => window.StoresFeature.render()
+      : window.StoresView && typeof window.StoresView.render === "function"
+      ? () => window.StoresView.render(storesViewContext)
+      : null;
+  if (!renderFn) return;
+  const label =
+    window.StoresFeature && typeof window.StoresFeature.render === "function"
+      ? "StoresFeature.render"
+      : "StoresView.render";
+  runMeasured(label, renderFn);
+  storesNeedsRender = false;
+}
+
 function updateProducerFilterOptions() {
   const state = getStateSnapshot();
   const producersList = getProducersList();
@@ -4317,6 +4815,7 @@ function handleAddQuickExtra() {
 
 function startEditExtra(id) {
   if (!id) return;
+  setSelectionButtonsVisibility(true);
   const list = getOtherProducts();
   const prod = list.find((p) => p.id === id);
   if (!prod) return;
@@ -4375,6 +4874,7 @@ function handleAddQuickProduct() {
 
 function startEditProduct(id) {
   if (!id) return;
+  setSelectionButtonsVisibility(true);
   const list = getPantryProducts();
   const prod = list.find((p) => p.id === id);
   if (!prod) return;
@@ -4495,12 +4995,25 @@ function commitDraftExtras(ids) {
 // ==============================
 
 function renderGridRows() {
-  if (
-    window.InventoryEditView &&
-    typeof window.InventoryEditView.render === "function"
-  ) {
-    window.InventoryEditView.render(inventoryEditViewContext);
+  if (!almacenEditPanel || !almacenEditPanel.classList.contains("active")) return;
+  if (gridRenderHandle) {
+    if (typeof cancelIdleCallback === "function") {
+      cancelIdleCallback(gridRenderHandle);
+    } else {
+      clearTimeout(gridRenderHandle);
+    }
+    gridRenderHandle = null;
   }
+  const run = () => {
+    gridRenderHandle = null;
+    if (
+      window.InventoryEditView &&
+      typeof window.InventoryEditView.render === "function"
+    ) {
+      window.InventoryEditView.render(inventoryEditViewContext);
+    }
+  };
+  gridRenderHandle = setTimeout(run, 0);
 }
 
 function handleSaveGrid() {
@@ -4513,15 +5026,26 @@ function handleSaveGrid() {
 //  OTROS PRODUCTOS: VISTA
 // ==============================
 
-function renderExtraQuickTable() {
+function renderExtraQuickTable(force = false) {
+  const listVisible =
+    isActiveSection(otrosSection) &&
+    otrosListPanel &&
+    otrosListPanel.classList &&
+    otrosListPanel.classList.contains("active");
+  if (!force && !listVisible) {
+    extrasNeedsRender = true;
+    return;
+  }
   if (window.ExtrasFeature && typeof window.ExtrasFeature.render === "function") {
     window.ExtrasFeature.render();
     renderExtraSummary();
+    extrasNeedsRender = false;
     return;
   }
   if (window.ExtrasView && typeof window.ExtrasView.render === "function") {
     window.ExtrasView.render(extrasViewContext);
   }
+  extrasNeedsRender = false;
   renderExtraSummary();
 }
 
@@ -4543,9 +5067,27 @@ function removeProductById(id) {
 // ==============================
 
 function renderExtraEditTable() {
-  if (window.ExtraEditView && typeof window.ExtraEditView.render === "function") {
-    window.ExtraEditView.render(extraEditViewContext);
+  const editVisible =
+    isActiveSection(otrosSection) &&
+    otrosEditPanel &&
+    otrosEditPanel.classList &&
+    otrosEditPanel.classList.contains("active");
+  if (!editVisible) return;
+  if (extraEditRenderHandle) {
+    if (typeof cancelIdleCallback === "function") {
+      cancelIdleCallback(extraEditRenderHandle);
+    } else {
+      clearTimeout(extraEditRenderHandle);
+    }
+    extraEditRenderHandle = null;
   }
+  const run = () => {
+    extraEditRenderHandle = null;
+    if (window.ExtraEditView && typeof window.ExtraEditView.render === "function") {
+      window.ExtraEditView.render(extraEditViewContext);
+    }
+  };
+  extraEditRenderHandle = setTimeout(run, 0);
 }
 
 // ==============================
@@ -4553,13 +5095,27 @@ function renderExtraEditTable() {
 // ==============================
 
 function renderClassificationTable() {
-  if (
-    window.ClassificationView &&
-    typeof window.ClassificationView.render === "function"
-  ) {
-    updateClassificationFilterOptions();
-    window.ClassificationView.render(classificationViewContext);
+  if (!classificationInitDone) initClassificationOnDemand();
+  if (!classificationSection || !classificationSection.classList.contains("active")) return;
+  if (classificationRenderHandle) {
+    if (typeof cancelIdleCallback === "function") {
+      cancelIdleCallback(classificationRenderHandle);
+    } else {
+      clearTimeout(classificationRenderHandle);
+    }
+    classificationRenderHandle = null;
   }
+  const run = () => {
+    classificationRenderHandle = null;
+    if (
+      window.ClassificationView &&
+      typeof window.ClassificationView.render === "function"
+    ) {
+      updateClassificationFilterOptions();
+      window.ClassificationView.render(classificationViewContext);
+    }
+  };
+  classificationRenderHandle = setTimeout(run, 0);
 }
 
 function handleAddClassificationRow() {
@@ -4732,15 +5288,27 @@ function handleGlobalSaveShortcut(e) {
     setOtrosMode(false);
     return false;
   }
-  if (instancesPanel && instancesPanel.classList.contains("active")) {
+  if (
+    isActiveSection(proveedoresSection) &&
+    instancesPanel &&
+    instancesPanel.classList.contains("active")
+  ) {
     handleSaveInstances();
     return false;
   }
-  if (producersPanel && producersPanel.classList.contains("active")) {
+  if (
+    isActiveSection(proveedoresSection) &&
+    producersPanel &&
+    producersPanel.classList.contains("active")
+  ) {
     handleSaveProducers();
     return false;
   }
-  if (storesPanel && storesPanel.classList.contains("active")) {
+  if (
+    isActiveSection(proveedoresSection) &&
+    storesPanel &&
+    storesPanel.classList.contains("active")
+  ) {
     handleSaveStores();
     return false;
   }
@@ -4854,21 +5422,59 @@ function setColumnWidth(table, colIndex, widthPx) {
 //  SELECCIÓN DE PRODUCTOS (INSTANCIAS)
 // ==============================
 
-function renderInstancesTable() {
-  if (isStoreActive()) return;
-  hideProductAutocomplete();
-  if (window.InstancesFeature && typeof window.InstancesFeature.render === "function") {
-    window.InstancesFeature.render();
+function renderInstancesTable(force = false, { showLoading = true } = {}) {
+  const isActive =
+    isActiveSection(proveedoresSection) && instancesPanel?.classList?.contains("active");
+  if (!force && !isActive) {
+    instancesNeedsRender = true;
     return;
   }
-  if (window.InstancesView && typeof window.InstancesView.render === "function") {
-    if (instancesViewContext && instancesViewContext.data) {
-      instancesViewContext.data.instances = getInstancesList();
-      instancesViewContext.data.producers = getProducersList();
-      instancesViewContext.data.stores = getSuppliersList();
-    }
-    window.InstancesView.render(instancesViewContext);
+
+  if (instancesRenderHandle) {
+    clearTimeout(instancesRenderHandle);
   }
+  const ctx = ensureInstancesViewContext();
+  ensureInstancesViewInit({ renderAfterInit: false });
+  ensureInstancesFeatureInit({ renderAfterInit: false });
+  if (typeof hideProductAutocomplete === "function") {
+    hideProductAutocomplete();
+  }
+
+  const showLoadingRow = () => {
+    if (instancesSummaryInfo) {
+      instancesSummaryInfo.textContent = "Cargando selecciones...";
+    }
+  };
+
+  if (showLoading) {
+    showLoadingRow();
+  }
+
+  const run = () => {
+    const t0 = performance.now();
+    try {
+      if (ctx && ctx.data) {
+        ctx.data.instances = getInstancesList();
+        ctx.data.producers = getProducersList();
+        ctx.data.stores = getSuppliersList();
+      }
+      if (window.InstancesFeature && typeof window.InstancesFeature.render === "function") {
+        window.InstancesFeature.render();
+      } else if (window.InstancesView && typeof window.InstancesView.render === "function") {
+        window.InstancesView.render(ctx);
+      }
+      instancesNeedsRender = false;
+    } catch (err) {
+      console.error("renderInstancesTable error", err);
+      instancesNeedsRender = true;
+    } finally {
+      instancesRenderHandle = null;
+      perfLog("renderInstancesTable", performance.now() - t0);
+    }
+  };
+
+  // Defer un tick para que la pestaña y el mensaje se pinten antes del cálculo
+  instancesRenderHandle = setTimeout(run, 0);
 }
 
 function refreshInstancesViews({ immediate = false } = {}) {
@@ -4889,6 +5495,7 @@ function refreshInstancesViews({ immediate = false } = {}) {
 }
 
 function handleAddInstanceRow() {
+  ensureInstancesViewContext();
   if (window.InstancesView && typeof window.InstancesView.addRow === "function") {
     window.InstancesView.addRow(instancesViewContext);
   }
@@ -4896,6 +5503,7 @@ function handleAddInstanceRow() {
 
 function handleSaveInstances() {
   flushInstancesUpdates();
+  ensureInstancesViewContext();
   if (window.InstancesView && typeof window.InstancesView.save === "function") {
     window.InstancesView.save(instancesViewContext);
     showToast("Selección de productos guardada");
@@ -5178,8 +5786,16 @@ function createExtraProductFromPrompt(initialName = "") {
 //  LISTA DE LA COMPRA
 // ==============================
 
-function renderShoppingList() {
+function renderShoppingList(force = false) {
   if (!shoppingListContainer || !shoppingSummary) return;
+  const main = document.querySelector(".app-main");
+  const shoppingHidden = !!(main && main.classList && main.classList.contains("shopping-hidden"));
+  const shoppingPanelVisible = !shoppingHidden || isActiveSection(shoppingSection);
+  if (!force && !shoppingPanelVisible) {
+    shoppingNeedsRender = true;
+    return;
+  }
+  shoppingNeedsRender = false;
   shoppingListContainer.innerHTML = "";
 
   const baseSummary =
@@ -5428,6 +6044,7 @@ function handleBackupFileChange(e) {
       onSnapshot: (snapshot) => {
         const applySnapshot = (snap) => {
           unifiedProducts = snap.unifiedProducts;
+          unifiedDirty = true;
           suppliers = snap.suppliers;
           producers = snap.producers;
           productInstances = snap.productInstances;
@@ -5437,7 +6054,7 @@ function handleBackupFileChange(e) {
           saveProducers();
           saveProductInstances();
           saveClassifications();
-          refreshProductsFromUnified();
+          refreshProductsFromUnified(true);
           renderShelfOptions();
           renderBlockOptions();
           renderTypeOptions();
@@ -5450,16 +6067,8 @@ function handleBackupFileChange(e) {
           renderGridRows();
           renderExtraQuickTable();
           renderExtraEditTable();
-          if (window.ProducersFeature && typeof window.ProducersFeature.render === "function") {
-            window.ProducersFeature.render();
-          } else if (window.ProducersView && typeof window.ProducersView.render === "function") {
-            window.ProducersView.render(producersViewContext);
-          }
-          if (window.StoresFeature && typeof window.StoresFeature.render === "function") {
-            window.StoresFeature.render();
-          } else if (window.StoresView && typeof window.StoresView.render === "function") {
-            window.StoresView.render(storesViewContext);
-          }
+          renderProducers();
+          renderStores();
           renderClassificationTable();
           renderInstancesTable();
           renderShoppingList();
@@ -5503,6 +6112,7 @@ function handleBackupFileChange(e) {
       };
       const applySnapshot = (snap) => {
         unifiedProducts = snap.unifiedProducts;
+        unifiedDirty = true;
         suppliers = snap.suppliers;
         producers = snap.producers;
         productInstances = snap.productInstances;
@@ -5512,7 +6122,7 @@ function handleBackupFileChange(e) {
         saveProducers();
         saveProductInstances();
         saveClassifications();
-        refreshProductsFromUnified();
+        refreshProductsFromUnified(true);
         renderShelfOptions();
         renderBlockOptions();
         renderTypeOptions();
@@ -5525,16 +6135,8 @@ function handleBackupFileChange(e) {
         renderGridRows();
         renderExtraQuickTable();
         renderExtraEditTable();
-        if (window.ProducersFeature && typeof window.ProducersFeature.render === "function") {
-          window.ProducersFeature.render();
-        } else if (window.ProducersView && typeof window.ProducersView.render === "function") {
-          window.ProducersView.render(producersViewContext);
-        }
-        if (window.StoresFeature && typeof window.StoresFeature.render === "function") {
-          window.StoresFeature.render();
-        } else if (window.StoresView && typeof window.StoresView.render === "function") {
-          window.StoresView.render(storesViewContext);
-        }
+        renderProducers();
+        renderStores();
         renderClassificationTable();
         renderInstancesTable();
         renderShoppingList();

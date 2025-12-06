@@ -644,38 +644,38 @@
     const id = target.dataset.id || target.closest("tr")?.dataset.id;
     if (!id) return;
 
-    if (action === "move-to-almacen") {
-      const ok = typeof window.confirm === "function" ? window.confirm("¿Mover este producto a almacén?") : true;
-      if (!ok) return;
-      if (typeof context.onMoveToAlmacen === "function") {
-        context.onMoveToAlmacen(id);
-      }
-      return;
+  if (action === "move-to-almacen") {
+    const ok = typeof window.confirm === "function" ? window.confirm("¿Mover este producto a almacén?") : true;
+    if (!ok) return;
+    if (typeof context.onMoveToAlmacen === "function") {
+      setTimeout(() => context.onMoveToAlmacen(id), 0);
     }
-    if (action === "edit-extra") {
-      if (typeof context.onEdit === "function") {
-        context.onEdit(id);
-      }
-      return;
-    }
-    if (action === "save-draft-extra") {
-      if (typeof context.onSaveDraft === "function") {
-        context.onSaveDraft(id);
-      }
-      return;
-    }
-    if (action === "select-selection") {
-      if (typeof context.onSelectSelection === "function") {
-        context.onSelectSelection(id);
-      }
-      return;
-    }
-    if (action === "delete" && typeof context.onDelete === "function") {
-      const ok = typeof window.confirm === "function" ? window.confirm("¿Eliminar este producto?") : true;
-      if (!ok) return;
-      context.onDelete(id);
-    }
+    return;
   }
+  if (action === "edit-extra") {
+    if (typeof context.onEdit === "function") {
+      setTimeout(() => context.onEdit(id), 0);
+    }
+    return;
+  }
+  if (action === "save-draft-extra") {
+    if (typeof context.onSaveDraft === "function") {
+      setTimeout(() => context.onSaveDraft(id), 0);
+    }
+    return;
+  }
+  if (action === "select-selection") {
+    if (typeof context.onSelectSelection === "function") {
+      setTimeout(() => context.onSelectSelection(id), 0);
+    }
+    return;
+  }
+  if (action === "delete" && typeof context.onDelete === "function") {
+    const ok = typeof window.confirm === "function" ? window.confirm("¿Eliminar este producto?") : true;
+    if (!ok) return;
+    setTimeout(() => context.onDelete(id), 0);
+  }
+}
 
   function init(c) {
     ctx = c;
