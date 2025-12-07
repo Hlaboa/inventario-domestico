@@ -1127,11 +1127,16 @@
     // Visibilidad de filas renderizadas
     const rows = Array.from(tableBody.querySelectorAll("tr"));
     rows.forEach((row) => {
+      if (row.classList.contains("instances-spacer")) {
+        row.style.display = "";
+        return;
+      }
       if (row.dataset.isNew === "1") {
         row.style.display = "";
         return;
       }
       const id = row.dataset.id;
+      if (!id) return;
       const item = allItems.find((i) => i && i.id === id);
       const visible = matches(item);
       row.style.display = visible ? "" : "none";
