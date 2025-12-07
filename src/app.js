@@ -3219,6 +3219,16 @@ function getSelectionInstanceForProduct(product) {
   return instances.find((inst) => inst.id === product.selectionId) || null;
 }
 
+function getInstancesForProduct(product) {
+  if (!product) return [];
+  const nameLower = (product.name || "").trim().toLowerCase();
+  return getInstancesList().filter((inst) => {
+    if (inst.productId && inst.productId === product.id) return true;
+    const instName = (inst.productName || "").trim().toLowerCase();
+    return nameLower && instName && instName === nameLower;
+  });
+}
+
 function getSelectionLabelForProduct(product) {
   const inst = getSelectionInstanceForProduct(product);
   if (!inst) return "";
@@ -3308,8 +3318,18 @@ function setSelectionButtonsVisibility(visible) {
     .forEach((btn) => applySelectionButtonVisibility(btn));
 }
 
+function getNextInstancePriority(product) {
+  const list = getInstancesForProduct(product);
+  if (!Array.isArray(list) || list.length === 0) return 0;
+  const priorities = list
+    .map((inst) => Number(inst && inst.priority))
+    .map((n) => (Number.isFinite(n) ? n : 0));
+  return Math.max(...priorities, 0) + 1;
+}
+
 function createEmptySelectionInstance(product, producerId, brand, storeIds) {
   if (!product) return null;
+  const nextPriority = getNextInstancePriority(product);
   const now = nowIsoString();
   const id =
     (crypto.randomUUID ? crypto.randomUUID() : "inst-" + Date.now()) +
@@ -3323,6 +3343,7 @@ function createEmptySelectionInstance(product, producerId, brand, storeIds) {
     brand: brand || "",
     storeIds: Array.isArray(storeIds) ? storeIds : [],
     notes: "",
+    priority: nextPriority,
     createdAt: now,
     updatedAt: now,
   };
@@ -3490,9 +3511,15 @@ function consolidateInstances(list, now = nowIsoString()) {
     const producerId = inst.producerId || "";
     const key = `${name.toLowerCase()}|${brand.toLowerCase()}|${producerId}`;
     const storeIds = Array.isArray(inst.storeIds) ? inst.storeIds : [];
+    const priorityVal = Number(inst.priority);
+    const instPriority = Number.isFinite(priorityVal) ? priorityVal : 0;
 
     if (!map.has(key)) {
-      const copy = { ...inst, storeIds: Array.from(new Set(storeIds)) };
+      const copy = {
+        ...inst,
+        storeIds: Array.from(new Set(storeIds)),
+        priority: instPriority,
+      };
       map.set(key, copy);
       order.push(copy);
       return;
@@ -3506,6 +3533,9 @@ function consolidateInstances(list, now = nowIsoString()) {
     existing.storeIds = Array.from(mergedStores);
     if (!existing.brand && brand) existing.brand = brand;
     if (!existing.notes && inst.notes) existing.notes = inst.notes;
+    const existingPriority = Number.isFinite(existing.priority) ? existing.priority : null;
+    existing.priority =
+      existingPriority === null ? instPriority : Math.min(existingPriority, instPriority);
     const createdAt =
       existing.createdAt && inst.createdAt
         ? existing.createdAt < inst.createdAt
@@ -3678,9 +3708,62 @@ function openSelectionPopupForProduct(productId) {
     return;
   }
   const currentSelectionId = product.selectionId || "";
+  const nameLower = (product.name || "").trim().toLowerCase();
+  const applyOrderChange = (orderedIds) => {
+    const ids = Array.isArray(orderedIds) ? orderedIds : [];
+    const list = getInstancesList();
+    let nextPriority = ids.length;
+    const updated = list.map((inst) => {
+      const matches =
+        inst.productId === productId ||
+        (nameLower && (inst.productName || "").trim().toLowerCase() === nameLower);
+      if (!matches) return inst;
+      const pos = ids.indexOf(inst.id);
+      const priority = pos === -1 ? nextPriority++ : pos;
+      return { ...inst, priority };
+    });
+    persistInstances(updated, { allowClear: true });
+  };
 
   const isPantry = products.some((p) => p.id === productId);
   const sourceLabel = isPantry ? "Almacén" : "Otros productos";
+
+  const getCurrentItems = () =>
+    selectionPopupList
+      ? Array.from(selectionPopupList.querySelectorAll(".selection-popup-item[data-id]"))
+      : [];
+
+  const getCurrentOrder = () => getCurrentItems().map((li) => li.dataset.id).filter(Boolean);
+
+  const updateIndicesAndButtons = () => {
+    const items = getCurrentItems();
+    items.forEach((li, idx) => {
+      const badge = li.querySelector(".selection-item-index");
+      if (badge) badge.textContent = `${idx + 1}.`;
+      const up = li.querySelector("[data-role='move-up']");
+      const down = li.querySelector("[data-role='move-down']");
+      if (up) up.disabled = idx === 0;
+      if (down) down.disabled = idx === items.length - 1;
+    });
+  };
+
+  const moveItem = (li, delta) => {
+    if (!selectionPopupList || !li || !delta) return;
+    const items = getCurrentItems();
+    const from = items.indexOf(li);
+    if (from === -1) return;
+    const to = from + delta;
+    if (to < 0 || to >= items.length) return;
+    const target = items[to];
+    if (delta > 0) {
+      selectionPopupList.insertBefore(li, target.nextSibling);
+    } else {
+      selectionPopupList.insertBefore(li, target);
+    }
+    const orderedIds = getCurrentOrder();
+    applyOrderChange(orderedIds);
+    updateIndicesAndButtons();
+  };
 
   selectionPopupTitle.textContent = `Selección para: ${
     product.name || "(sin nombre)"
@@ -3720,30 +3803,33 @@ function openSelectionPopupForProduct(productId) {
   });
   selectionPopupList.appendChild(liNone);
 
-  const nameLower = (product.name || "").trim().toLowerCase();
-  const instances = getInstancesList().filter((inst) => {
-    if (inst.productId === productId) return true;
-    const instName = (inst.productName || "").trim().toLowerCase();
-    return nameLower && instName && instName === nameLower;
-  });
+  const instances = getInstancesForProduct(product);
+  const normalizePriority = (inst) => {
+    const val = Number(inst && inst.priority);
+    return Number.isFinite(val) ? val : Number.MAX_SAFE_INTEGER;
+  };
+  const sortedInstances = instances
+    .slice()
+    .sort((a, b) => {
+      const pa = normalizePriority(a);
+      const pb = normalizePriority(b);
+      if (pa !== pb) return pa - pb;
+      return (a.brand || "").localeCompare(b.brand || "", "es", {
+        sensitivity: "base",
+      });
+    });
 
-  if (instances.length === 0) {
+  if (sortedInstances.length === 0) {
     const empty = document.createElement("p");
     empty.className = "selection-popup-empty";
     empty.textContent =
       "No hay selecciones definidas para este producto. Ve a 'Tiendas / Productores' → 'Selección de productos' para crear una.";
     selectionPopupList.appendChild(empty);
   } else {
-    instances
-      .slice()
-      .sort((a, b) =>
-        (a.brand || "").localeCompare(b.brand || "", "es", {
-          sensitivity: "base",
-        })
-      )
-      .forEach((inst, idx) => {
+    sortedInstances.forEach((inst, idx) => {
         const li = document.createElement("li");
         li.className = "selection-popup-item";
+        li.dataset.id = inst.id || "";
 
         const idxSpan = document.createElement("span");
         idxSpan.className = "selection-item-index";
@@ -3807,6 +3893,32 @@ function openSelectionPopupForProduct(productId) {
           openSelectionPopupForProduct(productId);
         });
         actions.appendChild(deleteBtn);
+        const moveUpBtn = document.createElement("button");
+        moveUpBtn.type = "button";
+        moveUpBtn.className = "btn btn-icon btn-ghost selection-move-btn";
+        moveUpBtn.title = "Subir prioridad";
+        moveUpBtn.dataset.role = "move-up";
+        moveUpBtn.textContent = "↑";
+        moveUpBtn.disabled = idx === 0;
+        moveUpBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const li = e.currentTarget.closest(".selection-popup-item");
+          moveItem(li, -1);
+        });
+        actions.appendChild(moveUpBtn);
+        const moveDownBtn = document.createElement("button");
+        moveDownBtn.type = "button";
+        moveDownBtn.className = "btn btn-icon btn-ghost selection-move-btn";
+        moveDownBtn.title = "Bajar prioridad";
+        moveDownBtn.dataset.role = "move-down";
+        moveDownBtn.textContent = "↓";
+        moveDownBtn.disabled = idx === sortedInstances.length - 1;
+        moveDownBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const li = e.currentTarget.closest(".selection-popup-item");
+          moveItem(li, 1);
+        });
+        actions.appendChild(moveDownBtn);
         li.appendChild(actions);
 
         li.addEventListener("click", () => {
@@ -3815,6 +3927,7 @@ function openSelectionPopupForProduct(productId) {
 
         selectionPopupList.appendChild(li);
       });
+    updateIndicesAndButtons();
   }
 
   // Botón para crear nueva selección desde el popup
@@ -5220,6 +5333,12 @@ function persistInstances(list, options = {}) {
     });
     const existing = existingInstances.find((i) => i.id === id) || {};
     const createdAt = existing.createdAt || inst.createdAt || now;
+    const priorityVal = Number(inst.priority);
+    const priority = Number.isFinite(priorityVal)
+      ? priorityVal
+      : Number.isFinite(existing.priority)
+      ? existing.priority
+      : 0;
     updates.set(id, {
       ...inst,
       id,
@@ -5227,6 +5346,7 @@ function persistInstances(list, options = {}) {
       productName,
       block: resolvedBlock,
       storeIds: Array.isArray(inst.storeIds) ? inst.storeIds.filter(Boolean) : [],
+      priority,
       createdAt,
       updatedAt: now,
     });

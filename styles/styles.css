@@ -1421,6 +1421,13 @@ textarea:focus-visible {
   font-size: 0.9rem;
 }
 
+.selection-move-btn {
+  padding: 0.12rem 0.28rem;
+  font-size: 0.78rem;
+  min-width: 1.6rem;
+  line-height: 1;
+}
+
 .selection-popup-item.current-selection {
   background: var(--primary-soft);
 }

@@ -11,7 +11,7 @@
    * @property {string} [updatedAt]
    *
    * @typedef {BaseEntity & {name:string, block?:string, type?:string, shelf?:string, quantity?:string, have?:boolean, buy?:boolean, selectionId?:string, notes?:string, scope?:("almacen"|"otros")}} Product
-   * @typedef {BaseEntity & {productId?:string, productName?:string, producerId?:string, brand?:string, storeIds?:string[], notes?:string}} Instance
+   * @typedef {BaseEntity & {productId?:string, productName?:string, producerId?:string, brand?:string, storeIds?:string[], notes?:string, priority?:number}} Instance
    * @typedef {BaseEntity & {name:string, type?:string, location?:string, website?:string, notes?:string}} Supplier
    * @typedef {BaseEntity & {name:string, location?:string, website?:string, notes?:string}} Producer
    * @typedef {BaseEntity & {block:string, type:string, notes?:string}} Classification
@@ -62,6 +62,8 @@
    */
   function validateInstance(inst) {
     const now = nowIso();
+    const priorityVal = Number(inst.priority);
+    const priority = Number.isFinite(priorityVal) ? priorityVal : 0;
     return {
       id: ensureId(inst.id, "inst"),
       productId: (inst.productId || "").trim(),
@@ -71,6 +73,7 @@
       storeIds: Array.isArray(inst.storeIds) ? inst.storeIds.filter(Boolean) : [],
       storeNames: Array.isArray(inst.storeNames) ? inst.storeNames.filter(Boolean) : [],
       notes: inst.notes || "",
+      priority,
       createdAt: inst.createdAt || now,
       updatedAt: inst.updatedAt || inst.createdAt || now,
     };
