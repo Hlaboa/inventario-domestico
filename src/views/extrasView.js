@@ -204,8 +204,14 @@
       typeof context.getSelectionInstanceForProduct === "function"
         ? context.getSelectionInstanceForProduct(item)
         : null;
-    const storeIds = Array.isArray(inst?.storeIds) ? inst.storeIds : [];
-    row.dataset.storeIds = storeIds.join(",");
+    const storeIds =
+      typeof context.getStoreIdsForProduct === "function"
+        ? context.getStoreIdsForProduct(item)
+        : inst?.storeIds;
+    const normalizedStoreIds = Array.isArray(storeIds)
+      ? storeIds.map((id) => String(id || "").trim()).filter(Boolean)
+      : [];
+    row.dataset.storeIds = normalizedStoreIds.join(",");
     row.dataset.search = `${item.name || ""} ${item.block || ""} ${item.type || ""} ${item.quantity || ""} ${selectionLabel} ${storesLabel} ${item.notes || ""}`.toLowerCase();
     const buyChk = row.querySelector('input[data-field="buy"]');
     if (buyChk) buyChk.checked = !!item.buy;

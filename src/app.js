@@ -1646,6 +1646,7 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
           getSelectionStoresForProduct,
         },
         getSelectionInstanceForProduct,
+        getStoreIdsForProduct,
         getStoreNames,
         persistUnified,
         getPantryProducts,
@@ -1723,11 +1724,9 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
           (a.type || "").localeCompare(b.type || "", "es", { sensitivity: "base" }) ||
           (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" }),
         matchesStore: (id, storeId) => {
-          if (!storeId) return true;
           const product = getOtherProducts().find((p) => p.id === id);
           if (!product) return true;
-          const inst = getSelectionInstanceForProduct(product);
-          return !!(inst && Array.isArray(inst.storeIds) && inst.storeIds.includes(storeId));
+          return productMatchesStore(product, storeId);
         },
         helpers: {
           createTableInput,
@@ -1802,11 +1801,9 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
         buildFamilyStripeMap,
         sorter: compareShelfBlockTypeName,
         matchesStore: (id, storeId) => {
-          if (!storeId) return true;
           const product = getPantryProducts().find((p) => p.id === id);
           if (!product) return true;
-          const inst = getSelectionInstanceForProduct(product);
-          return !!(inst && Array.isArray(inst.storeIds) && inst.storeIds.includes(storeId));
+          return productMatchesStore(product, storeId);
         },
         helpers: {
           createTableInput,
@@ -3240,25 +3237,40 @@ function getSelectionStoresForProduct(product) {
   return getStoreNames(inst.storeIds);
 }
 
-function productMatchesStore(product, storeId) {
-  if (!storeId) return true;
+function getStoreIdsForProduct(product) {
+  if (!product) return [];
+  const ids = new Set();
+  const addIds = (list) => {
+    if (!Array.isArray(list)) return;
+    list.forEach((id) => {
+      const normalized = String(id || "").trim();
+      if (normalized) ids.add(normalized);
+    });
+  };
+
   const inst = getSelectionInstanceForProduct(product);
-  if (inst && Array.isArray(inst.storeIds) && inst.storeIds.includes(storeId)) {
-    return true;
-  }
-  // Buscar en cualquier instancia asociada al producto
+  addIds(inst?.storeIds);
+
+  // Buscar en cualquier instancia asociada al producto (misma id o mismo nombre)
   const nameLower = (product.name || "").trim().toLowerCase();
   const instances = getInstancesList();
-  return instances.some((pi) => {
+  instances.forEach((pi) => {
     const sameId = pi.productId && pi.productId === product.id;
     const sameName =
       nameLower && (pi.productName || "").trim().toLowerCase() === nameLower;
-    return (
-      (sameId || sameName) &&
-      Array.isArray(pi.storeIds) &&
-      pi.storeIds.includes(storeId)
-    );
+    if ((sameId || sameName) && Array.isArray(pi.storeIds)) {
+      addIds(pi.storeIds);
+    }
   });
+
+  return Array.from(ids);
+}
+
+function productMatchesStore(product, storeId) {
+  const target = String(storeId || "").trim();
+  if (!target) return true;
+  const storeIds = getStoreIdsForProduct(product);
+  return storeIds.includes(target);
 }
 
 function createSelectionButton(selectionId, id) {
