@@ -109,6 +109,8 @@
 
   function normalizeInstance(i) {
     const now = nowIsoString();
+    const priorityVal = Number(i.priority);
+    const priority = Number.isFinite(priorityVal) ? priorityVal : 0;
     return {
       id:
         i.id !== undefined && i.id !== null && String(i.id).trim().length > 0
@@ -122,6 +124,7 @@
       brand: (i.brand || "").trim(),
       storeIds: Array.isArray(i.storeIds) ? i.storeIds.filter(Boolean) : [],
       notes: i.notes || "",
+      priority,
       createdAt: i.createdAt || now,
       updatedAt: i.updatedAt || now,
     };

@@ -11,7 +11,7 @@
   const storeNamesSep = " · ";
   const DEFAULT_ROW_HEIGHT = 64;
   const BUFFER_ROWS = 1;
-  const FULL_RENDER_THRESHOLD = 320;
+  const FULL_RENDER_THRESHOLD = Number.POSITIVE_INFINITY; // desactiva virtualización para mostrar siempre todas las filas
   const scrollSelector = ".table-scroll";
 
   const getCtx = (c) => c || ctx || {};

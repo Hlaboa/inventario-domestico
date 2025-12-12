@@ -3880,19 +3880,6 @@ function openSelectionPopupForProduct(productId) {
           startInlineSelectionEdit(inst);
         });
         actions.appendChild(editBtn);
-        const deleteBtn = document.createElement("button");
-        deleteBtn.type = "button";
-        deleteBtn.className = "btn btn-icon btn-danger btn-trash selection-delete-btn";
-        deleteBtn.title = "Eliminar esta selección";
-        deleteBtn.textContent = "🗑";
-        deleteBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const ok = window.confirm("¿Eliminar esta selección?");
-          if (!ok) return;
-          removeInstanceById(inst.id, { deferRefresh: true });
-          openSelectionPopupForProduct(productId);
-        });
-        actions.appendChild(deleteBtn);
         const moveUpBtn = document.createElement("button");
         moveUpBtn.type = "button";
         moveUpBtn.className = "btn btn-icon btn-ghost selection-move-btn";
@@ -3919,6 +3906,25 @@ function openSelectionPopupForProduct(productId) {
           moveItem(li, 1);
         });
         actions.appendChild(moveDownBtn);
+        const deleteBtn = document.createElement("button");
+        deleteBtn.type = "button";
+        deleteBtn.className = "btn btn-icon btn-danger btn-trash selection-delete-btn";
+        deleteBtn.title = "Eliminar esta selección";
+        deleteBtn.textContent = "🗑";
+        deleteBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const prodLabel = product.name || "";
+          const instLabel =
+            [getProducerName(inst.producerId), inst.brand].filter(Boolean).join(" · ") ||
+            "esta selección";
+          const ok = window.confirm(
+            `¿Eliminar ${instLabel} para "${prodLabel}"? Esta acción no se puede deshacer.`
+          );
+          if (!ok) return;
+          removeInstanceById(inst.id, { deferRefresh: true });
+          openSelectionPopupForProduct(productId);
+        });
+        actions.appendChild(deleteBtn);
         li.appendChild(actions);
 
         li.addEventListener("click", () => {
