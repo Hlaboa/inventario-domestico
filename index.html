@@ -1060,59 +1060,6 @@
                   <option value="">Todas</option>
                 </select>
               </div>
-              <div class="form-group quick-add-group">
-                <label>&nbsp;</label>
-                <button
-                  type="button"
-                  class="btn btn-secondary btn-small btn-quick-add"
-                  id="addOrderItemButton"
-                >
-                  + producto
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-secondary btn-small btn-quick-add"
-                  id="newOrderButton"
-                >
-                  Nuevo pedido
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-secondary btn-small btn-quick-add"
-                  id="toggleOrdersBatchButton"
-                >
-                  Seleccionar varios
-                </button>
-              </div>
-              <div class="form-group orders-batch-group">
-                <label for="ordersBatchSelect">Añadir varios</label>
-                <div class="orders-batch-wrapper">
-                  <div class="orders-batch-panel" id="ordersBatchPanel" hidden>
-                    <div class="orders-batch-header">
-                      <span>Selecciona productos</span>
-                      <button
-                        type="button"
-                        class="btn btn-text btn-small"
-                        id="closeOrdersBatchButton"
-                        aria-label="Cerrar selector"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    <select id="ordersBatchSelect" class="orders-batch-select" multiple size="12"></select>
-                    <div class="orders-batch-actions">
-                      <button
-                        type="button"
-                        class="btn btn-secondary btn-small"
-                        id="addOrderBatchButton"
-                      >
-                        Añadir selección
-                      </button>
-                    </div>
-                    <p class="help-text">Selecciona varios productos y pulsa “Añadir selección”.</p>
-                  </div>
-                </div>
-              </div>
             </div>
 
             <div class="list-header panel-header panel-header-compact">
@@ -1133,6 +1080,64 @@
                   id="deleteOrderButton"
                 >
                   Eliminar pedido
+                </button>
+              </div>
+            </div>
+
+            <div class="orders-actions-bar">
+              <div class="orders-actions-left">
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-small"
+                  id="addOrderItemButton"
+                >
+                  + producto
+                </button>
+                <div class="orders-batch-group">
+                  <span class="orders-action-label">Añadir varios</span>
+                  <div class="orders-batch-wrapper">
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-small"
+                      id="toggleOrdersBatchButton"
+                      aria-expanded="false"
+                    >
+                      Seleccionar varios
+                    </button>
+                    <div class="orders-batch-panel" id="ordersBatchPanel" hidden>
+                      <div class="orders-batch-header">
+                        <span>Selecciona productos</span>
+                        <button
+                          type="button"
+                          class="btn btn-text btn-small"
+                          id="closeOrdersBatchButton"
+                          aria-label="Cerrar selector"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <select id="ordersBatchSelect" class="orders-batch-select" multiple size="12"></select>
+                      <div class="orders-batch-actions">
+                        <button
+                          type="button"
+                          class="btn btn-secondary btn-small"
+                          id="addOrderBatchButton"
+                        >
+                          Añadir selección
+                        </button>
+                      </div>
+                      <p class="help-text">Selecciona varios productos y pulsa “Añadir selección”.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="orders-actions-right">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-small"
+                  id="newOrderButton"
+                >
+                  Nuevo pedido
                 </button>
               </div>
             </div>

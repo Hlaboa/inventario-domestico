@@ -303,18 +303,22 @@ body.lock-scroll {
 
 .orders-batch-group {
   position: relative;
-  align-self: flex-start;
-  min-width: 240px;
+  align-self: center;
+  min-width: 220px;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .orders-batch-wrapper {
   position: relative;
+  display: inline-block;
 }
 
 .orders-batch-panel {
   position: absolute;
-  top: calc(100% - 2px);
-  right: 0;
+  top: calc(100% + 4px);
+  left: 0;
   background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -352,10 +356,6 @@ body.lock-scroll {
   font-size: 0.9rem;
 }
 
-.orders-batch-group label {
-  padding-left: 0;
-}
-
 .btn-text {
   background: transparent;
   border: none;
@@ -367,6 +367,32 @@ body.lock-scroll {
 .btn-text:hover:not(:disabled) {
   background: rgba(0, 0, 0, 0.06);
   color: var(--text);
+}
+
+.orders-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0.25rem 0.55rem;
+}
+
+.orders-actions-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.orders-actions-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.orders-action-label {
+  font-size: 0.82rem;
+  color: var(--muted);
 }
 
 

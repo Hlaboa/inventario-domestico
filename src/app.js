@@ -1468,6 +1468,7 @@ function initAfterDom(tStart = performance.now()) {
 
   ensureSelectionPopupInit();
   document.addEventListener("change", handleGlobalExtraBuyToggle, { capture: true });
+  document.addEventListener("keydown", handleOrdersBatchKeydown, { capture: true });
   setSelectionButtonsVisibility(true);
 
     if (instancesMissingFilterButton) {
@@ -4917,10 +4918,11 @@ function buildOrderProductOptions(storeId = "", order = null) {
       const isCurrentSelection =
         product && product.selectionId && product.selectionId === inst.id;
       const isPriority = Number(inst.priority) > 0;
-      const marker = isCurrentSelection ? "★" : isPriority ? "☆" : "";
+      const marker = isCurrentSelection ? "★" : "☆";
       const parts = [marker, baseName];
       if (brand) parts.push(brand);
       if (producer) parts.push(`(${producer})`);
+      if (isPriority && !isCurrentSelection) parts.push("· prioritario");
       const label = parts.join(" · ");
       const key = label.toLowerCase();
       if (seen.has(key)) return;
@@ -5385,6 +5387,7 @@ function closeOrdersBatchPanel() {
   ordersBatchPanel.hidden = true;
   ordersBatchPanel.classList.remove("open");
   if (toggleOrdersBatchButton) toggleOrdersBatchButton.setAttribute("aria-expanded", "false");
+  if (toggleOrdersBatchButton) toggleOrdersBatchButton.focus();
 }
 
 function handleToggleOrdersBatchPanel() {
@@ -5395,6 +5398,14 @@ function handleToggleOrdersBatchPanel() {
 }
 
 function handleCloseOrdersBatchPanel() {
+  closeOrdersBatchPanel();
+}
+
+function handleOrdersBatchKeydown(e) {
+  if (e.key !== "Escape") return;
+  if (!ordersBatchPanel) return;
+  const isOpen = !ordersBatchPanel.hidden && ordersBatchPanel.classList.contains("open");
+  if (!isOpen) return;
   closeOrdersBatchPanel();
 }
 
