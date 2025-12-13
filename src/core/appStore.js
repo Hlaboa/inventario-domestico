@@ -15,6 +15,8 @@
    * @typedef {BaseEntity & {name:string, type?:string, location?:string, website?:string, notes?:string}} Supplier
    * @typedef {BaseEntity & {name:string, location?:string, website?:string, notes?:string}} Producer
    * @typedef {BaseEntity & {block:string, type:string, notes?:string}} Classification
+   * @typedef {BaseEntity & {productName:string, quantity?:string, plannedDate?:string, instanceId?:string, productId?:string, notes?:string}} OrderItem
+   * @typedef {BaseEntity & {name?:string, plannedDate?:string, storeId?:string, storeName?:string, notes?:string, items?:OrderItem[]}} Order
    */
 
   const nowIso = () => new Date().toISOString();
@@ -137,6 +139,59 @@
     };
   }
 
+  /**
+   * @param {Partial<OrderItem>} item
+   * @returns {OrderItem|null}
+   */
+  function validateOrderItem(item) {
+    if (!item || typeof item !== "object") return null;
+    const now = nowIso();
+    const productName = (item.productName || "").trim();
+    const quantity = (item.quantity || "").trim();
+    const plannedDate = (item.plannedDate || item.date || "").trim();
+    const hasContent = productName || quantity || plannedDate || item.instanceId || item.productId;
+    if (!hasContent) return null;
+    return {
+      id: ensureId(item.id, "orderItem"),
+      productName,
+      quantity,
+      plannedDate,
+      instanceId: (item.instanceId || "").trim(),
+      productId: (item.productId || "").trim(),
+      notes: item.notes || "",
+      createdAt: item.createdAt || now,
+      updatedAt: item.updatedAt || item.createdAt || now,
+    };
+  }
+
+  /**
+   * @param {Partial<Order>} order
+   * @returns {Order|null}
+   */
+  function validateOrder(order) {
+    if (!order || typeof order !== "object") return null;
+    const now = nowIso();
+    const items = Array.isArray(order.items)
+      ? order.items.map((i) => validateOrderItem(i)).filter(Boolean)
+      : [];
+    const storeId = (order.storeId || "").trim();
+    const storeName = (order.storeName || "").trim();
+    const name = (order.name || "").trim();
+    const plannedDate = (order.plannedDate || "").trim();
+    if (!storeId && !storeName && items.length === 0) return null;
+    return {
+      id: ensureId(order.id, "order"),
+      storeId,
+      storeName,
+      name,
+      plannedDate,
+      notes: order.notes || "",
+      items,
+      createdAt: order.createdAt || now,
+      updatedAt: order.updatedAt || order.createdAt || now,
+    };
+  }
+
   const initialState = {
     products: [],
     extraProducts: [],
@@ -145,6 +200,7 @@
     producers: [],
     classifications: [],
     productInstances: [],
+    orders: [],
   };
 
   function normalizeUnifiedList(list) {
@@ -166,6 +222,10 @@
   function ensureStateShape(next = {}) {
     const unified = normalizeUnifiedList(next.unifiedProducts || []);
     const derived = deriveSeparate(unified);
+    const orders =
+      Array.isArray(next.orders) && next.orders.length
+        ? next.orders.map((o) => validateOrder(o)).filter(Boolean)
+        : [];
     const products =
       derived.products.length > 0
         ? derived.products
@@ -184,6 +244,7 @@
       unifiedProducts: derived.unifiedProducts,
       products,
       extraProducts,
+      orders,
     };
   }
 
@@ -220,6 +281,7 @@
     producers: dataService?.setProducers,
     productInstances: dataService?.setProductInstances,
     classifications: dataService?.setClassifications,
+    orders: dataService?.setOrders,
   };
 
   const selectorFallback = {
@@ -468,6 +530,7 @@
       setProducers: (list) => setEntity("producers", list),
       setProductInstances: (list) => setEntity("productInstances", list),
       setClassifications: (list) => setEntity("classifications", list),
+      setOrders: (list) => setEntity("orders", list),
     },
     selectors,
   };

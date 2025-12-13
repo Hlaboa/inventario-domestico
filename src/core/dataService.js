@@ -18,6 +18,7 @@
       producer: (p) => p,
       instance: (p) => p,
       classification: (p) => p,
+      order: (p) => p,
     };
 
   const storageKeys =
@@ -27,6 +28,7 @@
       producers: "productoresCocina",
       productInstances: "instanciasProductosCocina",
       classifications: "clasificacionesProductosCocina",
+      orders: "pedidosCocina",
     };
 
   const saveMap = {
@@ -35,6 +37,7 @@
     producers: storage.saveProducers,
     productInstances: storage.saveProductInstances,
     classifications: storage.saveClassifications,
+    orders: storage.saveOrders,
   };
 
   const normalizerMap = {
@@ -43,6 +46,7 @@
     producers: normalizers.producer,
     productInstances: normalizers.instance,
     classifications: normalizers.classification,
+    orders: normalizers.order,
   };
 
   const loadMap = {
@@ -51,6 +55,7 @@
     producers: storage.loadProducers,
     productInstances: storage.loadProductInstances,
     classifications: storage.loadClassifications,
+    orders: storage.loadOrders,
   };
 
   function fallbackLoad(key, normalize) {
@@ -74,7 +79,9 @@
   function normalizeList(list, normalizer) {
     if (!Array.isArray(list)) return [];
     if (typeof normalizer !== "function") return list.filter(Boolean);
-    return list.map((item) => normalizer(item));
+    return list
+      .map((item) => normalizer(item))
+      .filter(Boolean);
   }
 
   function ensureClassifications(products, extras, classifications) {
@@ -184,6 +191,7 @@
           data.productInstances || [],
           normalizers.instance
         ),
+        orders: normalizeList(data.orders || [], normalizers.order),
       };
     }
 
@@ -229,6 +237,11 @@
         fallbackLoad(storageKeys.productInstances, normalizers.instance),
       normalizers.instance
     );
+    const orders = normalizeList(
+      (loadMap.orders && loadMap.orders()) ||
+        fallbackLoad(storageKeys.orders, normalizers.order),
+      normalizers.order
+    );
 
     const unified =
       unifiedProducts.length > 0
@@ -246,6 +259,7 @@
       producers,
       classifications,
       productInstances,
+      orders,
     };
   }
 
@@ -342,6 +356,7 @@
       "productInstances",
       normalizeList(state.productInstances, normalizers.instance)
     );
+    persistEntity("orders", normalizeList(state.orders, normalizers.order));
   }
 
   function setEntity(name, list) {
@@ -447,6 +462,7 @@
     setProducers: (list) => setEntity("producers", list),
     setProductInstances: (list) => setEntity("productInstances", list),
     setClassifications: (list) => setEntity("classifications", list),
+    setOrders: (list) => setEntity("orders", list),
     selectors: {
       families: getFamilies,
       types: getTypes,

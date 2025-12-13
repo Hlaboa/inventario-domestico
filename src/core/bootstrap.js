@@ -9,6 +9,7 @@
       mainClassificationButton: document.getElementById("mainClassificationButton"),
       mainProducersButton: document.getElementById("mainProducersButton"),
       mainStoresButton: document.getElementById("mainStoresButton"),
+      mainOrdersButton: document.getElementById("mainOrdersButton"),
       mainBackupButton: document.getElementById("mainBackupButton"),
       mainShoppingButton: document.getElementById("mainShoppingButton"),
       almacenSection: document.getElementById("almacenSection"),
@@ -17,6 +18,7 @@
       backupSection: document.getElementById("backupSection"),
       shoppingSection: document.getElementById("shoppingSection"),
       proveedoresSection: document.getElementById("proveedoresSection"),
+      ordersSection: document.getElementById("ordersSection"),
 
       // Modo edición
       almacenEditModeButton: document.getElementById("almacenEditModeButton"),
@@ -124,6 +126,26 @@
       instancesTableWrapper: document.getElementById("instancesTableWrapper"),
       shoppingStoreTemplate: document.getElementById("shoppingStoreTemplate"),
       shoppingItemTemplate: document.getElementById("shoppingItemTemplate"),
+      ordersStoreSelect: document.getElementById("ordersStoreSelect"),
+      ordersPlannedDate: document.getElementById("ordersPlannedDate"),
+      ordersNameInput: document.getElementById("ordersNameInput"),
+      ordersFamilyFilterSelect: document.getElementById("ordersFamilyFilter"),
+      ordersTypeFilterSelect: document.getElementById("ordersTypeFilter"),
+      addOrderItemButton: document.getElementById("addOrderItemButton"),
+      newOrderButton: document.getElementById("newOrderButton"),
+      toggleOrdersBatchButton: document.getElementById("toggleOrdersBatchButton"),
+      closeOrdersBatchButton: document.getElementById("closeOrdersBatchButton"),
+      ordersBatchPanel: document.getElementById("ordersBatchPanel"),
+      addOrderBatchButton: document.getElementById("addOrderBatchButton"),
+      ordersBatchSelect: document.getElementById("ordersBatchSelect"),
+      saveOrdersButton: document.getElementById("saveOrdersButton"),
+      deleteOrderButton: document.getElementById("deleteOrderButton"),
+      clearOrderButton: document.getElementById("clearOrderButton"),
+      ordersTableBody: document.getElementById("ordersTableBody"),
+      ordersRowTemplate: document.getElementById("ordersRowTemplate"),
+      ordersSummaryInfo: document.getElementById("ordersSummaryInfo"),
+      ordersProductsDatalist: document.getElementById("ordersProductsDatalist"),
+      ordersSavedList: document.getElementById("ordersSavedList"),
 
       // Backup y Excel
       exportBackupButton: document.getElementById("exportBackupButton"),
@@ -164,6 +186,7 @@
       mainStoresButton,
       mainBackupButton,
       mainShoppingButton,
+      mainOrdersButton,
       almacenEditModeButton,
       otrosEditModeButton,
     } = refs || {};
@@ -180,6 +203,8 @@
       mainProducersButton.addEventListener("click", () => setMainSection("producers"));
     if (mainStoresButton && setMainSection)
       mainStoresButton.addEventListener("click", () => setMainSection("stores"));
+    if (mainOrdersButton && setMainSection)
+      mainOrdersButton.addEventListener("click", () => setMainSection("orders"));
     if (mainBackupButton && typeof window.setSidePanel === "function")
       mainBackupButton.addEventListener("click", () => window.setSidePanel("backup"));
     if (mainShoppingButton && typeof window.setSidePanel === "function")
@@ -208,6 +233,19 @@
       handleExportStoresCsv,
       handleToggleShoppingPanel,
       triggerImportBackup,
+      handleOrdersStoreChange,
+      handleAddOrderItem,
+      handleNewOrder,
+      handleOrderMetaChange,
+      handleAddOrderBatch,
+      handleOrdersFilterChange,
+      handleSaveOrders,
+      handleClearOrder,
+      handleDeleteOrder,
+      handleOrdersTableClick,
+      handleOrdersSavedClick,
+      handleToggleOrdersBatchPanel,
+      handleCloseOrdersBatchPanel,
     } = handlers;
 
     const {
@@ -226,6 +264,23 @@
       exportAlmacenCsvButton,
       exportOtrosCsvButton,
       exportStoresCsvButton,
+      ordersStoreSelect,
+      ordersPlannedDate,
+      ordersNameInput,
+      ordersFamilyFilterSelect,
+      ordersTypeFilterSelect,
+      addOrderItemButton,
+      newOrderButton,
+      toggleOrdersBatchButton,
+      closeOrdersBatchButton,
+      ordersBatchPanel,
+      addOrderBatchButton,
+      ordersBatchSelect,
+      saveOrdersButton,
+      deleteOrderButton,
+      clearOrderButton,
+      ordersTableBody,
+      ordersSavedList,
     } = refs || {};
 
     const rerenderInstances = renderInstancesTable || (() => {});
@@ -271,6 +326,52 @@
     }
     if (exportStoresCsvButton && handleExportStoresCsv) {
       exportStoresCsvButton.addEventListener("click", handleExportStoresCsv);
+    }
+
+    if (ordersStoreSelect && handleOrdersStoreChange) {
+      ordersStoreSelect.addEventListener("change", handleOrdersStoreChange);
+    }
+    if (ordersPlannedDate && handleOrderMetaChange) {
+      ordersPlannedDate.addEventListener("change", handleOrderMetaChange);
+    }
+    if (ordersNameInput && handleOrderMetaChange) {
+      ordersNameInput.addEventListener("input", handleOrderMetaChange);
+    }
+    if (ordersFamilyFilterSelect && handleOrdersFilterChange) {
+      ordersFamilyFilterSelect.addEventListener("change", handleOrdersFilterChange);
+    }
+    if (ordersTypeFilterSelect && handleOrdersFilterChange) {
+      ordersTypeFilterSelect.addEventListener("change", handleOrdersFilterChange);
+    }
+    if (addOrderItemButton && handleAddOrderItem) {
+      addOrderItemButton.addEventListener("click", handleAddOrderItem);
+    }
+    if (newOrderButton && handleNewOrder) {
+      newOrderButton.addEventListener("click", handleNewOrder);
+    }
+    if (toggleOrdersBatchButton && handleToggleOrdersBatchPanel) {
+      toggleOrdersBatchButton.addEventListener("click", handleToggleOrdersBatchPanel);
+    }
+    if (closeOrdersBatchButton && handleCloseOrdersBatchPanel) {
+      closeOrdersBatchButton.addEventListener("click", handleCloseOrdersBatchPanel);
+    }
+    if (addOrderBatchButton && handleAddOrderBatch) {
+      addOrderBatchButton.addEventListener("click", handleAddOrderBatch);
+    }
+    if (saveOrdersButton && handleSaveOrders) {
+      saveOrdersButton.addEventListener("click", handleSaveOrders);
+    }
+    if (deleteOrderButton && handleDeleteOrder) {
+      deleteOrderButton.addEventListener("click", handleDeleteOrder);
+    }
+    if (clearOrderButton && handleClearOrder) {
+      clearOrderButton.addEventListener("click", handleClearOrder);
+    }
+    if (ordersTableBody && handleOrdersTableClick) {
+      ordersTableBody.addEventListener("click", handleOrdersTableClick);
+    }
+    if (ordersSavedList && handleOrdersSavedClick) {
+      ordersSavedList.addEventListener("click", handleOrdersSavedClick);
     }
 
   }

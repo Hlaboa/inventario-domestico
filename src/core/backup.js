@@ -75,6 +75,7 @@
       producers: snap.producers || [],
       productInstances: snap.productInstances || [],
       classifications: snap.classifications || [],
+      orders: snap.orders || [],
     };
 
     const json = JSON.stringify(data, null, 2);
@@ -119,6 +120,7 @@
           producers: Array.isArray(data.producers) ? data.producers : [],
           productInstances: Array.isArray(data.productInstances) ? data.productInstances : [],
           classifications: Array.isArray(data.classifications) ? data.classifications : [],
+          orders: Array.isArray(data.orders) ? data.orders : [],
         };
         onSnapshot(snapshot);
         alert("Copia de seguridad restaurada correctamente.");

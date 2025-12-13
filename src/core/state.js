@@ -8,6 +8,7 @@
     producers: [],
     classifications: [],
     productInstances: [],
+    orders: [],
   };
 
   function getState() {

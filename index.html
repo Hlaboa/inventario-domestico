@@ -39,6 +39,9 @@
             <button type="button" id="mainStoresButton" class="tab-button">
               TIENDAS
             </button>
+            <button type="button" id="mainOrdersButton" class="tab-button">
+              PEDIDOS
+            </button>
             <button type="button" id="mainClassificationButton" class="tab-button">
               CLASIFICACIÓN
             </button>
@@ -1000,6 +1003,164 @@
               </div>
             </div>
           </section>
+
+          <!-- ============================
+               SECCIÓN PEDIDOS
+               ============================ -->
+          <section id="ordersSection" class="main-section">
+            <div class="section-mode-header panel-header">
+              <div>
+                <h3>Pedidos</h3>
+                <p class="panel-subtitle">
+                  Organiza los pedidos pendientes por tienda y planifica cuándo hacerlos.
+                </p>
+              </div>
+              <div class="panel-actions">
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-small"
+                  id="clearOrderButton"
+                >
+                  Vaciar pedido
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-small"
+                  id="saveOrdersButton"
+                >
+                  Guardar pedidos
+                </button>
+              </div>
+            </div>
+
+            <div class="filters filters-edit">
+              <div class="form-group">
+                <label for="ordersNameInput">Nombre pedido</label>
+                <input type="text" id="ordersNameInput" placeholder="Ej. Pedido semanal, Pedido online..." />
+              </div>
+              <div class="form-group">
+                <label for="ordersStoreSelect">Tienda</label>
+                <select id="ordersStoreSelect">
+                  <option value="">Sin tienda</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="ordersPlannedDate">Fecha del pedido</label>
+                <input type="date" id="ordersPlannedDate" />
+              </div>
+              <div class="form-group">
+                <label for="ordersFamilyFilter">Familia</label>
+                <select id="ordersFamilyFilter">
+                  <option value="">Todas</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="ordersTypeFilter">Subfamilia</label>
+                <select id="ordersTypeFilter">
+                  <option value="">Todas</option>
+                </select>
+              </div>
+              <div class="form-group quick-add-group">
+                <label>&nbsp;</label>
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-small btn-quick-add"
+                  id="addOrderItemButton"
+                >
+                  + producto
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-small btn-quick-add"
+                  id="newOrderButton"
+                >
+                  Nuevo pedido
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-small btn-quick-add"
+                  id="toggleOrdersBatchButton"
+                >
+                  Seleccionar varios
+                </button>
+              </div>
+              <div class="form-group orders-batch-group">
+                <label for="ordersBatchSelect">Añadir varios</label>
+                <div class="orders-batch-wrapper">
+                  <div class="orders-batch-panel" id="ordersBatchPanel" hidden>
+                    <div class="orders-batch-header">
+                      <span>Selecciona productos</span>
+                      <button
+                        type="button"
+                        class="btn btn-text btn-small"
+                        id="closeOrdersBatchButton"
+                        aria-label="Cerrar selector"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <select id="ordersBatchSelect" class="orders-batch-select" multiple size="12"></select>
+                    <div class="orders-batch-actions">
+                      <button
+                        type="button"
+                        class="btn btn-secondary btn-small"
+                        id="addOrderBatchButton"
+                      >
+                        Añadir selección
+                      </button>
+                    </div>
+                    <p class="help-text">Selecciona varios productos y pulsa “Añadir selección”.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="list-header panel-header panel-header-compact">
+              <div class="summary">
+                Pedidos guardados
+              </div>
+              <div id="ordersSavedList" class="orders-saved-list"></div>
+            </div>
+
+            <div class="list-header panel-header panel-header-compact">
+              <div class="summary" id="ordersSummaryInfo" aria-live="polite">
+                Sin pedidos para esta tienda
+              </div>
+              <div class="panel-actions">
+                <button
+                  type="button"
+                  class="btn btn-danger btn-small"
+                  id="deleteOrderButton"
+                >
+                  Eliminar pedido
+                </button>
+              </div>
+            </div>
+
+            <div class="table-wrapper">
+              <div class="table-scroll">
+                <template id="ordersRowTemplate">
+                  <tr>
+                    <td data-slot="product"></td>
+                    <td data-slot="quantity"></td>
+                    <td data-slot="actions"></td>
+                  </tr>
+                </template>
+                <table class="product-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Producto seleccionado</th>
+                      <th scope="col">Cantidad</th>
+                      <th scope="col" aria-label="Acciones"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="ordersTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <datalist id="ordersProductsDatalist"></datalist>
+          </section>
         </section>
 
         <!-- Panel lista de la compra -->
@@ -1122,7 +1283,7 @@
           </div>
           <div class="list-header panel-header panel-header-compact">
             <p class="backup-note">
-              Incluye almacén, otros productos, selección, productores, tiendas y clasificación.
+              Incluye almacén, otros productos, selección, productores, tiendas, clasificación y pedidos.
             </p>
           </div>
           <input

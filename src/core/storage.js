@@ -7,6 +7,7 @@
   const STORAGE_KEY_INSTANCES = "instanciasProductosCocina";
   const STORAGE_KEY_CLASSIFICATIONS = "clasificacionesProductosCocina";
   const STORAGE_KEY_UNIFIED = "productosCocinaUnificados";
+  const STORAGE_KEY_ORDERS = "pedidosCocina";
 
   function normalizeMultiFields(obj) {
     const copy = { ...obj };
@@ -147,6 +148,58 @@
     };
   }
 
+  function normalizeOrderItem(item) {
+    const now = nowIsoString();
+    const productName = (item.productName || "").trim();
+    const quantity = (item.quantity || "").trim();
+    const plannedDate = (item.plannedDate || item.date || "").trim();
+    const hasContent =
+      productName || quantity || plannedDate || item.instanceId || item.productId;
+    if (!hasContent) return null;
+    return {
+      id:
+        item.id !== undefined && item.id !== null && String(item.id).trim().length > 0
+          ? String(item.id)
+          : (crypto.randomUUID
+              ? crypto.randomUUID()
+              : "orderItem-" + Math.random().toString(36).slice(2)),
+      productName,
+      quantity,
+      plannedDate,
+      instanceId: (item.instanceId || "").trim(),
+      productId: (item.productId || "").trim(),
+      notes: item.notes || "",
+      createdAt: item.createdAt || now,
+      updatedAt: item.updatedAt || item.createdAt || now,
+    };
+  }
+
+  function normalizeOrder(order) {
+    const now = nowIsoString();
+    const items = Array.isArray(order.items)
+      ? order.items.map((i) => normalizeOrderItem(i)).filter(Boolean)
+      : [];
+    const storeId = (order.storeId || "").trim();
+    const storeName = (order.storeName || "").trim();
+    if (!storeId && !storeName && items.length === 0) return null;
+    return {
+      id:
+        order.id !== undefined && order.id !== null && String(order.id).trim().length > 0
+          ? String(order.id)
+          : (crypto.randomUUID
+              ? crypto.randomUUID()
+              : "order-" + Math.random().toString(36).slice(2)),
+      name: (order.name || "").trim(),
+      plannedDate: (order.plannedDate || "").trim(),
+      storeId,
+      storeName,
+      notes: order.notes || "",
+      items,
+      createdAt: order.createdAt || now,
+      updatedAt: order.updatedAt || order.createdAt || now,
+    };
+  }
+
   const loadProducts = () => [];
   const loadExtraProducts = () => [];
   const loadSuppliers = () => {
@@ -158,6 +211,7 @@
   const loadProducers = () => safeLoadList(STORAGE_KEY_PRODUCERS, normalizeProducer);
   const loadClassifications = () => safeLoadList(STORAGE_KEY_CLASSIFICATIONS, normalizeClassification);
   const loadProductInstances = () => safeLoadList(STORAGE_KEY_INSTANCES, normalizeInstance);
+  const loadOrders = () => safeLoadList(STORAGE_KEY_ORDERS, normalizeOrder).filter(Boolean);
   const loadUnifiedProducts = () => {
     const unified = safeLoadList(STORAGE_KEY_UNIFIED, normalizeUnifiedProduct);
     if (Array.isArray(unified) && unified.length > 0) return unified;
@@ -182,6 +236,9 @@
   function saveClassifications(list) {
     saveList(STORAGE_KEY_CLASSIFICATIONS, list);
   }
+  function saveOrders(list) {
+    saveList(STORAGE_KEY_ORDERS, Array.isArray(list) ? list.filter(Boolean) : []);
+  }
 
   function saveUnifiedProducts(list) {
     saveList(STORAGE_KEY_UNIFIED, list);
@@ -194,6 +251,7 @@
     const producers = loadProducers();
     const classifications = loadClassifications(products, extraProducts);
     const productInstances = loadProductInstances();
+    const orders = loadOrders();
     const unifiedProducts = loadUnifiedProducts();
 
     return {
@@ -204,6 +262,7 @@
       producers,
       classifications,
       productInstances,
+      orders,
     };
   }
 
@@ -219,11 +278,13 @@
     loadClassifications,
     loadProductInstances,
     loadUnifiedProducts,
+    loadOrders,
     saveSuppliers,
     saveProducers,
     saveProductInstances,
     saveClassifications,
     saveUnifiedProducts,
+    saveOrders,
     loadAllData,
     normalize: {
       product: normalizeProduct,
@@ -233,6 +294,8 @@
       producer: normalizeProducer,
       instance: normalizeInstance,
       classification: normalizeClassification,
+      order: normalizeOrder,
+      orderItem: normalizeOrderItem,
     },
     keys: {
       unifiedProducts: STORAGE_KEY_UNIFIED,
@@ -240,6 +303,7 @@
       producers: STORAGE_KEY_PRODUCERS,
       productInstances: STORAGE_KEY_INSTANCES,
       classifications: STORAGE_KEY_CLASSIFICATIONS,
+      orders: STORAGE_KEY_ORDERS,
     },
   };
 })();

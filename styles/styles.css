@@ -274,6 +274,101 @@ body.lock-scroll {
   min-width: 100%;
 }
 
+.orders-saved-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.orders-saved-list button {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fff;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.orders-saved-list button .count {
+  background: var(--muted-bg, #f4ede4);
+  color: var(--muted, #5a5147);
+  padding: 0.08rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+}
+
+.orders-batch-group {
+  position: relative;
+  align-self: flex-start;
+  min-width: 240px;
+}
+
+.orders-batch-wrapper {
+  position: relative;
+}
+
+.orders-batch-panel {
+  position: absolute;
+  top: calc(100% - 2px);
+  right: 0;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 16px 35px rgba(0, 0, 0, 0.12);
+  padding: 0.75rem;
+  min-width: 320px;
+  width: min(520px, 70vw);
+  z-index: 20;
+  display: none;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.orders-batch-panel.open {
+  display: flex;
+}
+
+.orders-batch-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.orders-batch-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.orders-batch-select {
+  width: 100%;
+  min-height: 14rem;
+  font-size: 0.9rem;
+}
+
+.orders-batch-group label {
+  padding-left: 0;
+}
+
+.btn-text {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  box-shadow: none;
+  padding: 0.15rem 0.4rem;
+}
+
+.btn-text:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text);
+}
+
 
 /* Secciones principales y subpaneles */
 

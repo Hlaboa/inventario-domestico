@@ -18,6 +18,7 @@
     producers: [],
     classifications: [],
     productInstances: [],
+    orders: [],
   };
 
   let localState = { ...baseState };
@@ -67,6 +68,7 @@
     producers: "setProducers",
     productInstances: "setProductInstances",
     classifications: "setClassifications",
+    orders: "setOrders",
   };
 
   function setEntity(name, list) {
