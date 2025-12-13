@@ -361,6 +361,12 @@ body.lock-scroll {
   font-weight: 600;
 }
 
+.order-row-missing input[data-field="product"],
+.order-row-missing-input {
+  color: #d0741d;
+  font-weight: 600;
+}
+
 .btn-text {
   background: transparent;
   border: none;

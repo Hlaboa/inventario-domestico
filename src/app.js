@@ -1069,6 +1069,7 @@ let toggleOrdersBatchButton;
 let closeOrdersBatchButton;
 let ordersBatchPanel;
 let addOrderBatchButton;
+let replaceOrderBatchButton;
 let ordersBatchSelect;
 let saveOrdersButton;
 let deleteOrderButton;
@@ -1414,6 +1415,7 @@ function initAfterDom(tStart = performance.now()) {
     closeOrdersBatchButton,
     ordersBatchPanel,
     addOrderBatchButton,
+    replaceOrderBatchButton,
     addOrderItemButton,
     newOrderButton,
     saveOrdersButton,
@@ -1524,6 +1526,7 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
       handleOrdersStoreChange,
       handleAddOrderItem,
       handleAddOrderBatch,
+      handleReplaceOrderBatch,
       handleNewOrder,
       handleOrderMetaChange,
       handleOrdersFilterChange,
@@ -4935,18 +4938,28 @@ function buildOrderProductOptions(storeId = "", order = null) {
           inst.buy === true
         );
       const parts = [marker, baseName];
-      if (brand) parts.push(brand);
-      if (producer) parts.push(`(${producer})`);
+      const labelParts = [baseName];
+      if (brand) {
+        parts.push(brand);
+        labelParts.push(brand);
+      }
+      if (producer) {
+        parts.push(`(${producer})`);
+        labelParts.push(`(${producer})`);
+      }
       const label = parts.join(" · ");
+      const displayLabel = labelParts.join(" · ");
       const key = label.toLowerCase();
       if (seen.has(key)) return;
       seen.add(key);
       orderProductOptionMap.set(key, {
         instanceId: inst.id || "",
         productId: inst.productId || "",
-        productName: inst.productName || label,
+        productName: inst.productName || displayLabel || label,
+        displayLabel,
+        missing: isMissing,
       });
-      options.push({ value: label, missing: isMissing });
+      options.push({ value: label, missing: isMissing, displayLabel });
     });
 
   if (order && Array.isArray(order.items)) {
@@ -5046,6 +5059,42 @@ function applyOrdersFilters() {
   updateOrdersSummaryFromTable();
 }
 
+function resolveProductFromOrderItem(item = {}) {
+  if (item.productId) {
+    const prod = findProductById(item.productId);
+    if (prod) return prod;
+  }
+  const rawName = item.productName || "";
+  const baseName = rawName.includes("·") ? rawName.split("·")[0].trim() : rawName.trim();
+  if (baseName) {
+    const prod = findProductByName(baseName);
+    if (prod) return prod;
+  }
+  return null;
+}
+
+function isOrderItemMissing(item = {}) {
+  const inst = item.instanceId
+    ? getInstancesList().find((i) => i.id === item.instanceId)
+    : null;
+  const prod = resolveProductFromOrderItem(item);
+  const isMissingInst =
+    inst &&
+    (inst.have === false ||
+      inst.have === 0 ||
+      inst.have === "0" ||
+      inst.status === "missing" ||
+      inst.buy === true);
+  const isMissingProd =
+    prod &&
+    (prod.have === false ||
+      prod.have === 0 ||
+      prod.have === "0" ||
+      prod.status === "missing" ||
+      prod.buy === true);
+  return !!(isMissingInst || isMissingProd);
+}
+
 function createOrderRow(item = {}) {
   const productInput = document.createElement("input");
   productInput.type = "text";
@@ -5086,13 +5135,27 @@ function createOrderRow(item = {}) {
         "[data-slot='actions']": actionsTd,
       },
     });
-    if (row) return row;
+    if (row) {
+      const missing = item.missing ?? isOrderItemMissing(item);
+      if (missing) {
+        row.classList.add("order-row-missing");
+        const productCellInput = row.querySelector("input[data-field='product']");
+        if (productCellInput) productCellInput.classList.add("order-row-missing-input");
+        row.dataset.missing = "1";
+      }
+      return row;
+    }
   }
 
   const tr = document.createElement("tr");
   if (item.id) tr.dataset.id = item.id;
   if (item.instanceId) tr.dataset.instanceId = item.instanceId;
   if (item.productId) tr.dataset.productId = item.productId;
+  const missing = item.missing ?? isOrderItemMissing(item);
+  if (missing) {
+    tr.classList.add("order-row-missing");
+    tr.dataset.missing = "1";
+  }
 
   let td = document.createElement("td");
   td.appendChild(productInput);
@@ -5104,6 +5167,9 @@ function createOrderRow(item = {}) {
 
   td = document.createElement("td");
   tr.appendChild(actionsTd);
+  if (missing) {
+    productInput.classList.add("order-row-missing-input");
+  }
   return tr;
 }
 
@@ -5441,8 +5507,56 @@ function handleAddOrderBatch() {
     const label = opt.value || opt.textContent || "";
     const key = label.trim().toLowerCase();
     const data = orderProductOptionMap.get(key);
-    const row = createOrderRow({ productName: data?.productName || label });
+    const row = createOrderRow({
+      productName: data?.displayLabel || data?.productName || label,
+      missing: data?.missing,
+      instanceId: data?.instanceId || "",
+      productId: data?.productId || "",
+    });
     if (row && ordersTableBody) ordersTableBody.appendChild(row);
+    opt.selected = false;
+  });
+  applyOrdersFilters();
+  updateOrdersSummaryFromTable();
+}
+
+function handleReplaceOrderBatch() {
+  if (!ordersBatchSelect || !ordersTableBody) return;
+  const selected = Array.from(ordersBatchSelect.selectedOptions || []);
+  const { order, storeId } = getCurrentOrderContext();
+  buildOrderProductOptions(storeId, order);
+  const existingItems = readOrderRows();
+  const findExistingQty = (candidate = {}) => {
+    const norm = (candidate.productName || "").trim().toLowerCase();
+    const match =
+      existingItems.find((it) => it.instanceId && it.instanceId === candidate.instanceId) ||
+      existingItems.find((it) => it.productId && it.productId === candidate.productId) ||
+      existingItems.find(
+        (it) => norm && (it.productName || "").trim().toLowerCase() === norm
+      );
+    return match?.quantity || "";
+  };
+  ordersTableBody.innerHTML = "";
+  if (!selected.length) {
+    addOrdersPlaceholderRow();
+    return;
+  }
+  selected.forEach((opt) => {
+    const label = opt.value || opt.textContent || "";
+    const key = label.trim().toLowerCase();
+    const data = orderProductOptionMap.get(key);
+    const baseItem = {
+      productName: data?.displayLabel || data?.productName || label,
+      missing: data?.missing,
+      instanceId: data?.instanceId || "",
+      productId: data?.productId || "",
+    };
+    const quantity = findExistingQty(baseItem);
+    const row = createOrderRow({
+      ...baseItem,
+      quantity,
+    });
+    if (row) ordersTableBody.appendChild(row);
     opt.selected = false;
   });
   applyOrdersFilters();

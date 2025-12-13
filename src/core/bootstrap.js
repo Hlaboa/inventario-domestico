@@ -137,6 +137,7 @@
       closeOrdersBatchButton: document.getElementById("closeOrdersBatchButton"),
       ordersBatchPanel: document.getElementById("ordersBatchPanel"),
       addOrderBatchButton: document.getElementById("addOrderBatchButton"),
+      replaceOrderBatchButton: document.getElementById("replaceOrderBatchButton"),
       ordersBatchSelect: document.getElementById("ordersBatchSelect"),
       saveOrdersButton: document.getElementById("saveOrdersButton"),
       deleteOrderButton: document.getElementById("deleteOrderButton"),
@@ -238,6 +239,7 @@
       handleNewOrder,
       handleOrderMetaChange,
       handleAddOrderBatch,
+      handleReplaceOrderBatch,
       handleOrdersFilterChange,
       handleSaveOrders,
       handleClearOrder,
@@ -275,6 +277,7 @@
       closeOrdersBatchButton,
       ordersBatchPanel,
       addOrderBatchButton,
+      replaceOrderBatchButton,
       ordersBatchSelect,
       saveOrdersButton,
       deleteOrderButton,
@@ -357,6 +360,9 @@
     }
     if (addOrderBatchButton && handleAddOrderBatch) {
       addOrderBatchButton.addEventListener("click", handleAddOrderBatch);
+    }
+    if (replaceOrderBatchButton && handleReplaceOrderBatch) {
+      replaceOrderBatchButton.addEventListener("click", handleReplaceOrderBatch);
     }
     if (saveOrdersButton && handleSaveOrders) {
       saveOrdersButton.addEventListener("click", handleSaveOrders);
