@@ -356,6 +356,11 @@ body.lock-scroll {
   font-size: 0.9rem;
 }
 
+.orders-batch-select option.order-option-missing {
+  color: #d0741d;
+  font-weight: 600;
+}
+
 .btn-text {
   background: transparent;
   border: none;

@@ -4898,7 +4898,8 @@ function buildOrderProductOptions(storeId = "", order = null) {
     .filter((inst) => {
       const ids = Array.isArray(inst.storeIds) ? inst.storeIds.filter(Boolean) : [];
       if (normalized) {
-        if (!ids.length) return false; // No mostrar “sin tienda” cuando hay tienda seleccionada
+        // No mostrar “sin tienda” cuando hay tienda seleccionada
+        if (!ids.length) return false;
         if (!ids.includes(normalized)) return false;
       }
       const family = resolveInstanceFamily(inst);
@@ -4919,10 +4920,23 @@ function buildOrderProductOptions(storeId = "", order = null) {
         product && product.selectionId && product.selectionId === inst.id;
       const isPriority = Number(inst.priority) > 0;
       const marker = isCurrentSelection ? "★" : "☆";
+      const isMissing =
+        !!(
+          (product &&
+            (product.have === false ||
+              product.have === 0 ||
+              product.have === "0" ||
+              product.status === "missing" ||
+              product.buy === true)) ||
+          inst.have === false ||
+          inst.have === 0 ||
+          inst.have === "0" ||
+          inst.status === "missing" ||
+          inst.buy === true
+        );
       const parts = [marker, baseName];
       if (brand) parts.push(brand);
       if (producer) parts.push(`(${producer})`);
-      if (isPriority && !isCurrentSelection) parts.push("· prioritario");
       const label = parts.join(" · ");
       const key = label.toLowerCase();
       if (seen.has(key)) return;
@@ -4932,7 +4946,7 @@ function buildOrderProductOptions(storeId = "", order = null) {
         productId: inst.productId || "",
         productName: inst.productName || label,
       });
-      options.push({ value: label });
+      options.push({ value: label, missing: isMissing });
     });
 
   if (order && Array.isArray(order.items)) {
@@ -4975,6 +4989,13 @@ function renderOrderBatchSelect(options = []) {
       const o = document.createElement("option");
       o.value = opt.value || "";
       o.textContent = opt.value || "";
+      const isMissing = !!opt.missing;
+      if (isMissing) {
+        o.classList.add("order-option-missing");
+        o.dataset.missing = "true";
+        o.style.color = "#d0741d";
+        o.style.fontWeight = "600";
+      }
       if (selected.has(o.value)) o.selected = true;
       ordersBatchSelect.appendChild(o);
     });
