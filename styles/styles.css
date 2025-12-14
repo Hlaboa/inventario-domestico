@@ -21,9 +21,9 @@
   --warning-soft: #fff6e8;
   --info: #6b8fe8;
   --info-soft: #eef2ff;
-  --app-padding: 1.75rem;
+  --app-padding: 0.75rem;
   --top-sticky-offset: 4.6rem;
-  --content-max-width: 1400px;
+  --content-max-width: 1650px;
   --table-min-width: 920px;
   --font-sans: "Manrope", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --space-1: 0.35rem;
@@ -1003,6 +1003,10 @@ textarea:focus-visible {
   box-shadow: inset 3px 0 0 rgba(232, 165, 107, 0.85);
 }
 
+.product-table tbody tr[data-buy="1"][data-future-order="1"] td:first-child {
+  box-shadow: inset 3px 0 0 var(--info);
+}
+
 .product-table tbody tr[data-missing="1"] td:first-child,
 .product-table tbody tr.instance-missing-product td:first-child {
   box-shadow: inset 4px 0 0 rgba(222, 130, 117, 0.65);
@@ -1011,6 +1015,12 @@ textarea:focus-visible {
 .product-table tbody tr[data-missing="1"] td,
 .product-table tbody tr.instance-missing-product td {
   background: #fff7f5;
+}
+
+.product-table th.future-order-col,
+.product-table td[data-field="futureOrder"] {
+  min-width: 108px;
+  width: 108px;
 }
 
 /* Evita que selección/tiendas rompan en varias líneas y cambien la altura */

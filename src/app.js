@@ -4977,7 +4977,7 @@ function getFutureOrderLabel(product = {}, futureMap) {
     null;
   if (!payload) return "";
   const suffix = payload.count > 1 ? ` (${payload.count})` : "";
-  return payload.date ? `Sí ${payload.date}${suffix}` : `Sí${suffix}`;
+  return payload.date ? `${payload.date}${suffix}` : suffix || "";
 }
 
 function buildFutureOrderMap() {
@@ -5403,11 +5403,20 @@ function resolveProductFromOrderItem(item = {}) {
     if (prod) return prod;
   }
   const rawName = item.productName || "";
-  const baseName = rawName.includes("·") ? rawName.split("·")[0].trim() : rawName.trim();
-  if (baseName) {
-    const prod = findProductByName(baseName);
-    if (prod) return prod;
-  }
+  const { clean, base } = normalizeProductNameForMatch(rawName);
+  const nospace = rawName.replace(/\s+/g, "").toLowerCase();
+  const unified = getUnifiedList();
+  const matches = unified.find((p) => {
+    const pname = (p.name || "").trim().toLowerCase();
+    const pnameNoSpaces = (p.name || "").replace(/\s+/g, "").toLowerCase();
+    if (clean && pname === clean) return true;
+    if (base && pname === base) return true;
+    if (clean && pname.includes(clean)) return true;
+    if (base && pname.includes(base)) return true;
+    if (nospace && pnameNoSpaces === nospace) return true;
+    return false;
+  });
+  if (matches) return matches;
   return null;
 }
 
