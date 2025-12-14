@@ -1072,6 +1072,14 @@
                   <option value="otros">Otros</option>
                 </select>
               </div>
+              <div class="form-group">
+                <label for="ordersDateFilter">Fecha</label>
+                <select id="ordersDateFilter">
+                  <option value="">Todas</option>
+                  <option value="future">Futuros</option>
+                  <option value="past">Pasados</option>
+                </select>
+              </div>
             </div>
 
             <div class="list-header panel-header panel-header-compact">
@@ -1151,6 +1159,20 @@
               </div>
               </div>
               <div class="orders-actions-right">
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-small"
+                  id="duplicateOrderButton"
+                >
+                  Duplicar pedido
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-success btn-small"
+                  id="completeOrderButton"
+                >
+                  Marcar realizado
+                </button>
                 <button
                   type="button"
                   class="btn btn-primary btn-small"

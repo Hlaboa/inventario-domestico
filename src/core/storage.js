@@ -32,6 +32,7 @@
             : "prod-" + Math.random().toString(36).slice(2));
     res.selectionId = res.selectionId || "";
     res.have = !!res.have;
+    res.acquisitionDate = res.acquisitionDate || "";
     res.quantity = res.quantity || "";
     res.block = res.block || "";
     res.type = res.type || "";
@@ -62,6 +63,7 @@
     res.selectionId = res.selectionId || "";
     res.buy = buy;
     res.have = res.have !== undefined ? !!res.have : !buy;
+    res.acquisitionDate = res.acquisitionDate || "";
     res.quantity = res.quantity || "";
     res.block = res.block || "";
     res.type = res.type || "";
@@ -192,6 +194,8 @@
       name: (order.name || "").trim(),
       plannedDate: (order.plannedDate || "").trim(),
       price: (order.price || "").trim(),
+      completedAt: (order.completedAt || "").trim(),
+      completedPlannedDate: (order.completedPlannedDate || "").trim(),
       storeId,
       storeName,
       notes: order.notes || "",

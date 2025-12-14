@@ -1071,6 +1071,8 @@ let closeOrdersBatchButton;
 let ordersBatchPanel;
 let addOrderBatchButton;
 let replaceOrderBatchButton;
+let duplicateOrderButton;
+let completeOrderButton;
 let ordersBatchSelect;
 let saveOrdersButton;
 let deleteOrderButton;
@@ -1082,6 +1084,7 @@ let ordersSavedList;
 let ordersFamilyFilterSelect;
 let ordersTypeFilterSelect;
 let ordersScopeFilterSelect;
+let ordersDateFilterSelect;
 let instancesController;
 let classificationController;
 let producersController;
@@ -1419,6 +1422,8 @@ function initAfterDom(tStart = performance.now()) {
     ordersBatchPanel,
     addOrderBatchButton,
     replaceOrderBatchButton,
+    duplicateOrderButton,
+    completeOrderButton,
     addOrderItemButton,
     newOrderButton,
     saveOrdersButton,
@@ -1432,6 +1437,7 @@ function initAfterDom(tStart = performance.now()) {
     ordersFamilyFilterSelect,
     ordersTypeFilterSelect,
     ordersScopeFilterSelect,
+    ordersDateFilterSelect,
     ordersBatchSelect,
     exportBackupButton,
     importBackupButton,
@@ -1532,8 +1538,11 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
       handleAddOrderBatch,
       handleReplaceOrderBatch,
       handleNewOrder,
+      handleDuplicateOrder,
+      handleCompleteOrder,
       handleOrderMetaChange,
       handleOrdersFilterChange,
+      handleOrdersDateFilterChange,
       handleToggleOrdersBatchPanel,
       handleCloseOrdersBatchPanel,
       handleSaveOrders,
@@ -4844,28 +4853,113 @@ function resolveOrderPlannedDate(order) {
   return datedItem ? datedItem.plannedDate : "";
 }
 
+function orderMatchesDateFilter(order, filter = "") {
+  const mode = (filter || "").trim();
+  if (!mode) return true;
+  if (!order) return false;
+  const planned = (resolveOrderPlannedDate(order) || "").trim();
+  if (!planned) return true;
+  const today = todayDateString();
+  if (mode === "future") return planned >= today;
+  if (mode === "past") return planned < today;
+  return true;
+}
+
+function markOrderItemsAsHave(order) {
+  if (!order) return;
+  const planned = (resolveOrderPlannedDate(order) || todayDateString()).trim();
+  const nowIsoVal = nowIsoString();
+  const unified = getUnifiedForWrite();
+  if (!Array.isArray(unified) || !unified.length) return;
+  const instances = getInstancesList();
+  const normalizeName = (name = "") => {
+    const clean = name.replace(/^[★☆]\s*[·\-–—]?\s*/u, "").trim();
+    const base = clean.split("·")[0].trim();
+    return { clean: clean.toLowerCase(), base: base.toLowerCase() };
+  };
+  const findMatch = (item = {}) => {
+    const itemId = item.productId ? String(item.productId) : "";
+    const inst = item.instanceId
+      ? instances.find((i) => String(i.id) === String(item.instanceId))
+      : null;
+    const instProductId = inst?.productId ? String(inst.productId) : "";
+    const { clean: lowerName, base: lowerBase } = normalizeName(item.productName || "");
+    return (prod) => {
+      if (!prod) return false;
+      const pid = prod.id !== undefined && prod.id !== null ? String(prod.id) : "";
+      if (itemId && pid === itemId) return true;
+      if (instProductId && pid === instProductId) return true;
+      if (lowerName && (prod.name || "").trim().toLowerCase() === lowerName) return true;
+      if (lowerBase && (prod.name || "").trim().toLowerCase() === lowerBase) return true;
+      return false;
+    };
+  };
+
+  let changed = false;
+  let instancesChanged = false;
+  const updated = unified.map((prod) => {
+    const matchItem = (order.items || []).find((it) => findMatch(it)(prod));
+    if (!matchItem) return prod;
+    changed = true;
+    const next = {
+      ...prod,
+      have: true,
+      buy: prod.scope === "otros" ? false : prod.buy,
+      acquisitionDate: planned || prod.acquisitionDate,
+      updatedAt: nowIsoVal,
+    };
+    return next;
+  });
+  const updatedInstances = instances.map((inst) => {
+    const matchItem = (order.items || []).find((it) => {
+      const matcher = findMatch(it);
+      const instAsProd = {
+        id: inst.productId || "",
+        name: inst.productName || "",
+        scope: "almacen",
+        have: inst.have,
+        buy: inst.buy,
+      };
+      return matcher(instAsProd) || (it.instanceId && String(it.instanceId) === String(inst.id));
+    });
+    if (!matchItem) return inst;
+    instancesChanged = true;
+    return {
+      ...inst,
+      have: true,
+      buy: false,
+      updatedAt: nowIsoVal,
+    };
+  });
+
+  if (changed) setUnifiedList(updated);
+  if (instancesChanged) setInstancesList(updatedInstances);
+  if (changed || instancesChanged) {
+    if (inventoryController && typeof inventoryController.render === "function") {
+      inventoryController.render();
+    } else if (window.InventoryFeature && typeof window.InventoryFeature.render === "function") {
+      window.InventoryFeature.render();
+    } else {
+      renderProducts();
+    }
+    queueInventorySummaryUpdate();
+    scheduleShoppingListRender();
+  }
+}
+
 function getCurrentOrderContext() {
   const list = getOrdersList();
+  const dateFilter = ordersDateFilterSelect?.value || "";
   const selectedStore = (ordersStoreSelect && ordersStoreSelect.value) || currentOrderStoreId || "";
   let order = currentOrderId ? getOrderById(currentOrderId) : null;
-  if (!order && currentOrderId) {
-    order = {
-      id: currentOrderId,
-      storeId: selectedStore,
-      storeName: getStoreName(selectedStore),
-      name: ordersNameInput?.value || "",
-      plannedDate: ordersPlannedDate?.value || "",
-      price: ordersPriceInput?.value || "",
-      items: readOrderRows(),
-    };
-    return { order, storeId: selectedStore };
+  if (order) {
+    return { order, storeId: order.storeId || selectedStore };
   }
-  if (!order && selectedStore) {
-    order = list.find((o) => o.storeId === selectedStore) || null;
-  }
-  if (!order) {
-    order = list[0] || null;
-  }
+  const filteredByStore = list.filter((o) =>
+    selectedStore ? (o.storeId || "") === selectedStore : true
+  );
+  const filtered = filteredByStore.filter((o) => orderMatchesDateFilter(o, dateFilter));
+  order = filtered[0] || filteredByStore[0] || list[0] || null;
   const storeId = order?.storeId || selectedStore || "";
   if (ordersStoreSelect) {
     const hasOption = Array.from(ordersStoreSelect.options || []).some((o) => o.value === storeId);
@@ -4901,10 +4995,37 @@ function buildOrderProductOptions(storeId = "", order = null) {
   const familyFilter = ordersFamilyFilterSelect?.value || "";
   const typeFilter = ordersTypeFilterSelect?.value || "";
   const scopeFilter = ordersScopeFilterSelect?.value || "";
+  const dateFilter = ordersDateFilterSelect?.value || "";
   const instances = getInstancesList();
+  const unified = getUnifiedList();
   const seen = new Set();
   orderProductOptionMap = new Map();
   const options = [];
+
+  const normalizeName = (name = "") => {
+    const clean = name.replace(/^[★☆]\s*[·\-–—]?\s*/u, "").trim();
+    const base = clean.split("·")[0].trim();
+    return { clean: clean.toLowerCase(), base: base.toLowerCase() };
+  };
+
+  const findUnifiedForInstance = (inst) => {
+    if (!inst) return null;
+    const { clean: instNameLower, base: instBaseLower } = normalizeName(inst.productName || "");
+    const exactById = inst.productId
+      ? unified.find((p) => String(p.id) === String(inst.productId))
+      : null;
+    if (exactById) return exactById;
+    const exactByName = unified.find(
+      (p) =>
+        (p.name || "").trim().toLowerCase() === instNameLower ||
+        (p.name || "").trim().toLowerCase() === instBaseLower
+    );
+    if (exactByName) return exactByName;
+    const includesBase =
+      instBaseLower &&
+      unified.find((p) => (p.name || "").trim().toLowerCase().includes(instBaseLower));
+    return includesBase || null;
+  };
 
   const normalizeKey = (label = "") => {
     const cleaned = (label || "")
@@ -4943,12 +5064,19 @@ function buildOrderProductOptions(storeId = "", order = null) {
       const product =
         (inst.productId && findProductById(inst.productId)) ||
         findProductByName(inst.productName);
+      const unifiedProduct = findUnifiedForInstance(inst);
       const isCurrentSelection =
         product && product.selectionId && product.selectionId === inst.id;
       const isPriority = Number(inst.priority) > 0;
       const marker = isCurrentSelection ? "★" : "☆";
       const isMissing =
         !!(
+          (unifiedProduct &&
+            (unifiedProduct.have === false ||
+              unifiedProduct.have === 0 ||
+              unifiedProduct.have === "0" ||
+              unifiedProduct.status === "missing" ||
+              unifiedProduct.buy === true)) ||
           (product &&
             (product.have === false ||
               product.have === 0 ||
@@ -5081,6 +5209,7 @@ function applyOrdersFilters() {
   const familyFilter = ordersFamilyFilterSelect?.value || "";
   const typeFilter = ordersTypeFilterSelect?.value || "";
   const scopeFilter = ordersScopeFilterSelect?.value || "";
+  const dateFilter = ordersDateFilterSelect?.value || "";
   const rows = Array.from(ordersTableBody.querySelectorAll("tr")).filter(
     (row) => row.dataset.empty !== "true"
   );
@@ -5327,7 +5456,9 @@ function readOrderRows() {
 
 function renderSavedOrdersList() {
   if (!ordersSavedList) return;
-  const list = getOrdersList();
+  const storeId = ordersStoreSelect ? ordersStoreSelect.value : "";
+  const dateFilter = ordersDateFilterSelect?.value || "";
+  const list = getOrdersList().filter((o) => orderMatchesDateFilter(o, dateFilter));
   ordersSavedList.innerHTML = "";
   if (!list.length) {
     const span = document.createElement("span");
@@ -5390,6 +5521,8 @@ function saveOrdersForCurrentStore({ silent = false, removeIfEmpty = true } = {}
       name: orderName,
       plannedDate,
       price,
+      completedAt: base.completedAt || "",
+      completedPlannedDate: base.completedPlannedDate || "",
       storeId,
       storeName: getStoreName(storeId) || base.storeName || getOrderStoreLabel({ storeId }),
       items,
@@ -5405,6 +5538,10 @@ function saveOrdersForCurrentStore({ silent = false, removeIfEmpty = true } = {}
   if (!silent) {
     showToast("Pedidos guardados");
   }
+}
+
+function handleOrdersDateFilterChange() {
+  renderOrdersSection(true);
 }
 
 function handleOrdersStoreChange() {
@@ -5560,6 +5697,53 @@ function handleAddOrderBatch() {
   });
   applyOrdersFilters();
   updateOrdersSummaryFromTable();
+}
+
+function handleDuplicateOrder() {
+  const { order } = getCurrentOrderContext();
+  if (!order) return;
+  const now = nowIsoString();
+  const newId = generateOrderId();
+  const cloneItems = Array.isArray(order.items)
+    ? order.items.map((item, idx) => ({
+        ...item,
+        id:
+          (crypto?.randomUUID && crypto.randomUUID()) ||
+          `orderItem-${Date.now()}-${idx}-${Math.random().toString(36).slice(2)}`,
+        createdAt: now,
+        updatedAt: now,
+      }))
+    : [];
+  const name = order.name ? `${order.name} (copia)` : "Pedido copia";
+  const payload = {
+    ...order,
+    id: newId,
+    name,
+    items: cloneItems,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const next = getOrdersList().slice();
+  next.push(payload);
+  currentOrderId = newId;
+  setOrdersList(next);
+    renderOrdersSection(true);
+    showToast("Pedido duplicado");
+}
+
+function handleCompleteOrder() {
+  const { order } = getCurrentOrderContext();
+  if (!order) return;
+  const planned = resolveOrderPlannedDate(order) || todayDateString();
+  markOrderItemsAsHave(order);
+  const next = getOrdersList().map((o) =>
+    String(o.id) === String(order.id)
+      ? { ...o, completedAt: nowIsoString(), completedPlannedDate: planned }
+      : o
+  );
+  setOrdersList(next);
+  renderOrdersSection(true);
+  showToast("Pedido marcado como realizado");
 }
 
 function handleReplaceOrderBatch() {

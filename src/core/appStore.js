@@ -10,13 +10,13 @@
    * @property {string} [createdAt]
    * @property {string} [updatedAt]
    *
-   * @typedef {BaseEntity & {name:string, block?:string, type?:string, shelf?:string, quantity?:string, have?:boolean, buy?:boolean, selectionId?:string, notes?:string, scope?:("almacen"|"otros")}} Product
+   * @typedef {BaseEntity & {name:string, block?:string, type?:string, shelf?:string, quantity?:string, have?:boolean, buy?:boolean, selectionId?:string, acquisitionDate?:string, notes?:string, scope?:("almacen"|"otros")}} Product
    * @typedef {BaseEntity & {productId?:string, productName?:string, producerId?:string, brand?:string, storeIds?:string[], notes?:string, priority?:number}} Instance
    * @typedef {BaseEntity & {name:string, type?:string, location?:string, website?:string, notes?:string}} Supplier
    * @typedef {BaseEntity & {name:string, location?:string, website?:string, notes?:string}} Producer
    * @typedef {BaseEntity & {block:string, type:string, notes?:string}} Classification
    * @typedef {BaseEntity & {productName:string, quantity?:string, plannedDate?:string, instanceId?:string, productId?:string, notes?:string}} OrderItem
-   * @typedef {BaseEntity & {name?:string, plannedDate?:string, price?:string, storeId?:string, storeName?:string, notes?:string, items?:OrderItem[]}} Order
+   * @typedef {BaseEntity & {name?:string, plannedDate?:string, price?:string, completedAt?:string, completedPlannedDate?:string, storeId?:string, storeName?:string, notes?:string, items?:OrderItem[]}} Order
    */
 
   const nowIso = () => new Date().toISOString();
@@ -50,6 +50,7 @@
       have,
       buy,
       selectionId: p.selectionId || "",
+      acquisitionDate: (p.acquisitionDate || "").trim(),
       storeName: (p.storeName || "").trim(),
       notes: p.notes || "",
       scope,
@@ -187,6 +188,8 @@
       plannedDate,
       price: (order.price || "").trim(),
       notes: order.notes || "",
+      completedAt: (order.completedAt || "").trim(),
+      completedPlannedDate: (order.completedPlannedDate || "").trim(),
       items,
       createdAt: order.createdAt || now,
       updatedAt: order.updatedAt || order.createdAt || now,

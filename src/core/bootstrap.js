@@ -133,13 +133,16 @@
       ordersFamilyFilterSelect: document.getElementById("ordersFamilyFilter"),
       ordersTypeFilterSelect: document.getElementById("ordersTypeFilter"),
       ordersScopeFilterSelect: document.getElementById("ordersScopeFilter"),
+      ordersDateFilterSelect: document.getElementById("ordersDateFilter"),
       addOrderItemButton: document.getElementById("addOrderItemButton"),
       newOrderButton: document.getElementById("newOrderButton"),
+      duplicateOrderButton: document.getElementById("duplicateOrderButton"),
       toggleOrdersBatchButton: document.getElementById("toggleOrdersBatchButton"),
       closeOrdersBatchButton: document.getElementById("closeOrdersBatchButton"),
       ordersBatchPanel: document.getElementById("ordersBatchPanel"),
       addOrderBatchButton: document.getElementById("addOrderBatchButton"),
       replaceOrderBatchButton: document.getElementById("replaceOrderBatchButton"),
+      completeOrderButton: document.getElementById("completeOrderButton"),
       ordersBatchSelect: document.getElementById("ordersBatchSelect"),
       saveOrdersButton: document.getElementById("saveOrdersButton"),
       deleteOrderButton: document.getElementById("deleteOrderButton"),
@@ -243,6 +246,9 @@
       handleAddOrderBatch,
       handleReplaceOrderBatch,
       handleOrdersFilterChange,
+      handleOrdersDateFilterChange,
+      handleCompleteOrder,
+      handleDuplicateOrder,
       handleSaveOrders,
       handleClearOrder,
       handleDeleteOrder,
@@ -275,6 +281,7 @@
       ordersFamilyFilterSelect,
       ordersTypeFilterSelect,
       ordersScopeFilterSelect,
+      ordersDateFilterSelect,
       addOrderItemButton,
       newOrderButton,
       toggleOrdersBatchButton,
@@ -282,6 +289,8 @@
       ordersBatchPanel,
       addOrderBatchButton,
       replaceOrderBatchButton,
+      duplicateOrderButton,
+      completeOrderButton,
       ordersBatchSelect,
       saveOrdersButton,
       deleteOrderButton,
@@ -357,11 +366,20 @@
     if (ordersScopeFilterSelect && handleOrdersFilterChange) {
       ordersScopeFilterSelect.addEventListener("change", handleOrdersFilterChange);
     }
+    if (ordersDateFilterSelect && handleOrdersDateFilterChange) {
+      ordersDateFilterSelect.addEventListener("change", handleOrdersDateFilterChange);
+    }
     if (addOrderItemButton && handleAddOrderItem) {
       addOrderItemButton.addEventListener("click", handleAddOrderItem);
     }
     if (newOrderButton && handleNewOrder) {
       newOrderButton.addEventListener("click", handleNewOrder);
+    }
+    if (duplicateOrderButton && handleDuplicateOrder) {
+      duplicateOrderButton.addEventListener("click", handleDuplicateOrder);
+    }
+    if (completeOrderButton && handleCompleteOrder) {
+      completeOrderButton.addEventListener("click", handleCompleteOrder);
     }
     if (toggleOrdersBatchButton && handleToggleOrdersBatchPanel) {
       toggleOrdersBatchButton.addEventListener("click", handleToggleOrdersBatchPanel);
