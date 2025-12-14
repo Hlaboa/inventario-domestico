@@ -16,7 +16,7 @@
    * @typedef {BaseEntity & {name:string, location?:string, website?:string, notes?:string}} Producer
    * @typedef {BaseEntity & {block:string, type:string, notes?:string}} Classification
    * @typedef {BaseEntity & {productName:string, quantity?:string, plannedDate?:string, instanceId?:string, productId?:string, notes?:string}} OrderItem
-   * @typedef {BaseEntity & {name?:string, plannedDate?:string, storeId?:string, storeName?:string, notes?:string, items?:OrderItem[]}} Order
+   * @typedef {BaseEntity & {name?:string, plannedDate?:string, price?:string, storeId?:string, storeName?:string, notes?:string, items?:OrderItem[]}} Order
    */
 
   const nowIso = () => new Date().toISOString();
@@ -185,6 +185,7 @@
       storeName,
       name,
       plannedDate,
+      price: (order.price || "").trim(),
       notes: order.notes || "",
       items,
       createdAt: order.createdAt || now,

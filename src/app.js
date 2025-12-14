@@ -1062,6 +1062,7 @@ let instancesRowTemplate;
 let extraController;
 let ordersStoreSelect;
 let ordersPlannedDate;
+let ordersPriceInput;
 let ordersNameInput;
 let addOrderItemButton;
 let newOrderButton;
@@ -1080,6 +1081,7 @@ let ordersProductsDatalist;
 let ordersSavedList;
 let ordersFamilyFilterSelect;
 let ordersTypeFilterSelect;
+let ordersScopeFilterSelect;
 let instancesController;
 let classificationController;
 let producersController;
@@ -1410,6 +1412,7 @@ function initAfterDom(tStart = performance.now()) {
     shoppingItemTemplate,
     ordersStoreSelect,
     ordersPlannedDate,
+    ordersPriceInput,
     ordersNameInput,
     toggleOrdersBatchButton,
     closeOrdersBatchButton,
@@ -1428,6 +1431,7 @@ function initAfterDom(tStart = performance.now()) {
     ordersSavedList,
     ordersFamilyFilterSelect,
     ordersTypeFilterSelect,
+    ordersScopeFilterSelect,
     ordersBatchSelect,
     exportBackupButton,
     importBackupButton,
@@ -4851,6 +4855,7 @@ function getCurrentOrderContext() {
       storeName: getStoreName(selectedStore),
       name: ordersNameInput?.value || "",
       plannedDate: ordersPlannedDate?.value || "",
+      price: ordersPriceInput?.value || "",
       items: readOrderRows(),
     };
     return { order, storeId: selectedStore };
@@ -4879,6 +4884,9 @@ function applyOrderMetaToInputs(order) {
     ordersStoreSelect.value = hasOption ? val : "";
     currentOrderStoreId = ordersStoreSelect.value;
   }
+  if (ordersPriceInput) {
+    ordersPriceInput.value = order?.price || "";
+  }
   if (ordersNameInput) {
     ordersNameInput.value = order?.name || "";
   }
@@ -4892,10 +4900,19 @@ function buildOrderProductOptions(storeId = "", order = null) {
   const normalized = storeId || "";
   const familyFilter = ordersFamilyFilterSelect?.value || "";
   const typeFilter = ordersTypeFilterSelect?.value || "";
+  const scopeFilter = ordersScopeFilterSelect?.value || "";
   const instances = getInstancesList();
   const seen = new Set();
   orderProductOptionMap = new Map();
   const options = [];
+
+  const normalizeKey = (label = "") => {
+    const cleaned = (label || "")
+      .replace(/^[★☆]\s*[·\-–—]?\s*/u, "")
+      .trim()
+      .toLowerCase();
+    return cleaned;
+  };
 
   instances
     .filter((inst) => {
@@ -4909,6 +4926,13 @@ function buildOrderProductOptions(storeId = "", order = null) {
       const type = resolveInstanceType(inst);
       if (familyFilter && family !== familyFilter) return false;
       if (typeFilter && type !== typeFilter) return false;
+      if (scopeFilter) {
+        const productForScope =
+          (inst.productId && findProductById(inst.productId)) ||
+          findProductByName(inst.productName);
+        const scope = productForScope?.scope || "";
+        if (scope !== scopeFilter) return false;
+      }
       return true; // Sin tienda: mostrar todas
     })
     .forEach((inst) => {
@@ -4949,7 +4973,7 @@ function buildOrderProductOptions(storeId = "", order = null) {
       }
       const label = parts.join(" · ");
       const displayLabel = labelParts.join(" · ");
-      const key = label.toLowerCase();
+      const key = normalizeKey(displayLabel || label);
       if (seen.has(key)) return;
       seen.add(key);
       orderProductOptionMap.set(key, {
@@ -4957,24 +4981,26 @@ function buildOrderProductOptions(storeId = "", order = null) {
         productId: inst.productId || "",
         productName: inst.productName || displayLabel || label,
         displayLabel,
+        markerLabel: label,
         missing: isMissing,
       });
-      options.push({ value: label, missing: isMissing, displayLabel });
+      options.push({ value: label, missing: isMissing, displayLabel, key });
     });
 
   if (order && Array.isArray(order.items)) {
     order.items.forEach((item) => {
       const label = (item.productName || "").trim();
       if (!label) return;
-      const key = label.toLowerCase();
+      const key = normalizeKey(label);
       if (!seen.has(key)) {
         seen.add(key);
         orderProductOptionMap.set(key, {
           instanceId: item.instanceId || "",
           productId: item.productId || "",
           productName: label,
+          markerLabel: label,
         });
-        options.push({ value: label });
+        options.push({ value: label, key });
       }
     });
   }
@@ -4992,8 +5018,10 @@ function buildOrderProductOptions(storeId = "", order = null) {
 
 function renderOrderBatchSelect(options = []) {
   if (!ordersBatchSelect) return;
-  const selected = new Set(
-    Array.from(ordersBatchSelect.selectedOptions || []).map((o) => o.value)
+  const selectedKeys = new Set(
+    Array.from(ordersBatchSelect.selectedOptions || []).map(
+      (o) => o.dataset.key || o.value.toLowerCase()
+    )
   );
   ordersBatchSelect.innerHTML = "";
   options
@@ -5002,6 +5030,7 @@ function renderOrderBatchSelect(options = []) {
       const o = document.createElement("option");
       o.value = opt.value || "";
       o.textContent = opt.value || "";
+      if (opt.key) o.dataset.key = opt.key;
       const isMissing = !!opt.missing;
       if (isMissing) {
         o.classList.add("order-option-missing");
@@ -5009,7 +5038,7 @@ function renderOrderBatchSelect(options = []) {
         o.style.color = "#d0741d";
         o.style.fontWeight = "600";
       }
-      if (selected.has(o.value)) o.selected = true;
+      if (selectedKeys.has(opt.key || o.value.toLowerCase())) o.selected = true;
       ordersBatchSelect.appendChild(o);
     });
 }
@@ -5021,14 +5050,18 @@ function getRowFamilyType(row) {
   const instanceId = row?.dataset.instanceId || "";
   let family = "";
   let type = "";
+  let scope = "";
   if (instanceId) {
     const inst = getInstancesList().find((i) => i.id === instanceId);
     if (inst) {
       family = resolveInstanceFamily(inst) || family;
       type = resolveInstanceType(inst) || type;
+      const prodForScope =
+        (inst.productId && findProductById(inst.productId)) || findProductByName(inst.productName);
+      scope = prodForScope?.scope || scope;
     }
   }
-  if (!family || !type) {
+  if (!family || !type || !scope) {
     const prod =
       (productId && findProductById(productId)) ||
       (name
@@ -5037,23 +5070,26 @@ function getRowFamilyType(row) {
     if (prod) {
       if (!family) family = prod.block || "";
       if (!type) type = prod.type || "";
+      if (!scope) scope = prod.scope || "";
     }
   }
-  return { family, type };
+  return { family, type, scope };
 }
 
 function applyOrdersFilters() {
   if (!ordersTableBody) return;
   const familyFilter = ordersFamilyFilterSelect?.value || "";
   const typeFilter = ordersTypeFilterSelect?.value || "";
+  const scopeFilter = ordersScopeFilterSelect?.value || "";
   const rows = Array.from(ordersTableBody.querySelectorAll("tr")).filter(
     (row) => row.dataset.empty !== "true"
   );
   rows.forEach((row) => {
-    const { family, type } = getRowFamilyType(row);
+    const { family, type, scope } = getRowFamilyType(row);
     const matchFamily = !familyFilter || family === familyFilter;
     const matchType = !typeFilter || type === typeFilter;
-    const visible = matchFamily && matchType;
+    const matchScope = !scopeFilter || scope === scopeFilter;
+    const visible = matchFamily && matchType && matchScope;
     row.style.display = visible ? "" : "none";
   });
   updateOrdersSummaryFromTable();
@@ -5198,11 +5234,13 @@ function renderOrdersSummary(order, storeId) {
     (storeId ? "Tienda seleccionada" : "Sin tienda");
   const name = (ordersNameInput?.value || order?.name || "").trim();
   const planned = (ordersPlannedDate?.value || order?.plannedDate || resolveOrderPlannedDate(order) || "").trim();
+  const price = (ordersPriceInput?.value || order?.price || "").trim();
   const parts = [];
   if (name) parts.push(name);
   parts.push(`${count} producto(s)`);
   if (storeLabel) parts.push(storeLabel);
   if (planned) parts.push(planned);
+  if (price) parts.push(`€${price}`);
   ordersSummaryInfo.textContent = parts.join(" · ");
 }
 
@@ -5219,11 +5257,13 @@ function updateOrdersSummaryFromTable() {
     (storeId ? "Tienda seleccionada" : "Sin tienda");
   const name = (ordersNameInput?.value || "").trim();
   const planned = (ordersPlannedDate?.value || "").trim();
+  const price = (ordersPriceInput?.value || "").trim();
   const parts = [];
   if (name) parts.push(name);
   parts.push(`${rows.length} producto(s)`);
   if (label) parts.push(label);
   if (planned) parts.push(planned);
+  if (price) parts.push(`€${price}`);
   ordersSummaryInfo.textContent = parts.join(" · ");
 }
 
@@ -5332,6 +5372,7 @@ function saveOrdersForCurrentStore({ silent = false, removeIfEmpty = true } = {}
   const storeId = (ordersStoreSelect && ordersStoreSelect.value) || currentOrderStoreId || "";
   const orderName = (ordersNameInput?.value || "").trim();
   const plannedDate = (ordersPlannedDate?.value || "").trim();
+  const price = (ordersPriceInput?.value || "").trim();
   const existing = currentOrderId ? getOrderById(currentOrderId) : null;
   const items = readOrderRows();
   let next = getOrdersList().slice();
@@ -5348,6 +5389,7 @@ function saveOrdersForCurrentStore({ silent = false, removeIfEmpty = true } = {}
       id,
       name: orderName,
       plannedDate,
+      price,
       storeId,
       storeName: getStoreName(storeId) || base.storeName || getOrderStoreLabel({ storeId }),
       items,
@@ -5505,10 +5547,10 @@ function handleAddOrderBatch() {
   removeOrdersPlaceholder();
   selected.forEach((opt) => {
     const label = opt.value || opt.textContent || "";
-    const key = label.trim().toLowerCase();
+    const key = (opt.dataset.key || label).trim().toLowerCase();
     const data = orderProductOptionMap.get(key);
     const row = createOrderRow({
-      productName: data?.displayLabel || data?.productName || label,
+      productName: data?.markerLabel || data?.productName || label,
       missing: data?.missing,
       instanceId: data?.instanceId || "",
       productId: data?.productId || "",
@@ -5543,10 +5585,10 @@ function handleReplaceOrderBatch() {
   }
   selected.forEach((opt) => {
     const label = opt.value || opt.textContent || "";
-    const key = label.trim().toLowerCase();
+    const key = (opt.dataset.key || label).trim().toLowerCase();
     const data = orderProductOptionMap.get(key);
     const baseItem = {
-      productName: data?.displayLabel || data?.productName || label,
+      productName: data?.markerLabel || data?.productName || label,
       missing: data?.missing,
       instanceId: data?.instanceId || "",
       productId: data?.productId || "",

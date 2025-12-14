@@ -1049,6 +1049,10 @@
                 <input type="date" id="ordersPlannedDate" />
               </div>
               <div class="form-group">
+                <label for="ordersPriceInput">Importe (€)</label>
+                <input type="number" id="ordersPriceInput" step="0.01" min="0" placeholder="Ej. 123.45" />
+              </div>
+              <div class="form-group">
                 <label for="ordersFamilyFilter">Familia</label>
                 <select id="ordersFamilyFilter">
                   <option value="">Todas</option>
@@ -1058,6 +1062,14 @@
                 <label for="ordersTypeFilter">Subfamilia</label>
                 <select id="ordersTypeFilter">
                   <option value="">Todas</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="ordersScopeFilter">Origen</label>
+                <select id="ordersScopeFilter">
+                  <option value="">Todos</option>
+                  <option value="almacen">Almacén</option>
+                  <option value="otros">Otros</option>
                 </select>
               </div>
             </div>

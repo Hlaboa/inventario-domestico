@@ -128,9 +128,11 @@
       shoppingItemTemplate: document.getElementById("shoppingItemTemplate"),
       ordersStoreSelect: document.getElementById("ordersStoreSelect"),
       ordersPlannedDate: document.getElementById("ordersPlannedDate"),
+      ordersPriceInput: document.getElementById("ordersPriceInput"),
       ordersNameInput: document.getElementById("ordersNameInput"),
       ordersFamilyFilterSelect: document.getElementById("ordersFamilyFilter"),
       ordersTypeFilterSelect: document.getElementById("ordersTypeFilter"),
+      ordersScopeFilterSelect: document.getElementById("ordersScopeFilter"),
       addOrderItemButton: document.getElementById("addOrderItemButton"),
       newOrderButton: document.getElementById("newOrderButton"),
       toggleOrdersBatchButton: document.getElementById("toggleOrdersBatchButton"),
@@ -268,9 +270,11 @@
       exportStoresCsvButton,
       ordersStoreSelect,
       ordersPlannedDate,
+      ordersPriceInput,
       ordersNameInput,
       ordersFamilyFilterSelect,
       ordersTypeFilterSelect,
+      ordersScopeFilterSelect,
       addOrderItemButton,
       newOrderButton,
       toggleOrdersBatchButton,
@@ -337,6 +341,10 @@
     if (ordersPlannedDate && handleOrderMetaChange) {
       ordersPlannedDate.addEventListener("change", handleOrderMetaChange);
     }
+    if (ordersPriceInput && handleOrderMetaChange) {
+      ordersPriceInput.addEventListener("input", handleOrderMetaChange);
+      ordersPriceInput.addEventListener("change", handleOrderMetaChange);
+    }
     if (ordersNameInput && handleOrderMetaChange) {
       ordersNameInput.addEventListener("input", handleOrderMetaChange);
     }
@@ -345,6 +353,9 @@
     }
     if (ordersTypeFilterSelect && handleOrdersFilterChange) {
       ordersTypeFilterSelect.addEventListener("change", handleOrdersFilterChange);
+    }
+    if (ordersScopeFilterSelect && handleOrdersFilterChange) {
+      ordersScopeFilterSelect.addEventListener("change", handleOrdersFilterChange);
     }
     if (addOrderItemButton && handleAddOrderItem) {
       addOrderItemButton.addEventListener("click", handleAddOrderItem);

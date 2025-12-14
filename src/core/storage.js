@@ -191,6 +191,7 @@
               : "order-" + Math.random().toString(36).slice(2)),
       name: (order.name || "").trim(),
       plannedDate: (order.plannedDate || "").trim(),
+      price: (order.price || "").trim(),
       storeId,
       storeName,
       notes: order.notes || "",
