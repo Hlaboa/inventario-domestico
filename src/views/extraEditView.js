@@ -48,10 +48,19 @@
       ? context.buildFamilyStripeMap(items)
       : {};
 
+  const getFutureLabel = (product, context) => {
+    const helpers = context.helpers || {};
+    const map = context.futureMap;
+    return helpers.getFutureOrderLabel
+      ? helpers.getFutureOrderLabel(product, map)
+      : "";
+  };
+
   function buildRow(product, stripe, context) {
     const refs = context.refs || {};
     const helpers = context.helpers || {};
     const rowTemplate = null; // no template reuse; build DOM manually to ensure column order
+    const futureLabel = getFutureLabel(product, context);
 
     const famSel = helpers.createFamilySelect
       ? helpers.createFamilySelect(product.block || "")
@@ -80,6 +89,8 @@
     const tr = document.createElement("tr");
     tr.dataset.id = product.id;
     tr.classList.add(`family-stripe-${stripe}`);
+    tr.dataset.buy = product.buy ? "1" : "0";
+    tr.dataset.futureOrder = futureLabel ? "1" : "0";
 
     let td = document.createElement("td");
     td.appendChild(makeInput(helpers, "name", product.name));
@@ -129,12 +140,18 @@
     td.appendChild(spanStores);
     tr.appendChild(td);
 
-    // Notas (8ª)
+    // Pedido (8ª)
+    td = document.createElement("td");
+    td.textContent = futureLabel || "";
+    td.title = futureLabel ? `Incluido en pedido: ${futureLabel}` : "";
+    tr.appendChild(td);
+
+    // Notas (9ª)
     td = document.createElement("td");
     td.appendChild(makeTextarea(helpers, "notes", product.notes || ""));
     tr.appendChild(td);
 
-    // Acciones (9ª)
+    // Acciones (10ª)
     td = document.createElement("td");
     const moveBtn = document.createElement("button");
     moveBtn.className = "btn btn-small btn-icon";
@@ -174,6 +191,10 @@
       (typeof context.getProducts === "function"
         ? context.getProducts()
         : []) || [];
+    context.futureMap =
+      typeof window.buildFutureOrderMap === "function"
+        ? window.buildFutureOrderMap()
+        : null;
     const sorter = context.sorter || defaultSort;
     items.sort(sorter);
     const stripeMap = buildStripeMap(context, items);
@@ -189,7 +210,7 @@
         template: refs.rowTemplate,
         emptyMessage:
           "No hay otros productos todavía. Usa 'Añadir producto' para crear uno.",
-        emptyColSpan: 9,
+        emptyColSpan: 10,
         createRow: (item) => {
           const stripe =
             stripeMap[(item.block || "").trim() || "__none__"] || 0;
@@ -201,7 +222,7 @@
       if (items.length === 0) {
         const tr = document.createElement("tr");
         const td = document.createElement("td");
-        td.colSpan = 9;
+        td.colSpan = 10;
         td.textContent =
           "No hay otros productos todavía. Usa 'Añadir producto' para crear uno.";
         tr.appendChild(td);

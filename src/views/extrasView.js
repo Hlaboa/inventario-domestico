@@ -86,6 +86,14 @@
     return value;
   }
 
+  function getFutureLabel(item, context, map) {
+    const helpers = context.helpers || {};
+    const futureMap = map || context.futureMap;
+    return helpers.getFutureOrderLabel
+      ? helpers.getFutureOrderLabel(item, futureMap)
+      : "";
+  }
+
   const getRowHash = (item, context) => {
     const helpers = context.helpers || {};
     const selectionLabel = helpers.getSelectionLabelForProduct
@@ -94,6 +102,7 @@
     const storesLabel = helpers.getSelectionStoresForProduct
       ? helpers.getSelectionStoresForProduct(item)
       : "";
+    const futureLabel = getFutureLabel(item, context);
     return [
       item.id,
       item.name,
@@ -104,6 +113,7 @@
       item.notes,
       selectionLabel,
       storesLabel,
+      futureLabel,
     ].join("||");
   };
 
@@ -121,6 +131,7 @@
     const refs = context.refs || {};
     const helpers = context.helpers || {};
     const rowTemplate = refs.rowTemplate;
+    const futureLabel = getFutureLabel(item, context);
 
     const selectionBtn = helpers.createSelectionButton
       ? helpers.createSelectionButton(item.selectionId, item.id)
@@ -175,6 +186,8 @@
     storesTd.appendChild(storesDiv);
     tr.appendChild(storesTd);
 
+    addCellText(futureLabel || "");
+
     addCellText(item.notes || "");
 
   td = document.createElement("td");
@@ -198,6 +211,8 @@
     row.dataset.block = item.block || "";
     row.dataset.type = item.type || "";
     row.dataset.buy = item.buy ? "1" : "0";
+    const futureLabel = getFutureLabel(item, context);
+    row.dataset.futureOrder = futureLabel ? "1" : "0";
     const selectionLabel = getSelectionLabelCached(item, context);
     const storesLabel = getSelectionStoresCached(item, context);
     const inst =
@@ -206,15 +221,20 @@
         : null;
     const storeIds =
       typeof context.getStoreIdsForProduct === "function"
-        ? context.getStoreIdsForProduct(item)
-        : inst?.storeIds;
+      ? context.getStoreIdsForProduct(item)
+      : inst?.storeIds;
     const normalizedStoreIds = Array.isArray(storeIds)
       ? storeIds.map((id) => String(id || "").trim()).filter(Boolean)
       : [];
     row.dataset.storeIds = normalizedStoreIds.join(",");
-    row.dataset.search = `${item.name || ""} ${item.block || ""} ${item.type || ""} ${item.quantity || ""} ${selectionLabel} ${storesLabel} ${item.notes || ""}`.toLowerCase();
+    row.dataset.search = `${item.name || ""} ${item.block || ""} ${item.type || ""} ${item.quantity || ""} ${selectionLabel} ${storesLabel} ${futureLabel || ""} ${item.notes || ""}`.toLowerCase();
     const buyChk = row.querySelector('input[data-field="buy"]');
     if (buyChk) buyChk.checked = !!item.buy;
+    const futureCell = row.querySelector("[data-field='futureOrder']");
+    if (futureCell) {
+      futureCell.textContent = futureLabel || "";
+      futureCell.title = futureLabel ? `Incluido en pedido: ${futureLabel}` : "";
+    }
   }
 
   function hasActiveFilters(refs = {}) {
@@ -223,14 +243,7 @@
     const filterType = refs.typeFilter?.value || "";
     const filterStore = refs.storeFilter?.value || "";
     const filterBuy = refs.buyFilter?.value || "all";
-    return (
-      search ||
-      filterFamily ||
-      filterType ||
-      filterStore ||
-      filterBuy === "yes" ||
-      filterBuy === "no"
-    );
+    return search || filterFamily || filterType || filterStore || filterBuy !== "all";
   }
 
   function renderDrafts(context, tableBody, drafts = null) {
@@ -373,6 +386,10 @@
       (typeof context.getDrafts === "function" ? context.getDrafts() : []) || [];
     const extras =
       (typeof context.getExtras === "function" ? context.getExtras() : []) || [];
+    context.futureMap =
+      typeof window.buildFutureOrderMap === "function"
+        ? window.buildFutureOrderMap()
+        : null;
 
     const draftsByOriginal = new Map();
     const orphanDrafts = [];
@@ -423,6 +440,7 @@
         tr.dataset.block = d.block || "";
         tr.dataset.type = d.type || "";
         tr.dataset.buy = d.buy ? "1" : "0";
+        tr.dataset.futureOrder = "0";
         tr.dataset.search = `${d.name || ""} ${d.block || ""} ${d.type || ""} ${d.quantity || ""} ${d.notes || ""}`.toLowerCase();
         const stripe = stripeMap[(d.block || "").trim() || "__none__"] || 0;
         applyStripe(tr, stripe);
@@ -464,6 +482,10 @@
 
         td = document.createElement("td");
         td.appendChild(makeInput(context.helpers || {}, "quantity", d.quantity || ""));
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        td.textContent = "—";
         tr.appendChild(td);
 
         td = document.createElement("td");
@@ -556,7 +578,7 @@
     if (nextRowMap.size === 0 && draftsCount === 0) {
       const tr = document.createElement("tr");
       const td = document.createElement("td");
-      td.colSpan = 9;
+      td.colSpan = 10;
       td.textContent =
         "No hay otros productos. Usa 'Editar lista' para añadir algunos.";
       tr.appendChild(td);
@@ -577,6 +599,14 @@
     const filterType = refs.typeFilter?.value || "";
     const filterStore = refs.storeFilter?.value || "";
     const filterBuy = refs.buyFilter?.value || "all";
+    const futureMap =
+      context.futureMap ||
+      (typeof window.buildFutureOrderMap === "function"
+        ? window.buildFutureOrderMap()
+        : null);
+    const map = new Map(
+      (typeof context.getExtras === "function" ? context.getExtras() : []).map((p) => [p.id, p])
+    );
 
     const rows = Array.from(tableBody.querySelectorAll("tr[data-id]"));
     rows.forEach((row) => {
@@ -584,6 +614,17 @@
       const type = row.dataset.type || "";
       const buy = row.dataset.buy === "1";
       const storeIds = (row.dataset.storeIds || "").split(",").filter(Boolean);
+      const future =
+        row.dataset.futureOrder === "1"
+          ? true
+          : row.dataset.futureOrder === "0"
+            ? false
+            : (() => {
+                const id = row.dataset.id;
+                const p = id ? map.get(id) : null;
+                if (!p) return false;
+                return !!getFutureLabel(p, context, futureMap);
+              })();
       const haystack = row.dataset.search || "";
       let visible = true;
       if (filterFamily && block !== filterFamily) visible = false;
@@ -591,6 +632,11 @@
       if (visible && filterStore && !storeIds.includes(filterStore)) visible = false;
       if (visible && filterBuy === "yes" && !buy) visible = false;
       if (visible && filterBuy === "no" && buy) visible = false;
+      if (visible && filterBuy === "future" && !future) visible = false;
+      if (visible && filterBuy === "buy_future" && !(buy && future)) visible = false;
+      if (visible && filterBuy === "no_buy_future" && !(!buy && future)) visible = false;
+      if (visible && filterBuy === "buy_no_future" && !(buy && !future)) visible = false;
+      if (visible && filterBuy === "no_buy_no_future" && !(!buy && !future)) visible = false;
       if (visible && search && !haystack.includes(search)) visible = false;
       row.style.display = visible ? "" : "none";
     });

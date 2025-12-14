@@ -493,6 +493,7 @@
                     </div>
                   </td>
                   <td data-field="stores"></td>
+                  <td data-field="futureOrder"></td>
                   <td data-field="notes"></td>
                   <td>
                     <button
@@ -551,6 +552,11 @@
                     <option value="all">Todos</option>
                     <option value="yes">Sí</option>
                     <option value="no">No</option>
+                    <option value="future">En pedido</option>
+                    <option value="buy_future">Comprar · Pedido</option>
+                    <option value="no_buy_future">No comprar · Pedido</option>
+                    <option value="buy_no_future">Comprar · Sin pedido</option>
+                    <option value="no_buy_no_future">No comprar · Sin pedido</option>
                   </select>
                 </div>
               </div>
@@ -584,6 +590,7 @@
                         </div>
                       </td>
                       <td><span data-field="stores"></span></td>
+                      <td data-slot="futureOrder"></td>
                       <td data-slot="notes"></td>
                       <td>
                         <button
@@ -608,6 +615,7 @@
                       <col />
                       <col />
                       <col />
+                      <col />
                     </colgroup>
                     <thead>
                       <tr>
@@ -618,6 +626,7 @@
                       <th scope="col">Cantidad</th>
                       <th scope="col" class="selection-col">Selección</th>
                       <th scope="col">Tiendas</th>
+                      <th scope="col">Pedido</th>
                       <th scope="col">Notas</th>
                       <th scope="col" aria-label="Acciones"></th>
                     </tr>
@@ -686,21 +695,22 @@
 
               <div class="table-wrapper">
                 <div class="table-scroll">
-                  <table class="product-table">
-                    <thead>
-                      <tr>
-                        <th scope="col">Producto</th>
-                        <th scope="col">Familia</th>
-                        <th scope="col">Tipo</th>
-                        <th scope="col">Comprar</th>
-                        <th scope="col">Cantidad</th>
-                        <th scope="col" class="selection-col">Selección</th>
-                        <th scope="col">Tiendas</th>
-                        <th scope="col">Notas</th>
-                        <th scope="col">Mover a almacén</th>
-                      </tr>
-                    </thead>
-                    <tbody id="extraTableBody"></tbody>
+                <table class="product-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Producto</th>
+                      <th scope="col">Familia</th>
+                      <th scope="col">Tipo</th>
+                      <th scope="col">Comprar</th>
+                      <th scope="col">Cantidad</th>
+                      <th scope="col" class="selection-col">Selección</th>
+                      <th scope="col">Tiendas</th>
+                      <th scope="col">Pedido</th>
+                      <th scope="col">Notas</th>
+                      <th scope="col">Mover a almacén</th>
+                    </tr>
+                  </thead>
+                  <tbody id="extraTableBody"></tbody>
                   </table>
                 </div>
               </div>

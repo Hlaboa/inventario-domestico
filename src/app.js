@@ -325,6 +325,8 @@ function setOrdersList(list) {
     stateAdapter.setEntity("orders", next);
     syncFromAppStore();
     renderProductsDebounced();
+    renderExtraQuickTable();
+    renderExtraEditTable();
     return getOrdersList();
   }
   if (
@@ -335,27 +337,37 @@ function setOrdersList(list) {
     window.AppStore.actions.setOrders(next);
     syncFromAppStore();
     renderProductsDebounced();
+    renderExtraQuickTable();
+    renderExtraEditTable();
     return getOrdersList();
   }
   if (window.DataService && typeof window.DataService.setOrders === "function") {
     orders = window.DataService.setOrders(next);
     renderProductsDebounced();
+    renderExtraQuickTable();
+    renderExtraEditTable();
     return orders;
   }
   if (window.AppStorage && typeof window.AppStorage.saveOrders === "function") {
     window.AppStorage.saveOrders(next);
     renderProductsDebounced();
+    renderExtraQuickTable();
+    renderExtraEditTable();
     return orders;
   }
   if (typeof appUtils.saveList === "function") {
     appUtils.saveList(STORAGE_KEY_ORDERS, orders);
     renderProductsDebounced();
+    renderExtraQuickTable();
+    renderExtraEditTable();
     return orders;
   }
   try {
     localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(orders));
   } catch {}
   renderProductsDebounced();
+  renderExtraQuickTable();
+  renderExtraEditTable();
   return orders;
 }
 
@@ -843,14 +855,7 @@ function areExtraFiltersActive() {
   const type = extraFilterTypeSelect?.value || "";
   const store = extraFilterStoreSelect?.value || "";
   const buy = extraFilterBuySelect?.value || "all";
-  return (
-    search ||
-    family ||
-    type ||
-    store ||
-    buy === "yes" ||
-    buy === "no"
-  );
+  return search || family || type || store || buy !== "all";
 }
 
 
@@ -1793,12 +1798,13 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
           createTableInput,
           createTableTextarea,
           createFamilySelect,
-          createTypeSelect,
-          linkFamilyTypeSelects,
-          createSelectionButton,
-          getSelectionLabelForProduct,
-          getSelectionStoresForProduct,
-        },
+            createTypeSelect,
+            linkFamilyTypeSelects,
+            createSelectionButton,
+            getSelectionLabelForProduct,
+            getSelectionStoresForProduct,
+            getFutureOrderLabel,
+          },
         getSelectionInstanceForProduct,
         getStoreIdsForProduct,
         getStoreNames,
@@ -1891,6 +1897,7 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
           createSelectionButton,
           getSelectionLabelForProduct,
           getSelectionStoresForProduct,
+          getFutureOrderLabel,
         },
         persist: (list) => {
           const nextList = Array.isArray(list) ? list : [];
@@ -2211,6 +2218,7 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
             createSelectionButton,
             getSelectionLabelForProduct,
             getSelectionStoresForProduct,
+            getFutureOrderLabel,
           },
           getSelectionInstanceForProduct,
           getStoreNames,
@@ -2956,6 +2964,19 @@ function findProductByName(name = "") {
   const lower = name.trim().toLowerCase();
   if (!lower) return null;
   const all = getUnifiedList();
+  return all.find((p) => (p.name || "").trim().toLowerCase() === lower) || null;
+}
+
+function findProductByNameWithScope(name = "", scopeHint = "") {
+  const lower = name.trim().toLowerCase();
+  if (!lower) return null;
+  const all = getUnifiedList();
+  if (scopeHint) {
+    const scoped = all.find(
+      (p) => (p.name || "").trim().toLowerCase() === lower && p.scope === scopeHint
+    );
+    if (scoped) return scoped;
+  }
   return all.find((p) => (p.name || "").trim().toLowerCase() === lower) || null;
 }
 
@@ -5151,15 +5172,29 @@ function buildOrderProductOptions(storeId = "", order = null) {
       ? unified.find((p) => String(p.id) === String(inst.productId))
       : null;
     if (exactById) return exactById;
-    const exactByName = unified.find(
-      (p) =>
-        (p.name || "").trim().toLowerCase() === instNameLower ||
-        (p.name || "").trim().toLowerCase() === instBaseLower
-    );
+    const exactByName =
+      (scopeFilter &&
+        unified.find(
+          (p) =>
+            ((p.name || "").trim().toLowerCase() === instNameLower ||
+              (p.name || "").trim().toLowerCase() === instBaseLower) &&
+            p.scope === scopeFilter
+        )) ||
+      unified.find(
+        (p) =>
+          (p.name || "").trim().toLowerCase() === instNameLower ||
+          (p.name || "").trim().toLowerCase() === instBaseLower
+      );
     if (exactByName) return exactByName;
     const includesBase =
       instBaseLower &&
-      unified.find((p) => (p.name || "").trim().toLowerCase().includes(instBaseLower));
+      ((scopeFilter &&
+        unified.find(
+          (p) =>
+            (p.name || "").trim().toLowerCase().includes(instBaseLower) &&
+            p.scope === scopeFilter
+        )) ||
+        unified.find((p) => (p.name || "").trim().toLowerCase().includes(instBaseLower)));
     return includesBase || null;
   };
 
@@ -5186,6 +5221,7 @@ function buildOrderProductOptions(storeId = "", order = null) {
       if (scopeFilter) {
         const productForScope =
           (inst.productId && findProductById(inst.productId)) ||
+          findProductByNameWithScope(inst.productName, scopeFilter) ||
           findProductByName(inst.productName);
         const scope = productForScope?.scope || "";
         if (scope !== scopeFilter) return false;
@@ -5199,6 +5235,7 @@ function buildOrderProductOptions(storeId = "", order = null) {
       const producer = getProducerName(inst.producerId) || "";
       const product =
         (inst.productId && findProductById(inst.productId)) ||
+        findProductByNameWithScope(inst.productName, scopeFilter) ||
         findProductByName(inst.productName);
       const unifiedProduct = findUnifiedForInstance(inst);
       const isCurrentSelection =
@@ -5307,7 +5344,7 @@ function renderOrderBatchSelect(options = []) {
     });
 }
 
-function getRowFamilyType(row) {
+function getRowFamilyType(row, scopeHint = "") {
   const productInput = row?.querySelector("input[data-field='product']");
   const name = (productInput?.value || "").trim().toLowerCase();
   const productId = row?.dataset.productId || "";
@@ -5321,16 +5358,16 @@ function getRowFamilyType(row) {
       family = resolveInstanceFamily(inst) || family;
       type = resolveInstanceType(inst) || type;
       const prodForScope =
-        (inst.productId && findProductById(inst.productId)) || findProductByName(inst.productName);
+        (inst.productId && findProductById(inst.productId)) ||
+        findProductByNameWithScope(inst.productName, scopeHint) ||
+        findProductByName(inst.productName);
       scope = prodForScope?.scope || scope;
     }
   }
   if (!family || !type || !scope) {
     const prod =
       (productId && findProductById(productId)) ||
-      (name
-        ? getUnifiedList().find((p) => (p.name || "").trim().toLowerCase() === name)
-        : null);
+      (name ? findProductByNameWithScope(name, scopeHint) || findProductByName(name) : null);
     if (prod) {
       if (!family) family = prod.block || "";
       if (!type) type = prod.type || "";
@@ -5350,7 +5387,7 @@ function applyOrdersFilters() {
     (row) => row.dataset.empty !== "true"
   );
   rows.forEach((row) => {
-    const { family, type, scope } = getRowFamilyType(row);
+    const { family, type, scope } = getRowFamilyType(row, scopeFilter);
     const matchFamily = !familyFilter || family === familyFilter;
     const matchType = !typeFilter || type === typeFilter;
     const matchScope = !scopeFilter || scope === scopeFilter;
@@ -6240,8 +6277,11 @@ function handleAddQuickExtra() {
     Math.random().toString(36).slice(2);
   const defBlock = extraFilterFamilySelect?.value || "";
   const defType = extraFilterTypeSelect?.value || "";
+  const buyFilter = extraFilterBuySelect?.value || "all";
   const defBuy =
-    extraFilterBuySelect && extraFilterBuySelect.value === "yes" ? true : false;
+    buyFilter === "yes" ||
+    buyFilter === "buy_future" ||
+    buyFilter === "buy_no_future";
   extraDrafts.unshift({
     id,
     name: "",
