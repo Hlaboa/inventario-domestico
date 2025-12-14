@@ -41,15 +41,7 @@
     const shelf = refs.filterShelfSelect?.value || "";
     const store = refs.filterStoreSelect?.value || "";
     const status = refs.filterStatusSelect?.value || "all";
-    return (
-      search ||
-      block ||
-      type ||
-      shelf ||
-      store ||
-      status === "have" ||
-      status === "missing"
-    );
+    return search || block || type || shelf || store || status !== "all";
   }
 
   function getStripeMap(items, helpers) {
@@ -428,6 +420,7 @@
     const renderProductEntry = (p, dest) => {
       const stripe = stripeMap[(p.block || "").trim() || "__none__"] || 0;
       const hash = getRowHash(p, helpers);
+      const futureLabel = helpers.getFutureOrderLabel ? helpers.getFutureOrderLabel(p) : "";
       const existing = existingRows.get(p.id);
       const reuse = existing && hashMap.get(p.id) === hash;
       if (existing && !reuse) {
@@ -446,9 +439,15 @@
         tr.dataset.block = p.block || "";
         tr.dataset.type = p.type || "";
         tr.dataset.have = p.have ? "1" : "0";
+        tr.dataset.futureOrder = futureLabel ? "1" : "0";
         const selectionLabel = getSelectionLabelCached(p, helpers) || "";
         const storesLabel = getSelectionStoresCached(p, helpers) || "";
         tr.dataset.search = `${p.name || ""} ${p.block || ""} ${p.type || ""} ${p.shelf || ""} ${p.quantity || ""} ${p.notes || ""} ${selectionLabel} ${storesLabel}`.toLowerCase();
+        const futureCell = tr.querySelector("[data-field='futureOrder']");
+        if (futureCell) {
+          futureCell.textContent = futureLabel || "";
+          futureCell.title = futureLabel ? `Incluido en pedido: ${futureLabel}` : "";
+        }
 
         if (dest) dest.appendChild(tr);
         rows.push({ row: tr, product: p });
@@ -593,6 +592,23 @@
     const status = filterStatusSelect.value || "all";
     const products = resolveProducts(state);
     const map = new Map(products.map((p) => [p.id, p]));
+    const futureMap =
+      typeof window.buildFutureOrderMap === "function" ? window.buildFutureOrderMap() : null;
+    const futureCache = new Map();
+
+    const getFutureFlag = (p, tr) => {
+      if (!p) return false;
+      const dataVal = tr?.dataset?.futureOrder;
+      if (dataVal === "1") return true;
+      if (dataVal === "0") return false;
+      if (futureCache.has(p.id)) return futureCache.get(p.id);
+      const val =
+        typeof helpers.getFutureOrderLabel === "function"
+          ? !!helpers.getFutureOrderLabel(p, futureMap)
+          : false;
+      futureCache.set(p.id, val);
+      return val;
+    };
 
     const predicate = (tr) => {
       const id = tr.dataset.id;
@@ -602,8 +618,15 @@
       if (filterType && (p.type || "") !== filterType) return false;
       if (filterShelf && (p.shelf || "") !== filterShelf) return false;
       if (filterStoreId && !helpers.productMatchesStore(p, filterStoreId)) return false;
-      if (status === "have" && !p.have) return false;
-      if (status === "missing" && p.have) return false;
+      const future = getFutureFlag(p, tr);
+      const have = !!p.have;
+      if (status === "have" && !have) return false;
+      if (status === "missing" && have) return false;
+      if (status === "future" && !future) return false;
+      if (status === "have_future" && !(have && future)) return false;
+      if (status === "missing_future" && !( !have && future)) return false;
+      if (status === "have_no_future" && !(have && !future)) return false;
+      if (status === "missing_no_future" && !(!have && !future)) return false;
       if (search) {
         const haystack = `${p.name || ""} ${p.block || ""} ${p.type || ""} ${p.shelf || ""} ${p.quantity || ""} ${p.notes || ""} ${helpers.getSelectionLabelForProduct(p)} ${helpers.getSelectionStoresForProduct(p)}`.toLowerCase();
         if (!haystack.includes(search)) return false;

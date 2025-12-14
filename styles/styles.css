@@ -995,6 +995,10 @@ textarea:focus-visible {
   box-shadow: inset 3px 0 0 rgba(242, 180, 90, 0.75);
 }
 
+.product-table tbody tr[data-have="0"][data-future-order="1"] td:first-child {
+  box-shadow: inset 3px 0 0 var(--info);
+}
+
 .product-table tbody tr[data-buy="1"] td:first-child {
   box-shadow: inset 3px 0 0 rgba(232, 165, 107, 0.85);
 }

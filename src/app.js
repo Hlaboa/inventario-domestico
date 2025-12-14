@@ -714,14 +714,23 @@ function applyInventoryFiltersToRow(row, product) {
   const filterShelf = filterShelfSelect?.value || "";
   const filterStoreId = filterStoreSelect?.value || "";
   const status = filterStatusSelect?.value || "all";
+  const futureMap =
+    typeof window.buildFutureOrderMap === "function" ? window.buildFutureOrderMap() : null;
+  const future = !!getFutureOrderLabel(product, futureMap);
+  const have = !!product.have;
 
   let visible = true;
   if (filterBlock && (product.block || "") !== filterBlock) visible = false;
   if (visible && filterType && (product.type || "") !== filterType) visible = false;
   if (visible && filterShelf && (product.shelf || "") !== filterShelf) visible = false;
   if (visible && filterStoreId && !productMatchesStore(product, filterStoreId)) visible = false;
-  if (visible && status === "have" && !product.have) visible = false;
-  if (visible && status === "missing" && product.have) visible = false;
+  if (visible && status === "have" && !have) visible = false;
+  if (visible && status === "missing" && have) visible = false;
+  if (visible && status === "future" && !future) visible = false;
+  if (visible && status === "have_future" && !(have && future)) visible = false;
+  if (visible && status === "missing_future" && !(!have && future)) visible = false;
+  if (visible && status === "have_no_future" && !(have && !future)) visible = false;
+  if (visible && status === "missing_no_future" && !(!have && !future)) visible = false;
   if (visible && search) {
     const haystack = `${product.name || ""} ${product.block || ""} ${product.type || ""} ${product.shelf || ""} ${product.quantity || ""} ${product.notes || ""} ${getSelectionLabelForProduct(product)} ${getSelectionStoresForProduct(product)}`.toLowerCase();
     if (!haystack.includes(search)) visible = false;
@@ -825,15 +834,7 @@ function areInventoryFiltersActive() {
   const shelf = filterShelfSelect?.value || "";
   const store = filterStoreSelect?.value || "";
   const status = filterStatusSelect?.value || "all";
-  return (
-    search ||
-    block ||
-    type ||
-    shelf ||
-    store ||
-    status === "have" ||
-    status === "missing"
-  );
+  return search || block || type || shelf || store || status !== "all";
 }
 
 function areExtraFiltersActive() {
@@ -4931,6 +4932,7 @@ function updateInventoryComputedColumns() {
       const label = getFutureOrderLabel(product, map);
       futureCell.textContent = label || "";
       futureCell.title = label ? `Incluido en pedido: ${label}` : "";
+      row.dataset.futureOrder = label ? "1" : "0";
     }
     const acqCell = row.querySelector("[data-field='acquisitionDate']");
     if (acqCell) {
