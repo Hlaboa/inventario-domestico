@@ -324,6 +324,7 @@ function setOrdersList(list) {
   if (stateAdapter && typeof stateAdapter.setEntity === "function") {
     stateAdapter.setEntity("orders", next);
     syncFromAppStore();
+    renderProductsDebounced();
     return getOrdersList();
   }
   if (
@@ -333,23 +334,28 @@ function setOrdersList(list) {
   ) {
     window.AppStore.actions.setOrders(next);
     syncFromAppStore();
+    renderProductsDebounced();
     return getOrdersList();
   }
   if (window.DataService && typeof window.DataService.setOrders === "function") {
     orders = window.DataService.setOrders(next);
+    renderProductsDebounced();
     return orders;
   }
   if (window.AppStorage && typeof window.AppStorage.saveOrders === "function") {
     window.AppStorage.saveOrders(next);
+    renderProductsDebounced();
     return orders;
   }
   if (typeof appUtils.saveList === "function") {
     appUtils.saveList(STORAGE_KEY_ORDERS, orders);
+    renderProductsDebounced();
     return orders;
   }
   try {
     localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(orders));
   } catch {}
+  renderProductsDebounced();
   return orders;
 }
 
@@ -1293,6 +1299,7 @@ function getInventoryContext() {
       getSelectionLabelForProduct,
       getSelectionStoresForProduct,
       createSelectionButton,
+      getFutureOrderLabel,
       handleInventoryTableClick,
     },
   };
@@ -2116,6 +2123,7 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
                 getSelectionLabelForProduct,
                 getSelectionStoresForProduct,
                 createSelectionButton,
+                getFutureOrderLabel,
                 handleInventoryTableClick,
               },
               shouldSkip: () =>
@@ -2890,6 +2898,20 @@ function todayDateString() {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
+}
+
+function dateValue(str = "") {
+  const s = (str || "").trim();
+  if (!s) return NaN;
+  const parts = s.split("-");
+  if (parts.length === 3) {
+    const [y, m, d] = parts.map((p) => parseInt(p, 10));
+    if (Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)) {
+      return new Date(y, m - 1, d).getTime();
+    }
+  }
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : NaN;
 }
 
 function cloneTemplateContent(tpl) {
@@ -4859,10 +4881,122 @@ function orderMatchesDateFilter(order, filter = "") {
   if (!order) return false;
   const planned = (resolveOrderPlannedDate(order) || "").trim();
   if (!planned) return true;
-  const today = todayDateString();
-  if (mode === "future") return planned >= today;
-  if (mode === "past") return planned < today;
+  const plannedVal = dateValue(planned);
+  const todayVal = dateValue(todayDateString());
+  if (!Number.isFinite(plannedVal) || !Number.isFinite(todayVal)) return true;
+  if (mode === "future") return plannedVal >= todayVal;
+  if (mode === "past") return plannedVal < todayVal;
   return true;
+}
+
+function normalizeProductNameForMatch(name = "") {
+  const clean = name.replace(/^[★☆]\s*[·\-–—]?\s*/u, "").trim();
+  const parts = clean.split("·").map((p) => p.trim()).filter(Boolean);
+  const base = parts[0] || clean;
+  return { clean: clean.toLowerCase(), base: base.toLowerCase() };
+}
+
+function productMatchesOrderItem(product = {}, item = {}) {
+  if (!product || !item) return false;
+  const prodId = product.id !== undefined && product.id !== null ? String(product.id) : "";
+  const selId = product.selectionId ? String(product.selectionId) : "";
+  const itemProdId = item.productId ? String(item.productId) : "";
+  const itemInstId = item.instanceId ? String(item.instanceId) : "";
+  if (prodId && itemProdId && prodId === itemProdId) return true;
+  if (selId && itemInstId && selId === itemInstId) return true;
+  const prodNames = normalizeProductNameForMatch(product.name || "");
+  const itemNames = normalizeProductNameForMatch(item.productName || "");
+  if (prodNames.clean && itemNames.clean && prodNames.clean === itemNames.clean) return true;
+  if (prodNames.base && itemNames.base && prodNames.base === itemNames.base) return true;
+  if (prodNames.base && itemNames.clean && itemNames.clean.includes(prodNames.base)) return true;
+  const prodNameNoSpaces = (product.name || "").replace(/\s+/g, "").toLowerCase();
+  const itemNameNoSpaces = (item.productName || "").replace(/\s+/g, "").toLowerCase();
+  if (prodNameNoSpaces && itemNameNoSpaces && prodNameNoSpaces === itemNameNoSpaces) return true;
+  if (prodNameNoSpaces && itemNameNoSpaces.includes(prodNameNoSpaces)) return true;
+  return false;
+}
+
+function updateInventoryComputedColumns() {
+  if (!productTableBody) return;
+  const rows = Array.from(productTableBody.querySelectorAll("tr[data-id]"));
+  if (!rows.length) return;
+  const map = buildFutureOrderMap();
+  const productsMap = new Map(getPantryProducts().map((p) => [String(p.id), p]));
+  rows.forEach((row) => {
+    const id = row.dataset.id || "";
+    const product = productsMap.get(id);
+    if (!product) return;
+    const futureCell = row.querySelector("[data-field='futureOrder']");
+    if (futureCell) {
+      const label = getFutureOrderLabel(product, map);
+      futureCell.textContent = label || "";
+      futureCell.title = label ? `Incluido en pedido: ${label}` : "";
+    }
+    const acqCell = row.querySelector("[data-field='acquisitionDate']");
+    if (acqCell) {
+      acqCell.textContent = product.acquisitionDate || "";
+      acqCell.title = product.acquisitionDate ? `Adquirido: ${product.acquisitionDate}` : "";
+    }
+  });
+}
+
+function getFutureOrderLabel(product = {}, futureMap) {
+  const map = futureMap || buildFutureOrderMap();
+  const key = String(product.id || "");
+  const selectionKey = String(product.selectionId || "");
+  const nameKey = normalizeProductNameForMatch(product.name || "").clean;
+  const nameNoSpaces = (product.name || "").replace(/\s+/g, "").toLowerCase();
+  const payload =
+    (key && map.get(`id:${key}`)) ||
+    (selectionKey && map.get(`sel:${selectionKey}`)) ||
+    (nameKey && map.get(`name:${nameKey}`)) ||
+    (nameNoSpaces && map.get(`nospace:${nameNoSpaces}`)) ||
+    null;
+  if (!payload) return "";
+  const suffix = payload.count > 1 ? ` (${payload.count})` : "";
+  return payload.date ? `Sí ${payload.date}${suffix}` : `Sí${suffix}`;
+}
+
+function buildFutureOrderMap() {
+  const orders = getOrdersList().filter((o) => orderMatchesDateFilter(o, "future"));
+  const map = new Map();
+  const addEntry = (key, planned) => {
+    if (!key) return;
+    const existing = map.get(key);
+    const plannedVal = dateValue(planned);
+    if (!Number.isFinite(plannedVal)) {
+      const todayVal = dateValue(todayDateString());
+      if (!Number.isFinite(todayVal)) return;
+      map.set(key, { date: planned, val: todayVal, count: 1 });
+      return;
+    }
+    if (!existing) {
+      map.set(key, { date: planned, val: plannedVal, count: 1 });
+      return;
+    }
+    existing.count += 1;
+    if (!existing.val || plannedVal < existing.val) {
+      existing.val = plannedVal;
+      existing.date = planned;
+    }
+  };
+
+  orders.forEach((order) => {
+    let planned = (resolveOrderPlannedDate(order) || "").trim();
+    if (!planned) planned = todayDateString();
+    if (!planned) return;
+    const items = Array.isArray(order.items) ? order.items : [];
+    items.forEach((item) => {
+      const norm = normalizeProductNameForMatch(item.productName || "");
+      const nospace = (item.productName || "").replace(/\s+/g, "").toLowerCase();
+      addEntry(item.productId ? `id:${item.productId}` : "", planned);
+      addEntry(item.instanceId ? `sel:${item.instanceId}` : "", planned);
+      addEntry(norm.clean ? `name:${norm.clean}` : "", planned);
+      addEntry(norm.base ? `name:${norm.base}` : "", planned);
+      addEntry(nospace ? `nospace:${nospace}` : "", planned);
+    });
+  });
+  return map;
 }
 
 function markOrderItemsAsHave(order) {
@@ -6012,8 +6146,10 @@ function renderProducts() {
   // InventoryView se encarga del render (usa plantilla cuando está disponible)
   if (window.InventoryView) {
     InventoryView.render(getInventoryContext());
+    updateInventoryComputedColumns();
     return;
   }
+  updateInventoryComputedColumns();
 }
 
 function handleInventoryTableClick(e) {

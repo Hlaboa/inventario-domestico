@@ -9,7 +9,7 @@
   let pendingChunkTimeout = null;
 
   const stripeClassRegex = /^family-stripe-/;
-  const EXPECTED_COLUMNS = 12;
+  const EXPECTED_COLUMNS = 13;
   const CHUNK_THRESHOLD = 200;
   const CHUNK_BUDGET_MS = 12;
 
@@ -80,6 +80,7 @@
       p.notes,
       helpers.getSelectionLabelForProduct ? helpers.getSelectionLabelForProduct(p) : "",
       helpers.getSelectionStoresForProduct ? helpers.getSelectionStoresForProduct(p) : "",
+      helpers.getFutureOrderLabel ? helpers.getFutureOrderLabel(p) : "",
     ].join("||");
   }
 
@@ -187,6 +188,9 @@
           "[data-field='quantity']": product.quantity || "",
           "[data-field='selectionText']": getSelectionLabelCached(product, helpers),
           "[data-field='stores']": getSelectionStoresCached(product, helpers),
+          "[data-field='futureOrder']": helpers.getFutureOrderLabel
+            ? helpers.getFutureOrderLabel(product)
+            : "",
           "[data-field='acquisitionDate']": product.acquisitionDate || "",
           "[data-field='expiryText']": product.expiryText || "",
           "[data-field='notes']": product.notes || "",
@@ -255,6 +259,7 @@
       storesTd.appendChild(storesDiv);
       tr.appendChild(storesTd);
 
+      addCellText(helpers.getFutureOrderLabel ? helpers.getFutureOrderLabel(p) : "");
       addCellText(p.acquisitionDate || "");
       addCellText(p.expiryText || "");
       addCellText(p.notes || "");
