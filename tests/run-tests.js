@@ -244,6 +244,50 @@ register("actions.setProducts sin DataService actualiza AppState y AppStore", ()
   store.__cleanup();
 });
 
+register("AppStore mantiene caducidad en productos y unified", () => {
+  const AppState = {
+    state: {},
+    hydrate(patch) {
+      this.state = { ...this.state, ...(patch || {}) };
+    },
+    getState() {
+      return this.state;
+    },
+    subscribe() {
+      return () => {};
+    },
+  };
+
+  const store = loadStore({ AppState });
+  store.actions.setProducts([{ id: "p-exp", name: "Leche", expiryText: "2024-12-01" }]);
+  let snapshot = store.getState();
+  assert.strictEqual(
+    snapshot.products[0].expiryText,
+    "2024-12-01",
+    "Debe conservar expiryText en products"
+  );
+  assert.strictEqual(
+    snapshot.products[0].shelfLifeDays,
+    "2024-12-01",
+    "Debe rellenar shelfLifeDays con expiryText"
+  );
+
+  store.actions.setUnifiedProducts([{ id: "u-exp", name: "Café", scope: "otros", shelfLifeDays: 7 }]);
+  snapshot = store.getState();
+  assert.strictEqual(
+    snapshot.unifiedProducts[0].expiryText,
+    "7",
+    "Debe normalizar expiryText desde shelfLifeDays en unifiedProducts"
+  );
+  assert.strictEqual(
+    snapshot.unifiedProducts[0].shelfLifeDays,
+    "7",
+    "Debe mantener shelfLifeDays en unifiedProducts"
+  );
+
+  store.__cleanup();
+});
+
 register("AppStore normaliza ids numéricos en unifiedProducts", () => {
   const AppState = {
     state: {},

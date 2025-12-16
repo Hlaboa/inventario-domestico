@@ -436,9 +436,8 @@ function setUnifiedList(next) {
   ) {
     window.AppStore.actions.setUnifiedProducts(unifiedProducts);
   }
-  if (!storeActive) {
-    persistUnifiedLocal(unifiedProducts);
-  }
+  // Guarda siempre una copia local para no perder campos (caducidad, notas, etc.)
+  persistUnifiedLocal(unifiedProducts);
   return unifiedProducts;
 }
 
@@ -877,12 +876,49 @@ function hasSnapshotData(snap) {
 function applyStateSnapshot(snapshot = {}) {
   const nextProducts = snapshot.products || products || [];
   const nextExtras = snapshot.extraProducts || extraProducts || [];
-  const unified = Array.isArray(snapshot.unifiedProducts) && snapshot.unifiedProducts.length > 0
+  const mergeExpiryFromLocal = (list = []) => {
+    let local = [];
+    try {
+      if (window.AppStorage && typeof window.AppStorage.loadUnifiedProducts === "function") {
+        local = window.AppStorage.loadUnifiedProducts() || [];
+      } else {
+        const raw = localStorage.getItem("productosCocinaUnificados");
+        local = raw ? JSON.parse(raw) : [];
+      }
+    } catch {
+      local = [];
+    }
+    const map = new Map(
+      (Array.isArray(local) ? local : []).map((p) => [String(p.id || ""), p]).filter(([k]) => k)
+    );
+    return (Array.isArray(list) ? list : []).map((item) => {
+      const key = String(item?.id || "");
+      if (!key || map.size === 0) return item;
+      const localItem = map.get(key);
+      if (!localItem) return item;
+      const expiry =
+        (item.expiryText && item.expiryText.trim()) ||
+        (item.shelfLifeDays && String(item.shelfLifeDays).trim()) ||
+        (localItem.expiryText && localItem.expiryText.trim()) ||
+        (localItem.shelfLifeDays && String(localItem.shelfLifeDays).trim()) ||
+        "";
+      const acquisition = item.acquisitionDate || localItem.acquisitionDate || "";
+      return {
+        ...item,
+        expiryText: expiry,
+        shelfLifeDays: expiry,
+        acquisitionDate: acquisition,
+      };
+    });
+  };
+
+  const unifiedRaw = Array.isArray(snapshot.unifiedProducts) && snapshot.unifiedProducts.length > 0
     ? snapshot.unifiedProducts
     : [
         ...nextProducts.map((p) => ({ ...p, scope: "almacen" })),
         ...nextExtras.map((p) => ({ ...p, scope: "otros" })),
       ];
+  const unified = mergeExpiryFromLocal(unifiedRaw);
 
   unifiedProducts = unified;
   unifiedDirty = true;
@@ -2671,6 +2707,7 @@ function setAlmacenMode(editMode) {
   if (editMode) {
     renderGridRows();
   }
+  document.body.classList.toggle("almacen-edit-mode", !!editMode);
   almacenInventoryPanel.classList.toggle("active", !editMode);
   almacenEditPanel.classList.toggle("active", editMode);
   almacenEditModeButton.textContent = editMode

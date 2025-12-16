@@ -10,7 +10,7 @@
    * @property {string} [createdAt]
    * @property {string} [updatedAt]
    *
-   * @typedef {BaseEntity & {name:string, block?:string, type?:string, shelf?:string, quantity?:string, have?:boolean, buy?:boolean, selectionId?:string, acquisitionDate?:string, notes?:string, scope?:("almacen"|"otros")}} Product
+   * @typedef {BaseEntity & {name:string, block?:string, type?:string, shelf?:string, quantity?:string, have?:boolean, buy?:boolean, selectionId?:string, acquisitionDate?:string, expiryText?:string, shelfLifeDays?:string, notes?:string, scope?:("almacen"|"otros")}} Product
    * @typedef {BaseEntity & {productId?:string, productName?:string, producerId?:string, brand?:string, storeIds?:string[], notes?:string, priority?:number}} Instance
    * @typedef {BaseEntity & {name:string, type?:string, location?:string, website?:string, notes?:string}} Supplier
    * @typedef {BaseEntity & {name:string, location?:string, website?:string, notes?:string}} Producer
@@ -40,6 +40,12 @@
       buy = p.buy !== undefined ? !!p.buy : !have;
       have = !buy;
     }
+    const expiryText =
+      [p.expiryText, p.shelfLifeDays]
+        .map((val) => (val === undefined || val === null ? "" : String(val).trim()))
+        .find((val) => val.length > 0) || "";
+    const shelfLifeDays = ((p.shelfLifeDays ?? expiryText) || "").toString().trim();
+
     return {
       id: ensureId(p.id, scope === "otros" ? "extra" : "prod"),
       name: trimmedName,
@@ -51,6 +57,8 @@
       buy,
       selectionId: p.selectionId || "",
       acquisitionDate: (p.acquisitionDate || "").trim(),
+      expiryText,
+      shelfLifeDays,
       storeName: (p.storeName || "").trim(),
       notes: p.notes || "",
       scope,

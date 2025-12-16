@@ -124,20 +124,33 @@
         return;
       }
       const getField = (field) => {
-        const el = tr.querySelector(`[data-field="${field}"]`);
-        if (!el) return "";
-        if (el.type === "checkbox") return el.checked;
-        return el.value.trim();
+        const el =
+          tr.querySelector(`[data-field="${field}"]`) ||
+          tr.querySelector(
+            `[data-slot="${field}"] input, [data-slot="${field}"] textarea, [data-slot="${field}"] select`
+          );
+        if (el) {
+          if (el.type === "checkbox") return { found: true, value: el.checked };
+          return { found: true, value: (el.value || "").trim() };
+        }
+        if (tr.dataset && Object.prototype.hasOwnProperty.call(tr.dataset, field)) {
+          return { found: true, value: (tr.dataset[field] || "").trim() };
+        }
+        const slot = tr.querySelector(`[data-slot="${field}"]`);
+        if (slot) {
+          return { found: true, value: (slot.textContent || "").trim() };
+        }
+        return { found: false, value: "" };
       };
-      const name = getField("name");
+      const name = getField("name").value;
       if (!name) return;
-      const block = getField("block");
-      const type = getField("type");
-      const shelf = getField("shelf");
-      const quantity = getField("quantity");
-      const have = !!getField("have");
-      const acquisitionDate = getField("acquisitionDate");
-      const expiryText = getField("expiryText");
+      const block = getField("block").value;
+      const type = getField("type").value;
+      const shelf = getField("shelf").value;
+      const quantity = getField("quantity").value;
+      const have = !!getField("have").value;
+      const { found: acqFound, value: acqVal } = getField("acquisitionDate");
+      const { found: expiryFound, value: expiryVal } = getField("expiryText");
       const notes = (tr.querySelector('textarea[data-field="notes"]') || {}).value;
       const now = nowFn();
       const originalId = (tr.dataset.originalId || "").trim();
@@ -162,8 +175,9 @@
         shelf,
         quantity,
         have,
-        acquisitionDate,
-        expiryText,
+        acquisitionDate: acqFound ? acqVal : base?.acquisitionDate || "",
+        expiryText: expiryFound ? expiryVal : base?.expiryText || "",
+        shelfLifeDays: (expiryFound ? expiryVal : base?.expiryText) || "",
         notes,
         scope: "almacen",
         selectionId: base?.selectionId || "",

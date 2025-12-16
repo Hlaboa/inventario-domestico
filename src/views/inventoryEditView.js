@@ -73,12 +73,21 @@
     const cell =
       row.querySelector("[data-slot='acquisitionDate']") ||
       row.querySelector("[data-field='acquisitionDate']");
-    if (cell) {
-      cell.innerHTML = "";
-      const span = document.createElement("span");
-      span.textContent = value || "";
-      cell.appendChild(span);
+    if (!cell) return;
+
+    let hidden = cell.querySelector("input[data-field='acquisitionDate']");
+    if (!hidden) {
+      hidden = document.createElement("input");
+      hidden.type = "hidden";
+      hidden.dataset.field = "acquisitionDate";
     }
+    hidden.value = value || "";
+
+    cell.innerHTML = "";
+    const span = document.createElement("span");
+    span.textContent = value || "";
+    cell.appendChild(span);
+    cell.appendChild(hidden);
   };
 
   function buildRow(product, stripe, context) {
@@ -86,6 +95,8 @@
     const helpers = context.helpers || {};
     const rowTemplate = refs.rowTemplate || refs.editRowTemplate;
     const futureDisplay = "—";
+    const acquisitionValue = product.acquisitionDate || "";
+    const expiryValue = product.expiryText || "";
 
     const famSel = helpers.createFamilySelect
       ? helpers.createFamilySelect(product.block || "")
@@ -104,15 +115,7 @@
     haveCheckbox.checked = !!product.have;
     const futureNode = document.createElement("span");
     futureNode.textContent = futureDisplay;
-    const acqHidden = document.createElement("input");
-    acqHidden.type = "hidden";
-    acqHidden.dataset.field = "acquisitionDate";
-    acqHidden.value = product.acquisitionDate || "";
-    const acqContainer = document.createElement("div");
-    acqContainer.appendChild(document.createTextNode("—"));
-    acqContainer.appendChild(acqHidden);
-    const futureNode = document.createElement("span");
-    futureNode.textContent = futureDisplay;
+    const expiryInput = makeInput(helpers, "expiryText", expiryValue);
     if (
       rowTemplate &&
       window.AppComponents &&
@@ -130,7 +133,7 @@
             ? helpers.getSelectionStoresForProduct(product)
             : "",
           "[data-slot='futureOrder']": futureDisplay,
-          "[data-slot='acquisitionDate']": product.acquisitionDate || "",
+          "[data-slot='acquisitionDate']": acquisitionValue,
         },
         actions: {
           "[data-role='selection-btn']": {
@@ -152,18 +155,21 @@
           ),
           "[data-slot='have']": haveCheckbox,
           "[data-slot='futureOrder']": futureNode,
-          "[data-slot='expiryText']": makeInput(
-            helpers,
-            "expiryText",
-            product.expiryText
-          ),
+          "[data-slot='expiryText']": expiryInput,
           "[data-slot='notes']": makeTextarea(helpers, "notes", product.notes || ""),
           "[data-role='selection-btn']": selectionBtn,
         },
       });
       if (row) {
         setFutureCell(row, futureDisplay);
-        setAcquisitionCell(row, product.acquisitionDate || "");
+        setAcquisitionCell(row, acquisitionValue);
+        row.dataset.expiryText = expiryValue || "";
+        row.dataset.acquisitionDate = acquisitionValue || "";
+        if (expiryInput) {
+          expiryInput.addEventListener("input", () => {
+            row.dataset.expiryText = expiryInput.value || "";
+          });
+        }
         return row;
       }
     }
@@ -219,19 +225,17 @@
     tr.appendChild(td);
 
     td = document.createElement("td");
+    td.dataset.slot = "futureOrder";
     td.textContent = futureDisplay;
     td.title = "";
     tr.appendChild(td);
 
     td = document.createElement("td");
     td.dataset.slot = "acquisitionDate";
-    const adqSpan = document.createElement("span");
-    adqSpan.textContent = product.acquisitionDate || "";
-    td.appendChild(adqSpan);
     tr.appendChild(td);
 
     td = document.createElement("td");
-    td.appendChild(makeInput(helpers, "expiryText", product.expiryText));
+    td.appendChild(expiryInput);
     tr.appendChild(td);
 
     td = document.createElement("td");
@@ -258,6 +262,15 @@
   td.appendChild(delBtn);
     tr.appendChild(td);
 
+    tr.dataset.expiryText = expiryValue || "";
+    tr.dataset.acquisitionDate = acquisitionValue || "";
+    if (expiryInput) {
+      expiryInput.addEventListener("input", () => {
+        tr.dataset.expiryText = expiryInput.value || "";
+      });
+    }
+    setFutureCell(tr, futureDisplay);
+    setAcquisitionCell(tr, acquisitionValue);
     return tr;
   }
 
@@ -377,25 +390,38 @@
       const id = tr.dataset.id;
       if (!id) return;
 
-      const getField = (field) => {
-        const el = tr.querySelector(`[data-field="${field}"]`);
-        if (!el) return "";
-        if (el.type === "checkbox") return el.checked;
-        return el.value.trim();
+      const readField = (field) => {
+        const el =
+          tr.querySelector(`[data-field="${field}"]`) ||
+          tr.querySelector(
+            `[data-slot="${field}"] input, [data-slot="${field}"] textarea, [data-slot="${field}"] select`
+          );
+        if (el) {
+          if (el.type === "checkbox") return { found: true, value: el.checked };
+          return { found: true, value: (el.value || "").trim() };
+        }
+        if (tr.dataset && Object.prototype.hasOwnProperty.call(tr.dataset, field)) {
+          return { found: true, value: (tr.dataset[field] || "").trim() };
+        }
+        const slot = tr.querySelector(`[data-slot="${field}"]`);
+        if (slot) {
+          return { found: true, value: (slot.textContent || "").trim() };
+        }
+        return { found: false, value: "" };
       };
 
-      const name = getField("name");
+      const name = readField("name").value;
       if (!name) return;
 
-      const block = getField("block");
-      const type = getField("type");
-      const shelf = getField("shelf");
-      const quantity = getField("quantity");
-      const acquisitionDate = getField("acquisitionDate");
-      const expiryText = getField("expiryText");
+      const block = readField("block").value;
+      const type = readField("type").value;
+      const shelf = readField("shelf").value;
+      const quantity = readField("quantity").value;
+      const { found: acqFound, value: acquisitionDateVal } = readField("acquisitionDate");
+      const { found: expiryFound, value: expiryVal } = readField("expiryText");
       const notes = (tr.querySelector('textarea[data-field="notes"]') || {})
         .value;
-      const have = !!getField("have");
+      const have = !!readField("have").value;
 
       const existing =
         (typeof context.findById === "function"
@@ -403,6 +429,8 @@
           : null) || {};
       const createdAt = existing.createdAt || now;
       const selectionId = existing.selectionId || "";
+      const acquisitionDate = acqFound ? acquisitionDateVal : existing.acquisitionDate || "";
+      const expiryText = expiryFound ? expiryVal : existing.expiryText || "";
 
       list.push({
         id,
@@ -414,6 +442,7 @@
         have,
         acquisitionDate,
         expiryText,
+        shelfLifeDays: expiryText || "",
         notes,
         selectionId,
         createdAt,
