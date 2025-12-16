@@ -1975,6 +1975,7 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
           createSelectionButton,
           getSelectionLabelForProduct,
           getSelectionStoresForProduct,
+          getFutureOrderLabel,
         },
         persist: (list) => {
           const nextList = Array.isArray(list) ? list : [];
@@ -5109,6 +5110,10 @@ function getCurrentOrderContext() {
   const dateFilter = ordersDateFilterSelect?.value || "";
   const selectedStore = (ordersStoreSelect && ordersStoreSelect.value) || currentOrderStoreId || "";
   let order = currentOrderId ? getOrderById(currentOrderId) : null;
+  // Si estamos en un pedido nuevo (id no guardado), no sobrescribimos el contexto
+  if (!order && currentOrderId) {
+    return { order: null, storeId: selectedStore };
+  }
   if (order) {
     return { order, storeId: order.storeId || selectedStore };
   }
@@ -5729,7 +5734,10 @@ function handleOrdersDateFilterChange() {
 function handleOrdersStoreChange() {
   currentOrderStoreId = ordersStoreSelect ? ordersStoreSelect.value : "";
   const byStore = getOrdersList().find((o) => o.storeId === currentOrderStoreId) || null;
-  currentOrderId = byStore ? byStore.id : currentOrderId;
+  const exists = currentOrderId ? getOrderById(currentOrderId) : null;
+  if (!exists && !currentOrderId) {
+    currentOrderId = byStore ? byStore.id : currentOrderId;
+  }
   renderOrdersSection(true);
 }
 

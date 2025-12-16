@@ -49,10 +49,43 @@
       ? context.buildFamilyStripeMap(items)
       : {};
 
+  const getFutureLabel = (product, context) => {
+    const helpers = context.helpers || {};
+    const map = context.futureMap;
+    return helpers.getFutureOrderLabel
+      ? helpers.getFutureOrderLabel(product, map)
+      : "";
+  };
+
+  const setFutureCell = (row, display = "—") => {
+    if (!row) return;
+    const cell = row.querySelector("[data-slot='futureOrder']");
+    if (cell) {
+      cell.innerHTML = "";
+      cell.querySelectorAll("input,select,textarea,button").forEach((n) => n.remove());
+      cell.textContent = display || "—";
+      cell.title = "";
+    }
+  };
+
+  const setAcquisitionCell = (row, value = "") => {
+    if (!row) return;
+    const cell =
+      row.querySelector("[data-slot='acquisitionDate']") ||
+      row.querySelector("[data-field='acquisitionDate']");
+    if (cell) {
+      cell.innerHTML = "";
+      const span = document.createElement("span");
+      span.textContent = value || "";
+      cell.appendChild(span);
+    }
+  };
+
   function buildRow(product, stripe, context) {
     const refs = context.refs || {};
     const helpers = context.helpers || {};
     const rowTemplate = refs.rowTemplate || refs.editRowTemplate;
+    const futureDisplay = "—";
 
     const famSel = helpers.createFamilySelect
       ? helpers.createFamilySelect(product.block || "")
@@ -69,13 +102,17 @@
       : null;
     const haveCheckbox = makeInput(helpers, "have", "", "checkbox");
     haveCheckbox.checked = !!product.have;
-    const adqInput = makeInput(
-      helpers,
-      "acquisitionDate",
-      product.acquisitionDate || "",
-      "date"
-    );
-
+    const futureNode = document.createElement("span");
+    futureNode.textContent = futureDisplay;
+    const acqHidden = document.createElement("input");
+    acqHidden.type = "hidden";
+    acqHidden.dataset.field = "acquisitionDate";
+    acqHidden.value = product.acquisitionDate || "";
+    const acqContainer = document.createElement("div");
+    acqContainer.appendChild(document.createTextNode("—"));
+    acqContainer.appendChild(acqHidden);
+    const futureNode = document.createElement("span");
+    futureNode.textContent = futureDisplay;
     if (
       rowTemplate &&
       window.AppComponents &&
@@ -92,6 +129,8 @@
           "[data-field='stores']": helpers.getSelectionStoresForProduct
             ? helpers.getSelectionStoresForProduct(product)
             : "",
+          "[data-slot='futureOrder']": futureDisplay,
+          "[data-slot='acquisitionDate']": product.acquisitionDate || "",
         },
         actions: {
           "[data-role='selection-btn']": {
@@ -112,7 +151,7 @@
             product.quantity
           ),
           "[data-slot='have']": haveCheckbox,
-          "[data-slot='acquisitionDate']": adqInput,
+          "[data-slot='futureOrder']": futureNode,
           "[data-slot='expiryText']": makeInput(
             helpers,
             "expiryText",
@@ -122,7 +161,11 @@
           "[data-role='selection-btn']": selectionBtn,
         },
       });
-      if (row) return row;
+      if (row) {
+        setFutureCell(row, futureDisplay);
+        setAcquisitionCell(row, product.acquisitionDate || "");
+        return row;
+      }
     }
 
     const tr = document.createElement("tr");
@@ -139,6 +182,10 @@
 
     td = document.createElement("td");
     td.appendChild(typeSel);
+    tr.appendChild(td);
+
+    td = document.createElement("td");
+    td.appendChild(haveCheckbox);
     tr.appendChild(td);
 
     td = document.createElement("td");
@@ -172,11 +219,15 @@
     tr.appendChild(td);
 
     td = document.createElement("td");
-    td.appendChild(haveCheckbox);
+    td.textContent = futureDisplay;
+    td.title = "";
     tr.appendChild(td);
 
     td = document.createElement("td");
-    td.appendChild(adqInput);
+    td.dataset.slot = "acquisitionDate";
+    const adqSpan = document.createElement("span");
+    adqSpan.textContent = product.acquisitionDate || "";
+    td.appendChild(adqSpan);
     tr.appendChild(td);
 
     td = document.createElement("td");
@@ -220,6 +271,10 @@
       (typeof context.getProducts === "function"
         ? context.getProducts()
         : []) || [];
+    context.futureMap =
+      typeof window.buildFutureOrderMap === "function"
+        ? window.buildFutureOrderMap()
+        : null;
     const sorter = context.sorter || defaultSort;
     items.sort(sorter);
     const stripeMap = buildStripeMap(context, items);
@@ -240,6 +295,15 @@
             stripeMap[(item.block || "").trim() || "__none__"] || 0;
           return buildRow(item, stripe, context);
         },
+      });
+      tableBody.querySelectorAll("tr").forEach((row) => {
+        setFutureCell(row, "—");
+        setAcquisitionCell(
+          row,
+          row.querySelector("[data-slot='acquisitionDate'] span")
+            ? row.querySelector("[data-slot='acquisitionDate'] span").textContent
+            : ""
+        );
       });
     } else {
       tableBody.innerHTML = "";

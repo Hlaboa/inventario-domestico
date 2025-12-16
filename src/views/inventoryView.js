@@ -352,6 +352,10 @@
       tr.appendChild(td);
 
       td = document.createElement("td");
+      td.textContent = "—";
+      tr.appendChild(td);
+
+      td = document.createElement("td");
       const adq = helpers.createTableInput(
         "acquisitionDate",
         d.acquisitionDate || "",
