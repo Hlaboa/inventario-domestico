@@ -1530,6 +1530,9 @@ function initAfterDom(tStart = performance.now()) {
   ensureSelectionPopupInit();
   document.addEventListener("change", handleGlobalExtraBuyToggle, { capture: true });
   document.addEventListener("keydown", handleOrdersBatchKeydown, { capture: true });
+  if (ordersTableBody) {
+    ordersTableBody.addEventListener("input", handleOrdersInputChange);
+  }
   setSelectionButtonsVisibility(true);
 
     if (instancesMissingFilterButton) {
@@ -5188,6 +5191,21 @@ function applyOrderMetaToInputs(order) {
   }
 }
 
+function normalizeOrderProductKey(label = "") {
+  return (label || "")
+    .replace(/^[★☆]\s*[·\-–—]?\s*/u, "")
+    .trim()
+    .toLowerCase();
+}
+
+function pickExpiryText(...values) {
+  return (
+    values
+      .map((val) => (val === undefined || val === null ? "" : String(val).trim()))
+      .find((val) => val.length > 0) || ""
+  );
+}
+
 function buildOrderProductOptions(storeId = "", order = null) {
   if (!ordersProductsDatalist) return;
   const normalized = storeId || "";
@@ -5238,14 +5256,6 @@ function buildOrderProductOptions(storeId = "", order = null) {
         )) ||
         unified.find((p) => (p.name || "").trim().toLowerCase().includes(instBaseLower)));
     return includesBase || null;
-  };
-
-  const normalizeKey = (label = "") => {
-    const cleaned = (label || "")
-      .replace(/^[★☆]\s*[·\-–—]?\s*/u, "")
-      .trim()
-      .toLowerCase();
-    return cleaned;
   };
 
   instances
@@ -5316,7 +5326,14 @@ function buildOrderProductOptions(storeId = "", order = null) {
       }
       const label = parts.join(" · ");
       const displayLabel = labelParts.join(" · ");
-      const key = normalizeKey(displayLabel || label);
+      const expiryText = pickExpiryText(
+        inst.expiryText,
+        product?.expiryText,
+        product?.shelfLifeDays,
+        unifiedProduct?.expiryText,
+        unifiedProduct?.shelfLifeDays
+      );
+      const key = normalizeOrderProductKey(displayLabel || label);
       if (seen.has(key)) return;
       seen.add(key);
       orderProductOptionMap.set(key, {
@@ -5326,6 +5343,7 @@ function buildOrderProductOptions(storeId = "", order = null) {
         displayLabel,
         markerLabel: label,
         missing: isMissing,
+        expiryText,
       });
       options.push({ value: label, missing: isMissing, displayLabel, key });
     });
@@ -5334,7 +5352,7 @@ function buildOrderProductOptions(storeId = "", order = null) {
     order.items.forEach((item) => {
       const label = (item.productName || "").trim();
       if (!label) return;
-      const key = normalizeKey(label);
+      const key = normalizeOrderProductKey(label);
       if (!seen.has(key)) {
         seen.add(key);
         orderProductOptionMap.set(key, {
@@ -5342,6 +5360,7 @@ function buildOrderProductOptions(storeId = "", order = null) {
           productId: item.productId || "",
           productName: label,
           markerLabel: label,
+          expiryText: pickExpiryText(item.expiryText, item.shelfLifeDays),
         });
         options.push({ value: label, key });
       }
@@ -5484,6 +5503,38 @@ function isOrderItemMissing(item = {}) {
   return !!(isMissingInst || isMissingProd);
 }
 
+function getOrderItemExpiryText(item = {}) {
+  const direct = pickExpiryText(item.expiryText, item.shelfLifeDays);
+  if (direct) return direct;
+  const key = normalizeOrderProductKey(item.productName || "");
+  const option = key ? orderProductOptionMap.get(key) : null;
+  const optionExpiry = pickExpiryText(option?.expiryText);
+  if (optionExpiry) return optionExpiry;
+  const product =
+    (option?.productId && findProductById(option.productId)) ||
+    resolveProductFromOrderItem(item);
+  return pickExpiryText(product?.expiryText, product?.shelfLifeDays);
+}
+
+function getOrderRowPayload(row) {
+  if (!row) return null;
+  const productInput = row.querySelector("input[data-field='product']");
+  const quantityInput = row.querySelector("input[data-field='quantity']");
+  const productValue = (productInput?.value || "").trim();
+  const quantity = (quantityInput?.value || "").trim();
+  const key = normalizeOrderProductKey(productValue);
+  const opt = key ? orderProductOptionMap.get(key) : null;
+
+  return {
+    id: row.dataset.id || "",
+    productName: productValue || opt?.productName || "",
+    quantity,
+    instanceId: opt?.instanceId || row.dataset.instanceId || "",
+    productId: opt?.productId || row.dataset.productId || "",
+    expiryText: pickExpiryText(opt?.expiryText, row.dataset.expiryText),
+  };
+}
+
 function createOrderRow(item = {}) {
   const productInput = document.createElement("input");
   productInput.type = "text";
@@ -5499,6 +5550,11 @@ function createOrderRow(item = {}) {
   quantityInput.placeholder = "Cantidad";
   quantityInput.className = "table-input";
   quantityInput.dataset.field = "quantity";
+
+  const expiryText = getOrderItemExpiryText(item);
+  const expiryDisplay = document.createElement("span");
+  expiryDisplay.className = "orders-expiry-value";
+  expiryDisplay.textContent = expiryText;
 
   const actionsTd = document.createElement("td");
   actionsTd.className = "orders-actions-cell";
@@ -5520,6 +5576,7 @@ function createOrderRow(item = {}) {
       },
       replacements: {
         "[data-slot='product']": productInput,
+        "[data-slot='expiry']": expiryDisplay,
         "[data-slot='quantity']": quantityInput,
         "[data-slot='actions']": actionsTd,
       },
@@ -5532,6 +5589,8 @@ function createOrderRow(item = {}) {
         if (productCellInput) productCellInput.classList.add("order-row-missing-input");
         row.dataset.missing = "1";
       }
+      row.dataset.expiryText = expiryText || "";
+      updateOrderRowExpiry(row);
       return row;
     }
   }
@@ -5551,6 +5610,10 @@ function createOrderRow(item = {}) {
   tr.appendChild(td);
 
   td = document.createElement("td");
+  td.appendChild(expiryDisplay);
+  tr.appendChild(td);
+
+  td = document.createElement("td");
   td.appendChild(quantityInput);
   tr.appendChild(td);
 
@@ -5559,7 +5622,21 @@ function createOrderRow(item = {}) {
   if (missing) {
     productInput.classList.add("order-row-missing-input");
   }
+  tr.dataset.expiryText = expiryText || "";
+  updateOrderRowExpiry(tr);
   return tr;
+}
+
+function updateOrderRowExpiry(row) {
+  if (!row) return;
+  const payload = getOrderRowPayload(row);
+  if (!payload) return;
+  const expiryText = getOrderItemExpiryText(payload);
+  const target = row.querySelector(".orders-expiry-value");
+  if (target) target.textContent = expiryText;
+  row.dataset.instanceId = payload.instanceId || "";
+  row.dataset.productId = payload.productId || "";
+  row.dataset.expiryText = expiryText || "";
 }
 
 function addOrdersPlaceholderRow() {
@@ -5567,7 +5644,7 @@ function addOrdersPlaceholderRow() {
   const tr = document.createElement("tr");
   tr.dataset.empty = "true";
   const td = document.createElement("td");
-  td.colSpan = 3;
+  td.colSpan = 4;
   td.textContent = "Añade productos con + producto.";
   tr.appendChild(td);
   ordersTableBody.appendChild(tr);
@@ -5660,19 +5737,18 @@ function readOrderRows() {
   );
   const items = [];
   rows.forEach((row) => {
-    const productInput = row.querySelector("input[data-field='product']");
-    const quantityInput = row.querySelector("input[data-field='quantity']");
-    const productValue = (productInput?.value || "").trim();
-    const quantity = (quantityInput?.value || "").trim();
-    const key = productValue.toLowerCase();
-    const opt = key ? orderProductOptionMap.get(key) : null;
-    if (!productValue && !quantity) return;
+    const payload = getOrderRowPayload(row);
+    if (!payload) return;
+    if (!payload.productName && !payload.quantity) return;
+    const expiryText = getOrderItemExpiryText(payload);
+    row.dataset.expiryText = expiryText || "";
     items.push({
-      id: row.dataset.id || "",
-      productName: productValue || opt?.productName || "",
-      quantity,
-      instanceId: opt?.instanceId || row.dataset.instanceId || "",
-      productId: opt?.productId || row.dataset.productId || "",
+      id: payload.id || "",
+      productName: payload.productName || "",
+      quantity: payload.quantity || "",
+      instanceId: payload.instanceId || "",
+      productId: payload.productId || "",
+      expiryText,
     });
   });
   return items;
@@ -5803,6 +5879,14 @@ function handleOrdersTableClick(e) {
     addOrdersPlaceholderRow();
   }
   updateOrdersSummaryFromTable();
+}
+
+function handleOrdersInputChange(e) {
+  const target = e.target;
+  if (!target || target.dataset.field !== "product") return;
+  const row = target.closest("tr");
+  if (!row) return;
+  updateOrderRowExpiry(row);
 }
 
 function handleClearOrder() {
