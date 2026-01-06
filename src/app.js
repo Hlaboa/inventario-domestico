@@ -891,18 +891,25 @@ function applyStateSnapshot(snapshot = {}) {
     const map = new Map(
       (Array.isArray(local) ? local : []).map((p) => [String(p.id || ""), p]).filter(([k]) => k)
     );
+    const hasOwn = (obj, key) => !!obj && Object.prototype.hasOwnProperty.call(obj, key);
+    const trimmed = (val) => (val === undefined || val === null ? "" : String(val).trim());
     return (Array.isArray(list) ? list : []).map((item) => {
       const key = String(item?.id || "");
       if (!key || map.size === 0) return item;
       const localItem = map.get(key);
       if (!localItem) return item;
-      const expiry =
-        (item.expiryText && item.expiryText.trim()) ||
-        (item.shelfLifeDays && String(item.shelfLifeDays).trim()) ||
-        (localItem.expiryText && localItem.expiryText.trim()) ||
-        (localItem.shelfLifeDays && String(localItem.shelfLifeDays).trim()) ||
-        "";
-      const acquisition = item.acquisitionDate || localItem.acquisitionDate || "";
+      const expiry = (() => {
+        if (hasOwn(item, "expiryText")) return trimmed(item.expiryText);
+        if (hasOwn(item, "shelfLifeDays")) return trimmed(item.shelfLifeDays);
+        if (hasOwn(localItem, "expiryText")) return trimmed(localItem.expiryText);
+        if (hasOwn(localItem, "shelfLifeDays")) return trimmed(localItem.shelfLifeDays);
+        return "";
+      })();
+      const acquisition = hasOwn(item, "acquisitionDate")
+        ? trimmed(item.acquisitionDate)
+        : hasOwn(localItem, "acquisitionDate")
+          ? trimmed(localItem.acquisitionDate)
+          : "";
       return {
         ...item,
         expiryText: expiry,
