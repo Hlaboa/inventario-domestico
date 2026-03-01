@@ -54,6 +54,8 @@
   function normalizeExtraProduct(p) {
     const res = normalizeMultiFields(p);
     const buy = !!res.buy;
+    const hasBuy = res.buy !== undefined;
+    const hasHave = res.have !== undefined;
     res.id =
       res.id !== undefined && res.id !== null && String(res.id).trim().length > 0
         ? String(res.id)
@@ -62,7 +64,7 @@
             : "extra-" + Math.random().toString(36).slice(2));
     res.selectionId = res.selectionId || "";
     res.buy = buy;
-    res.have = res.have !== undefined ? !!res.have : !buy;
+    res.have = hasHave ? !!res.have : hasBuy ? !buy : false;
     res.acquisitionDate = res.acquisitionDate || "";
     res.quantity = res.quantity || "";
     res.block = res.block || "";

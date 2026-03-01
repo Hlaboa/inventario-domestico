@@ -37,8 +37,10 @@
     let buy = !!p.buy;
     let have = !!p.have;
     if (scope === "otros") {
-      buy = p.buy !== undefined ? !!p.buy : !have;
-      have = !buy;
+      const hasBuy = p.buy !== undefined;
+      const hasHave = p.have !== undefined;
+      buy = hasBuy ? !!p.buy : hasHave ? !have : false;
+      have = hasHave ? !!p.have : hasBuy ? !buy : false;
     }
     const expiryText =
       [p.expiryText, p.shelfLifeDays]

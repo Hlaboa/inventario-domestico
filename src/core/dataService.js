@@ -127,10 +127,13 @@
               : `${scope}-` + Math.random().toString(36).slice(2));
       const current = existing.find((u) => u.id === id) || {};
       const base = scope === "otros"
-        ? {
-            buy: item.buy !== undefined ? !!item.buy : !item.have,
-            have: item.have !== undefined ? !!item.have : !(item.buy ?? false),
-          }
+        ? (() => {
+            const hasBuy = item.buy !== undefined;
+            const hasHave = item.have !== undefined;
+            const buy = hasBuy ? !!item.buy : hasHave ? !item.have : false;
+            const have = hasHave ? !!item.have : hasBuy ? !item.buy : false;
+            return { buy, have };
+          })()
         : {};
       map.set(id, {
         ...current,

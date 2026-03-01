@@ -898,29 +898,32 @@ textarea:focus-visible {
 }
 
 .table-extra-edit col:nth-child(1) {
-  width: 20%;
+  width: 19%;
 }
 .table-extra-edit col:nth-child(2),
 .table-extra-edit col:nth-child(3) {
-  width: 12%;
+  width: 11%;
 }
 .table-extra-edit col:nth-child(4) {
-  width: 6%;
+  width: 4%;
 }
 .table-extra-edit col:nth-child(5) {
-  width: 8%;
-}
-.table-extra-edit col:nth-child(6) {
-  width: 18%;
-}
-.table-extra-edit col:nth-child(7) {
-  width: 15%;
-}
-.table-extra-edit col:nth-child(8) {
   width: 6%;
 }
+.table-extra-edit col:nth-child(6) {
+  width: 8%;
+}
+.table-extra-edit col:nth-child(7) {
+  width: 17%;
+}
+.table-extra-edit col:nth-child(8) {
+  width: 14%;
+}
 .table-extra-edit col:nth-child(9) {
-  width: 3%;
+  width: 5%;
+}
+.table-extra-edit col:nth-child(10) {
+  width: 5%;
 }
 
 .product-table thead,

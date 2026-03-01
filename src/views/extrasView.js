@@ -110,6 +110,7 @@
       item.type,
       item.quantity,
       item.buy ? "1" : "0",
+      item.have ? "1" : "0",
       item.notes,
       selectionLabel,
       storesLabel,
@@ -152,18 +153,33 @@
     addCellText(item.type || "");
 
     let td = document.createElement("td");
-    const chk = document.createElement("input");
-    chk.type = "checkbox";
-    chk.checked = !!item.buy;
-    chk.dataset.field = "buy";
-    chk.dataset.id = item.id;
-    chk.addEventListener("change", () => {
+    const haveChk = document.createElement("input");
+    haveChk.type = "checkbox";
+    haveChk.checked = !!item.have;
+    haveChk.dataset.field = "have";
+    haveChk.dataset.id = item.id;
+    haveChk.addEventListener("change", () => {
       const ctx = getCtx();
-      if (typeof ctx.onToggleBuy === "function") {
-        ctx.onToggleBuy(item.id, chk.checked);
+      if (typeof ctx.onToggleHave === "function") {
+        ctx.onToggleHave(item.id, haveChk.checked);
       }
     });
-    td.appendChild(chk);
+    td.appendChild(haveChk);
+    tr.appendChild(td);
+
+    td = document.createElement("td");
+    const buyChk = document.createElement("input");
+    buyChk.type = "checkbox";
+    buyChk.checked = !!item.buy;
+    buyChk.dataset.field = "buy";
+    buyChk.dataset.id = item.id;
+    buyChk.addEventListener("change", () => {
+      const ctx = getCtx();
+      if (typeof ctx.onToggleBuy === "function") {
+        ctx.onToggleBuy(item.id, buyChk.checked);
+      }
+    });
+    td.appendChild(buyChk);
     tr.appendChild(td);
 
     addCellText(item.quantity || "");
@@ -190,14 +206,14 @@
 
     addCellText(item.notes || "");
 
-  td = document.createElement("td");
-  const editBtn = document.createElement("button");
-  editBtn.className = "btn btn-small btn-icon";
-  editBtn.textContent = "✎";
-  editBtn.title = "Editar producto";
-  editBtn.setAttribute("aria-label", "Editar producto");
-  editBtn.dataset.action = "edit-extra";
-  editBtn.dataset.id = item.id;
+    td = document.createElement("td");
+    const editBtn = document.createElement("button");
+    editBtn.className = "btn btn-small btn-icon";
+    editBtn.textContent = "✎";
+    editBtn.title = "Editar producto";
+    editBtn.setAttribute("aria-label", "Editar producto");
+    editBtn.dataset.action = "edit-extra";
+    editBtn.dataset.id = item.id;
     td.appendChild(editBtn);
 
     tr.appendChild(td);
@@ -211,6 +227,7 @@
     row.dataset.block = item.block || "";
     row.dataset.type = item.type || "";
     row.dataset.buy = item.buy ? "1" : "0";
+    row.dataset.have = item.have ? "1" : "0";
     const futureLabel = getFutureLabel(item, context);
     row.dataset.futureOrder = futureLabel ? "1" : "0";
     const selectionLabel = getSelectionLabelCached(item, context);
@@ -230,6 +247,8 @@
     row.dataset.search = `${item.name || ""} ${item.block || ""} ${item.type || ""} ${item.quantity || ""} ${selectionLabel} ${storesLabel} ${futureLabel || ""} ${item.notes || ""}`.toLowerCase();
     const buyChk = row.querySelector('input[data-field="buy"]');
     if (buyChk) buyChk.checked = !!item.buy;
+    const haveChk = row.querySelector('input[data-field="have"]');
+    if (haveChk) haveChk.checked = !!item.have;
     const futureCell = row.querySelector("[data-field='futureOrder']");
     if (futureCell) {
       futureCell.textContent = futureLabel || "";
@@ -243,7 +262,15 @@
     const filterType = refs.typeFilter?.value || "";
     const filterStore = refs.storeFilter?.value || "";
     const filterBuy = refs.buyFilter?.value || "all";
-    return search || filterFamily || filterType || filterStore || filterBuy !== "all";
+    const filterHave = refs.haveFilter?.value || "all";
+    return (
+      search ||
+      filterFamily ||
+      filterType ||
+      filterStore ||
+      filterBuy !== "all" ||
+      filterHave !== "all"
+    );
   }
 
   function renderDrafts(context, tableBody, drafts = null) {
@@ -252,6 +279,8 @@
       drafts ||
       ((typeof context.getDrafts === "function" ? context.getDrafts() : []) || []);
     list.forEach((d) => {
+      const haveValue = d.have !== undefined ? !!d.have : false;
+      const buyValue = d.buy !== undefined ? !!d.buy : false;
       const tr = document.createElement("tr");
       tr.className = "extra-draft-row";
       tr.dataset.draftId = d.id;
@@ -280,10 +309,23 @@
       td.appendChild(typeSel);
       tr.appendChild(td);
 
-      // Comprar (4ª)
+      // Tengo (4ª)
       td = document.createElement("td");
-      const buyChk = makeInput(helpers, "buy", d.buy ? "on" : "", "checkbox");
-      buyChk.checked = !!d.buy;
+      const haveChk = makeInput(helpers, "have", haveValue ? "on" : "", "checkbox");
+      haveChk.checked = haveValue;
+      haveChk.dataset.id = d.originalId || d.id;
+      haveChk.addEventListener("change", () => {
+        if (typeof context.onToggleHave === "function") {
+          context.onToggleHave(d.originalId || d.id, haveChk.checked);
+        }
+      });
+      td.appendChild(haveChk);
+      tr.appendChild(td);
+
+      // Comprar (5ª)
+      td = document.createElement("td");
+      const buyChk = makeInput(helpers, "buy", buyValue ? "on" : "", "checkbox");
+      buyChk.checked = buyValue;
       buyChk.dataset.id = d.originalId || d.id;
       buyChk.addEventListener("change", () => {
         if (typeof context.onToggleBuy === "function") {
@@ -293,12 +335,12 @@
       td.appendChild(buyChk);
       tr.appendChild(td);
 
-      // Cantidad (5ª)
+      // Cantidad (6ª)
       td = document.createElement("td");
       td.appendChild(makeInput(helpers, "quantity", d.quantity || ""));
       tr.appendChild(td);
 
-      // Selección (6ª)
+      // Selección (7ª)
       td = document.createElement("td");
       td.className = "selection-td";
       const selCell = document.createElement("div");
@@ -310,19 +352,19 @@
       td.appendChild(selCell);
       tr.appendChild(td);
 
-      // Tiendas (7ª)
+      // Tiendas (8ª)
       td = document.createElement("td");
       const storesSpan = document.createElement("span");
       storesSpan.textContent = "";
       td.appendChild(storesSpan);
       tr.appendChild(td);
 
-      // Notas (8ª)
+      // Notas (9ª)
       td = document.createElement("td");
       td.appendChild(makeTextarea(helpers, "notes", d.notes || ""));
       tr.appendChild(td);
 
-      // Acciones (9ª)
+      // Acciones (10ª)
       td = document.createElement("td");
       const saveBtn = document.createElement("button");
       saveBtn.className = "btn btn-small btn-success";
@@ -437,9 +479,12 @@
         tr.dataset.draftId = d.id;
         tr.dataset.id = d.originalId || d.id;
         tr.dataset.originalId = d.originalId || "";
+        const haveValue = d.have !== undefined ? !!d.have : false;
+        const buyValue = d.buy !== undefined ? !!d.buy : false;
         tr.dataset.block = d.block || "";
         tr.dataset.type = d.type || "";
-        tr.dataset.buy = d.buy ? "1" : "0";
+        tr.dataset.buy = buyValue ? "1" : "0";
+        tr.dataset.have = haveValue ? "1" : "0";
         tr.dataset.futureOrder = "0";
         tr.dataset.search = `${d.name || ""} ${d.block || ""} ${d.type || ""} ${d.quantity || ""} ${d.notes || ""}`.toLowerCase();
         const stripe = stripeMap[(d.block || "").trim() || "__none__"] || 0;
@@ -469,8 +514,30 @@
         tr.appendChild(td);
 
         td = document.createElement("td");
-        const buyChk = makeInput(context.helpers || {}, "buy", d.buy ? "on" : "", "checkbox");
-        buyChk.checked = !!d.buy;
+        const haveChk = makeInput(
+          context.helpers || {},
+          "have",
+          haveValue ? "on" : "",
+          "checkbox"
+        );
+        haveChk.checked = haveValue;
+        haveChk.dataset.id = d.originalId || d.id;
+        haveChk.addEventListener("change", () => {
+          if (typeof context.onToggleHave === "function") {
+            context.onToggleHave(d.originalId || d.id, haveChk.checked);
+          }
+        });
+        td.appendChild(haveChk);
+        tr.appendChild(td);
+
+        td = document.createElement("td");
+        const buyChk = makeInput(
+          context.helpers || {},
+          "buy",
+          buyValue ? "on" : "",
+          "checkbox"
+        );
+        buyChk.checked = buyValue;
         buyChk.dataset.id = d.originalId || d.id;
         buyChk.addEventListener("change", () => {
           if (typeof context.onToggleBuy === "function") {
@@ -560,6 +627,8 @@
         decorateRow(row, p, stripe, context);
         const buyChk = row.querySelector('input[data-field="buy"]');
         if (buyChk) buyChk.checked = !!p.buy;
+        const haveChk = row.querySelector('input[data-field="have"]');
+        if (haveChk) haveChk.checked = !!p.have;
         frag.appendChild(row);
         nextRowMap.set(p.id, row);
         nextHashMap.set(p.id, hash);
@@ -578,7 +647,7 @@
     if (nextRowMap.size === 0 && draftsCount === 0) {
       const tr = document.createElement("tr");
       const td = document.createElement("td");
-      td.colSpan = 10;
+      td.colSpan = 11;
       td.textContent =
         "No hay otros productos. Usa 'Editar lista' para añadir algunos.";
       tr.appendChild(td);
@@ -599,6 +668,7 @@
     const filterType = refs.typeFilter?.value || "";
     const filterStore = refs.storeFilter?.value || "";
     const filterBuy = refs.buyFilter?.value || "all";
+    const filterHave = refs.haveFilter?.value || "all";
     const futureMap =
       context.futureMap ||
       (typeof window.buildFutureOrderMap === "function"
@@ -613,6 +683,7 @@
       const block = row.dataset.block || "";
       const type = row.dataset.type || "";
       const buy = row.dataset.buy === "1";
+      const have = row.dataset.have === "1";
       const storeIds = (row.dataset.storeIds || "").split(",").filter(Boolean);
       const future =
         row.dataset.futureOrder === "1"
@@ -630,6 +701,8 @@
       if (filterFamily && block !== filterFamily) visible = false;
       if (visible && filterType && type !== filterType) visible = false;
       if (visible && filterStore && !storeIds.includes(filterStore)) visible = false;
+      if (visible && filterHave === "have" && !have) visible = false;
+      if (visible && filterHave === "missing" && have) visible = false;
       if (visible && filterBuy === "yes" && !buy) visible = false;
       if (visible && filterBuy === "no" && buy) visible = false;
       if (visible && filterBuy === "future" && !future) visible = false;
@@ -673,6 +746,21 @@
       } else {
         const row = target.closest("tr");
         if (row) row.remove();
+      }
+      return;
+    }
+
+    if (target.matches('input[type="checkbox"][data-field="have"]')) {
+      const id = target.dataset.id;
+      const row = target.closest("tr");
+      if (row) {
+        row.dataset.have = target.checked ? "1" : "0";
+      }
+      if (hasActiveFilters(context.refs)) {
+        filterRows(context);
+      }
+      if (typeof context.onToggleHave === "function") {
+        context.onToggleHave(id, target.checked);
       }
       return;
     }
@@ -736,13 +824,18 @@
     if (refs.tableBody) refs.tableBody.addEventListener("click", handleClick);
 
     const refilter = debounce(() => filterRows(context));
-    [refs.searchInput, refs.familyFilter, refs.typeFilter, refs.storeFilter, refs.buyFilter].forEach(
-      (el) => {
-        if (!el) return;
-        const evt = el.tagName === "INPUT" ? "input" : "change";
-        el.addEventListener(evt, refilter);
-      }
-    );
+    [
+      refs.searchInput,
+      refs.familyFilter,
+      refs.typeFilter,
+      refs.storeFilter,
+      refs.haveFilter,
+      refs.buyFilter,
+    ].forEach((el) => {
+      if (!el) return;
+      const evt = el.tagName === "INPUT" ? "input" : "change";
+      el.addEventListener(evt, refilter);
+    });
 
     render(context);
   }

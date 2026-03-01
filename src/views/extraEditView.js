@@ -75,21 +75,41 @@
     const selectionBtn = helpers.createSelectionButton
       ? helpers.createSelectionButton(product.selectionId, product.id)
       : null;
-    const buyCheckbox = makeInput(helpers, "buy", "", "checkbox");
+    let buyCheckbox = null;
+    const haveCheckbox = makeInput(helpers, "have", "", "checkbox");
+    haveCheckbox.checked = !!product.have;
+    haveCheckbox.dataset.id = product.id;
+    haveCheckbox.addEventListener("change", () => {
+      const context = getCtx();
+      const row = haveCheckbox.closest("tr");
+      const nextHave = !!haveCheckbox.checked;
+      if (row) {
+        row.dataset.have = nextHave ? "1" : "0";
+      }
+      if (typeof context.onToggleHave === "function") {
+        context.onToggleHave(product.id, nextHave);
+      }
+    });
+    buyCheckbox = makeInput(helpers, "buy", "", "checkbox");
     buyCheckbox.checked = !!product.buy;
     buyCheckbox.dataset.id = product.id;
     buyCheckbox.addEventListener("change", () => {
       const context = getCtx();
+      const row = buyCheckbox.closest("tr");
+      const nextBuy = !!buyCheckbox.checked;
+      if (row) {
+        row.dataset.buy = nextBuy ? "1" : "0";
+      }
       if (typeof context.onToggleBuy === "function") {
-        context.onToggleBuy(product.id, buyCheckbox.checked);
+        context.onToggleBuy(product.id, nextBuy);
       }
     });
-    buyCheckbox.dataset.id = product.id;
 
     const tr = document.createElement("tr");
     tr.dataset.id = product.id;
     tr.classList.add(`family-stripe-${stripe}`);
     tr.dataset.buy = product.buy ? "1" : "0";
+    tr.dataset.have = product.have ? "1" : "0";
     tr.dataset.futureOrder = futureLabel ? "1" : "0";
 
     let td = document.createElement("td");
@@ -104,18 +124,24 @@
     td.appendChild(typeSel);
     tr.appendChild(td);
 
-    // Comprar (4ª columna)
+    // Tengo (4ª columna)
+    td = document.createElement("td");
+    haveCheckbox.checked = !!product.have;
+    td.appendChild(haveCheckbox);
+    tr.appendChild(td);
+
+    // Comprar (5ª columna)
     td = document.createElement("td");
     buyCheckbox.checked = !!product.buy;
     td.appendChild(buyCheckbox);
     tr.appendChild(td);
 
-    // Cantidad (5ª)
+    // Cantidad (6ª)
     td = document.createElement("td");
     td.appendChild(makeInput(helpers, "quantity", product.quantity));
     tr.appendChild(td);
 
-    // Selección (6ª)
+    // Selección (7ª)
     td = document.createElement("td");
     td.className = "selection-td";
     const selCell = document.createElement("div");
@@ -130,7 +156,7 @@
     td.appendChild(selCell);
     tr.appendChild(td);
 
-    // Tiendas (7ª)
+    // Tiendas (8ª)
     td = document.createElement("td");
     const spanStores = document.createElement("span");
     spanStores.className = "stores-text";
@@ -140,18 +166,18 @@
     td.appendChild(spanStores);
     tr.appendChild(td);
 
-    // Pedido (8ª)
+    // Pedido (9ª)
     td = document.createElement("td");
     td.textContent = futureLabel || "";
     td.title = futureLabel ? `Incluido en pedido: ${futureLabel}` : "";
     tr.appendChild(td);
 
-    // Notas (9ª)
+    // Notas (10ª)
     td = document.createElement("td");
     td.appendChild(makeTextarea(helpers, "notes", product.notes || ""));
     tr.appendChild(td);
 
-    // Acciones (10ª)
+    // Acciones (11ª)
     td = document.createElement("td");
     const moveBtn = document.createElement("button");
     moveBtn.className = "btn btn-small btn-icon";
@@ -210,7 +236,7 @@
         template: refs.rowTemplate,
         emptyMessage:
           "No hay otros productos todavía. Usa 'Añadir producto' para crear uno.",
-        emptyColSpan: 10,
+        emptyColSpan: 11,
         createRow: (item) => {
           const stripe =
             stripeMap[(item.block || "").trim() || "__none__"] || 0;
@@ -222,7 +248,7 @@
       if (items.length === 0) {
         const tr = document.createElement("tr");
         const td = document.createElement("td");
-        td.colSpan = 10;
+        td.colSpan = 11;
         td.textContent =
           "No hay otros productos todavía. Usa 'Añadir producto' para crear uno.";
         tr.appendChild(td);
@@ -236,6 +262,8 @@
           if (row) {
             const buyChk = row.querySelector('input[data-field="buy"]');
             if (buyChk) buyChk.checked = !!p.buy;
+            const haveChk = row.querySelector('input[data-field="have"]');
+            if (haveChk) haveChk.checked = !!p.have;
             frag.appendChild(row);
           }
         });
@@ -306,12 +334,16 @@
       const quantity = getField("quantity");
       const notes = (tr.querySelector('textarea[data-field="notes"]') || {})
         .value;
-      const buy = !!getField("buy");
-
       const existing =
         (typeof context.findById === "function"
           ? context.findById(id)
           : null) || {};
+      const haveField = getField("have");
+      const buyField = getField("buy");
+      const hasHaveField = typeof haveField === "boolean";
+      const hasBuyField = typeof buyField === "boolean";
+      const have = hasHaveField ? haveField : !!existing.have;
+      const buy = hasBuyField ? buyField : !!existing.buy;
       const createdAt = existing.createdAt || now;
       const selectionId = existing.selectionId || "";
 
@@ -323,7 +355,7 @@
         quantity,
         notes,
         buy,
-        have: !buy,
+        have,
         selectionId,
         createdAt,
         updatedAt: now,
@@ -357,6 +389,7 @@
     const filterBlock = refs.familyFilter?.value || "";
     const filterType = refs.typeFilter?.value || "";
     const filterStoreId = refs.storeFilter?.value || "";
+    const filterHave = refs.haveFilter?.value || "all";
 
     const predicate = (tr) => {
       const id = tr.dataset.id;
@@ -364,11 +397,14 @@
       const name = (tr.querySelector('input[data-field="name"]') || {}).value || "";
       const block = (tr.querySelector('[data-field="block"]') || {}).value || "";
       const type = (tr.querySelector('[data-field="type"]') || {}).value || "";
+      const have = !!(tr.querySelector('input[data-field="have"]') || {}).checked;
       const notes = (tr.querySelector('textarea[data-field="notes"]') || {})
         .value || "";
 
       if (filterBlock && block !== filterBlock) return false;
       if (filterType && type !== filterType) return false;
+      if (filterHave === "have" && !have) return false;
+      if (filterHave === "missing" && have) return false;
       if (filterStoreId && !matchesStore(context, id, filterStoreId)) {
         return false;
       }
@@ -455,13 +491,17 @@
     if (refs.saveButton) refs.saveButton.addEventListener("click", () => save());
 
     const filterListener = () => filterRows();
-    [refs.searchInput, refs.familyFilter, refs.typeFilter, refs.storeFilter].forEach(
-      (el) => {
-        if (!el) return;
-        const evt = el.tagName === "INPUT" ? "input" : "change";
-        el.addEventListener(evt, filterListener);
-      }
-    );
+    [
+      refs.searchInput,
+      refs.familyFilter,
+      refs.typeFilter,
+      refs.storeFilter,
+      refs.haveFilter,
+    ].forEach((el) => {
+      if (!el) return;
+      const evt = el.tagName === "INPUT" ? "input" : "change";
+      el.addEventListener(evt, filterListener);
+    });
 
     render(context);
   }

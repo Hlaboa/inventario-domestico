@@ -65,6 +65,12 @@
       if (text === "→") action = "move-to-almacen";
     }
 
+    if (target.matches('input[type="checkbox"][data-field="have"]')) {
+      const id = target.dataset.id;
+      actions.toggleHave?.(id, target.checked);
+      return;
+    }
+
     if (target.matches('input[type="checkbox"][data-field="buy"]')) {
       const id = target.dataset.id;
       actions.toggleBuy?.(id, target.checked);
@@ -129,10 +135,17 @@
     };
 
     return {
+      toggleHave: (id, checked) => {
+        updateUnified((extras) =>
+          extras.map((p) =>
+            String(p.id) === String(id) ? { ...p, have: checked } : p
+          )
+        );
+      },
       toggleBuy: (id, checked) => {
         updateUnified((extras) =>
           extras.map((p) =>
-            String(p.id) === String(id) ? { ...p, buy: checked, have: !checked } : p
+            String(p.id) === String(id) ? { ...p, buy: checked } : p
           )
         );
       },

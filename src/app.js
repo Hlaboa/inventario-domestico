@@ -411,8 +411,9 @@ function normalizeExtrasHave(list = []) {
     if (!p) return p;
     const id = p.id !== undefined && p.id !== null ? String(p.id) : p.id;
     if (p.scope !== "otros") return { ...p, id };
-    const buy = !!p.buy;
-    return { ...p, id, buy, have: !buy };
+    const buy = p.buy !== undefined ? !!p.buy : false;
+    const have = p.have !== undefined ? !!p.have : p.buy !== undefined ? !buy : false;
+    return { ...p, id, buy, have };
   });
 }
 
@@ -462,7 +463,7 @@ function updateExtraBuyFlag(id, checked) {
     if (!p || String(p.id) !== targetId) return p;
     if (!!p.buy === !!checked) return p;
     touched = true;
-    return { ...p, buy: !!checked, have: !checked, updatedAt: nowIsoVal };
+    return { ...p, buy: !!checked, updatedAt: nowIsoVal };
   });
   if (!touched) return;
 
@@ -551,6 +552,50 @@ function updateExtraBuyFlag(id, checked) {
     const duration = performance.now() - t0;
     perfLog("flushExtrasUpdates", duration, `items=${(payload || []).length}`);
   };
+
+  if (extraSummaryInfo) {
+    renderExtraSummary();
+  }
+  flushPendingExtrasImmediate();
+}
+
+function updateExtraHaveFlag(id, checked) {
+  const targetId = id !== undefined && id !== null ? String(id) : "";
+  if (!targetId) return;
+  const unified = pendingExtrasUnified || getUnifiedForWrite();
+  const nowIsoVal = nowIsoString();
+  let touched = false;
+  const updatedUnified = unified.map((p) => {
+    if (!p || String(p.id) !== targetId) return p;
+    if (!!p.have === !!checked) return p;
+    touched = true;
+    return { ...p, have: !!checked, updatedAt: nowIsoVal };
+  });
+  if (!touched) return;
+
+  const quickRow = extraListTableBody?.querySelector(`tr[data-id="${id}"]`);
+  if (quickRow) {
+    quickRow.dataset.have = checked ? "1" : "0";
+    const chk = quickRow.querySelector('input[data-field="have"]');
+    if (chk) chk.checked = !!checked;
+  }
+
+  const editRow = extraTableBody?.querySelector(`tr[data-id="${id}"]`);
+  if (editRow) {
+    editRow.dataset.have = checked ? "1" : "0";
+    const chk = editRow.querySelector('input[data-field="have"]');
+    if (chk) chk.checked = !!checked;
+  }
+
+  pendingExtrasUnified = updatedUnified;
+  if (extrasViewContext) extrasViewContext.__skipNextRender = true;
+  if (extraEditViewContext) extraEditViewContext.__skipNextRender = true;
+  if (window.ExtrasFeature && typeof window.ExtrasFeature.skipNextRender === "function") {
+    try {
+      window.ExtrasFeature.skipNextRender();
+    } catch {}
+  }
+  skipExtraControllerUntil = Date.now() + 350;
 
   if (extraSummaryInfo) {
     renderExtraSummary();
@@ -820,7 +865,9 @@ function updateUnifiedWithExtras(list) {
 
 function handleGlobalExtraBuyToggle(e) {
   const target = e.target;
-  if (!target || target.type !== "checkbox" || target.dataset.field !== "buy") return;
+  if (!target || target.type !== "checkbox") return;
+  const field = target.dataset.field;
+  if (field !== "buy" && field !== "have") return;
   const row = target.closest("tr");
   const id = target.dataset.id || row?.dataset.id;
   if (!id) return;
@@ -828,7 +875,11 @@ function handleGlobalExtraBuyToggle(e) {
     (extraListTableBody && extraListTableBody.contains(row)) ||
     (extraTableBody && extraTableBody.contains(row));
   if (!inExtrasTable) return;
-  updateExtraBuyFlag(id, target.checked);
+  if (field === "buy") {
+    updateExtraBuyFlag(id, target.checked);
+  } else {
+    updateExtraHaveFlag(id, target.checked);
+  }
 }
 
 function isStoreActive() {
@@ -853,8 +904,9 @@ function areExtraFiltersActive() {
   const family = extraFilterFamilySelect?.value || "";
   const type = extraFilterTypeSelect?.value || "";
   const store = extraFilterStoreSelect?.value || "";
+  const have = extraFilterHaveSelect?.value || "all";
   const buy = extraFilterBuySelect?.value || "all";
-  return search || family || type || store || buy !== "all";
+  return search || family || type || store || buy !== "all" || have !== "all";
 }
 
 
@@ -1057,6 +1109,7 @@ let extraFilterSearchInput;
 let extraFilterFamilySelect;
 let extraFilterTypeSelect;
 let extraFilterStoreSelect;
+let extraFilterHaveSelect;
 let extraFilterBuySelect;
 
 // Otros (editar)
@@ -1067,6 +1120,7 @@ let extraEditFilterSearchInput;
 let extraEditFilterFamilySelect;
 let extraEditFilterTypeSelect;
 let extraEditFilterStoreSelect;
+let extraEditFilterHaveSelect;
 let extraQuickRowTemplate;
 let inventoryRowTemplate;
 
@@ -1425,6 +1479,7 @@ function initAfterDom(tStart = performance.now()) {
     extraFilterFamilySelect,
     extraFilterTypeSelect,
     extraFilterStoreSelect,
+    extraFilterHaveSelect,
     extraFilterBuySelect,
     extraTableBody,
     addExtraRowButton,
@@ -1433,6 +1488,7 @@ function initAfterDom(tStart = performance.now()) {
     extraEditFilterFamilySelect,
     extraEditFilterTypeSelect,
     extraEditFilterStoreSelect,
+    extraEditFilterHaveSelect,
     extraQuickRowTemplate,
     extraEditRowTemplate,
     producersSearchInput,
@@ -1736,11 +1792,13 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
             extraFilterFamilySelect,
             extraFilterTypeSelect,
             extraFilterStoreSelect,
+            extraFilterHaveSelect,
             extraFilterBuySelect,
             extraEditFilterSearchInput,
             extraEditFilterFamilySelect,
             extraEditFilterTypeSelect,
             extraEditFilterStoreSelect,
+            extraEditFilterHaveSelect,
             instancesSearchInput,
             instancesFamilyFilterSelect,
             instancesProducerFilterSelect,
@@ -1834,6 +1892,7 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
           familyFilter: extraFilterFamilySelect,
           typeFilter: extraFilterTypeSelect,
           storeFilter: extraFilterStoreSelect,
+          haveFilter: extraFilterHaveSelect,
           buyFilter: extraFilterBuySelect,
           rowTemplate: extraQuickRowTemplate,
         },
@@ -1857,6 +1916,7 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
         persistUnified,
         getPantryProducts,
         onToggleBuy: updateExtraBuyFlag,
+        onToggleHave: updateExtraHaveFlag,
         onChange: () => {
           renderProducts();
           renderExtraQuickTable();
@@ -1920,6 +1980,7 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
           familyFilter: extraEditFilterFamilySelect,
           typeFilter: extraEditFilterTypeSelect,
           storeFilter: extraEditFilterStoreSelect,
+          haveFilter: extraEditFilterHaveSelect,
           rowTemplate: extraEditRowTemplate,
         },
         getProducts: () => getOtherProducts(),
@@ -2276,6 +2337,9 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
             renderShoppingList();
           },
           actions: {
+            toggleHave: (id, checked) => {
+              updateExtraHaveFlag(id, checked);
+            },
             toggleBuy: (id, checked) => {
               updateExtraBuyFlag(id, checked);
             },
@@ -6422,11 +6486,13 @@ function handleAddQuickExtra() {
     Math.random().toString(36).slice(2);
   const defBlock = extraFilterFamilySelect?.value || "";
   const defType = extraFilterTypeSelect?.value || "";
+  const haveFilter = extraFilterHaveSelect?.value || "all";
   const buyFilter = extraFilterBuySelect?.value || "all";
   const defBuy =
     buyFilter === "yes" ||
     buyFilter === "buy_future" ||
     buyFilter === "buy_no_future";
+  const defHave = haveFilter === "have" ? true : haveFilter === "missing" ? false : false;
   extraDrafts.unshift({
     id,
     name: "",
@@ -6435,6 +6501,7 @@ function handleAddQuickExtra() {
     quantity: "",
     notes: "",
     buy: defBuy,
+    have: defHave,
   });
   renderExtraQuickTable();
   highlightTopRow(extraListTableBody);
@@ -6460,6 +6527,7 @@ function startEditExtra(id) {
     quantity: prod.quantity || "",
     notes: prod.notes || "",
     buy: !!prod.buy,
+    have: !!prod.have,
   });
   const scrollParent =
     (extraListTableBody && extraListTableBody.closest(".table-scroll")) || null;

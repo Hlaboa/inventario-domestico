@@ -485,6 +485,9 @@
                   <td data-field="name"></td>
                   <td data-field="block"></td>
                   <td data-field="type"></td>
+                  <td data-field="have">
+                    <input type="checkbox" data-field="have" />
+                  </td>
                   <td data-field="buy">
                     <input type="checkbox" data-field="buy" />
                   </td>
@@ -550,6 +553,14 @@
                   </select>
                 </div>
                 <div class="form-group">
+                  <label for="extraFilterHave">Estado</label>
+                  <select id="extraFilterHave">
+                    <option value="all">Todos</option>
+                    <option value="have">Tengo</option>
+                    <option value="missing">No tengo</option>
+                  </select>
+                </div>
+                <div class="form-group">
                   <label for="extraFilterBuy">Comprar</label>
                   <select id="extraFilterBuy">
                     <option value="all">Todos</option>
@@ -577,6 +588,7 @@
                       <td data-slot="name"></td>
                       <td data-slot="block"></td>
                       <td data-slot="type"></td>
+                      <td data-slot="have"></td>
                       <td data-slot="buy"></td>
                       <td data-slot="quantity"></td>
                       <td class="selection-td">
@@ -619,19 +631,21 @@
                       <col />
                       <col />
                       <col />
+                      <col />
                     </colgroup>
                     <thead>
                       <tr>
                         <th scope="col">Producto</th>
                         <th scope="col">Familia</th>
                         <th scope="col">Tipo</th>
-                      <th scope="col">Comprar</th>
-                      <th scope="col">Cantidad</th>
-                      <th scope="col" class="selection-col">Selección</th>
-                      <th scope="col">Tiendas</th>
-                      <th scope="col" class="future-order-col">Pedido</th>
-                      <th scope="col">Notas</th>
-                      <th scope="col" aria-label="Acciones"></th>
+                        <th scope="col">Tengo</th>
+                        <th scope="col">Comprar</th>
+                        <th scope="col">Cantidad</th>
+                        <th scope="col" class="selection-col">Selección</th>
+                        <th scope="col">Tiendas</th>
+                        <th scope="col" class="future-order-col">Pedido</th>
+                        <th scope="col">Notas</th>
+                        <th scope="col" aria-label="Acciones"></th>
                     </tr>
                     </thead>
                     <tbody id="extraListTableBody"></tbody>
@@ -694,6 +708,14 @@
                     <option value="">Todas</option>
                   </select>
                 </div>
+                <div class="form-group">
+                  <label for="extraEditFilterHave">Estado</label>
+                  <select id="extraEditFilterHave">
+                    <option value="all">Todos</option>
+                    <option value="have">Tengo</option>
+                    <option value="missing">No tengo</option>
+                  </select>
+                </div>
               </div>
 
               <div class="table-wrapper">
@@ -704,6 +726,7 @@
                       <th scope="col">Producto</th>
                       <th scope="col">Familia</th>
                       <th scope="col">Tipo</th>
+                      <th scope="col">Tengo</th>
                       <th scope="col">Comprar</th>
                       <th scope="col">Cantidad</th>
                       <th scope="col" class="selection-col">Selección</th>

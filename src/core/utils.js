@@ -247,11 +247,16 @@
       const block = getField("block");
       const type = getField("type");
       const quantity = getField("quantity");
-      const buy = !!getField("buy");
-      const notes = (tr.querySelector('textarea[data-field="notes"]') || {}).value;
-      const now = nowFn();
       const originalId = (tr.dataset.originalId || "").trim();
       const base = originalId ? existingById.get(originalId) : null;
+      const haveField = getField("have");
+      const buyField = getField("buy");
+      const hasHaveField = typeof haveField === "boolean";
+      const hasBuyField = typeof buyField === "boolean";
+      const have = hasHaveField ? haveField : !!(base && base.have);
+      const buy = hasBuyField ? buyField : !!(base && base.buy);
+      const notes = (tr.querySelector('textarea[data-field="notes"]') || {}).value;
+      const now = nowFn();
       const id =
         originalId ||
         (crypto.randomUUID ? crypto.randomUUID() : "extra-" + Date.now()) +
@@ -272,7 +277,7 @@
         quantity,
         notes,
         buy,
-        have: buy ? false : !!(base && base.have),
+        have,
         scope: "otros",
         selectionId: base?.selectionId || "",
         createdAt: base?.createdAt || now,

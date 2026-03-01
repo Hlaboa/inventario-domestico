@@ -70,6 +70,7 @@
       extraFilterFamilySelect: document.getElementById("extraFilterFamily"),
       extraFilterTypeSelect: document.getElementById("extraFilterType"),
       extraFilterStoreSelect: document.getElementById("extraFilterStore"),
+      extraFilterHaveSelect: document.getElementById("extraFilterHave"),
       extraFilterBuySelect: document.getElementById("extraFilterBuy"),
 
       // Otros (editar)
@@ -80,6 +81,7 @@
       extraEditFilterFamilySelect: document.getElementById("extraEditFilterFamily"),
       extraEditFilterTypeSelect: document.getElementById("extraEditFilterType"),
       extraEditFilterStoreSelect: document.getElementById("extraEditFilterStore"),
+      extraEditFilterHaveSelect: document.getElementById("extraEditFilterHave"),
       extraQuickRowTemplate: document.getElementById("extraQuickRowTemplate"),
       extraEditRowTemplate: document.getElementById("extraEditRowTemplate"),
 
