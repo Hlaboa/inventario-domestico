@@ -45,6 +45,7 @@
       filterBlockSelect: document.getElementById("filterBlock"),
       filterTypeSelect: document.getElementById("filterType"),
       filterStoreSelect: document.getElementById("filterStore"),
+      filterProducerSelect: document.getElementById("filterProducer"),
       filterStatusSelect: document.getElementById("filterStatus"),
       productTableBody: document.getElementById("productTableBody"),
       inventoryRowTemplate: document.getElementById("inventoryRowTemplate"),
@@ -63,6 +64,7 @@
       editFilterTypeSelect: document.getElementById("editFilterType"),
       editFilterShelfSelect: document.getElementById("editFilterShelf"),
       editFilterStoreSelect: document.getElementById("editFilterStore"),
+      editFilterProducerSelect: document.getElementById("editFilterProducer"),
 
       // Otros (vista)
       extraListTableBody: document.getElementById("extraListTableBody"),
@@ -70,6 +72,7 @@
       extraFilterFamilySelect: document.getElementById("extraFilterFamily"),
       extraFilterTypeSelect: document.getElementById("extraFilterType"),
       extraFilterStoreSelect: document.getElementById("extraFilterStore"),
+      extraFilterProducerSelect: document.getElementById("extraFilterProducer"),
       extraFilterHaveSelect: document.getElementById("extraFilterHave"),
       extraFilterBuySelect: document.getElementById("extraFilterBuy"),
 
@@ -81,6 +84,7 @@
       extraEditFilterFamilySelect: document.getElementById("extraEditFilterFamily"),
       extraEditFilterTypeSelect: document.getElementById("extraEditFilterType"),
       extraEditFilterStoreSelect: document.getElementById("extraEditFilterStore"),
+      extraEditFilterProducerSelect: document.getElementById("extraEditFilterProducer"),
       extraEditFilterHaveSelect: document.getElementById("extraEditFilterHave"),
       extraQuickRowTemplate: document.getElementById("extraQuickRowTemplate"),
       extraEditRowTemplate: document.getElementById("extraEditRowTemplate"),
@@ -88,6 +92,7 @@
       // Productores
       producersSearchInput: document.getElementById("producersSearch"),
       producersLocationFilterSelect: document.getElementById("producersLocationFilter"),
+      producersUsageFilterSelect: document.getElementById("producersUsageFilter"),
       producersTableBody: document.getElementById("producersTableBody"),
       addProducerButton: document.getElementById("addProducerButton"),
       saveProducersButton: document.getElementById("saveProducersButton"),
@@ -96,6 +101,7 @@
       storesSearchInput: document.getElementById("storesSearch"),
       storesTypeFilterSelect: document.getElementById("storesTypeFilter"),
       storesLocationFilterSelect: document.getElementById("storesLocationFilter"),
+      storesUsageFilterSelect: document.getElementById("storesUsageFilter"),
       storesTableBody: document.getElementById("storesTableBody"),
       addStoreButton: document.getElementById("addStoreButton"),
       saveStoresButton: document.getElementById("saveStoresButton"),
@@ -136,6 +142,8 @@
       ordersTypeFilterSelect: document.getElementById("ordersTypeFilter"),
       ordersScopeFilterSelect: document.getElementById("ordersScopeFilter"),
       ordersDateFilterSelect: document.getElementById("ordersDateFilter"),
+      ordersSavedSearchInput: document.getElementById("ordersSavedSearch"),
+      addOrderQuickButton: document.getElementById("addOrderQuickButton"),
       addOrderItemButton: document.getElementById("addOrderItemButton"),
       newOrderButton: document.getElementById("newOrderButton"),
       duplicateOrderButton: document.getElementById("duplicateOrderButton"),
@@ -154,10 +162,31 @@
       ordersSummaryInfo: document.getElementById("ordersSummaryInfo"),
       ordersProductsDatalist: document.getElementById("ordersProductsDatalist"),
       ordersSavedList: document.getElementById("ordersSavedList"),
+      ordersPlannerSummary: document.getElementById("ordersPlannerSummary"),
+      ordersPlannerList: document.getElementById("ordersPlannerList"),
+      ordersHistoryPanel: document.getElementById("ordersHistoryPanel"),
+      ordersHistorySummary: document.getElementById("ordersHistorySummary"),
+      ordersHistoryList: document.getElementById("ordersHistoryList"),
+      ordersHistoryPreview: document.getElementById("ordersHistoryPreview"),
+      ordersHistoryNameInput: document.getElementById("ordersHistoryNameInput"),
+      ordersHistoryDateInput: document.getElementById("ordersHistoryDateInput"),
+      ordersHistoryPriceInput: document.getElementById("ordersHistoryPriceInput"),
+      ordersHistoryPreviewSummary: document.getElementById("ordersHistoryPreviewSummary"),
+      ordersHistoryPreviewTableBody: document.getElementById("ordersHistoryPreviewTableBody"),
+      ordersKpis: document.getElementById("ordersKpis"),
+      ordersViewOperativeButton: document.getElementById("ordersViewOperativeButton"),
+      ordersViewCalendarButton: document.getElementById("ordersViewCalendarButton"),
+      ordersViewHistoryButton: document.getElementById("ordersViewHistoryButton"),
+      ordersOperativeView: document.getElementById("ordersOperativeView"),
+      ordersCalendarView: document.getElementById("ordersCalendarView"),
+      ordersHistoryView: document.getElementById("ordersHistoryView"),
+      ordersCalendarSummary: document.getElementById("ordersCalendarSummary"),
+      ordersCalendarList: document.getElementById("ordersCalendarList"),
 
       // Backup y Excel
       exportBackupButton: document.getElementById("exportBackupButton"),
       importBackupButton: document.getElementById("importBackupButton"),
+      pruneSelectionsButton: document.getElementById("pruneSelectionsButton"),
       backupFileInput: document.getElementById("backupFileInput"),
       exportAlmacenCsvButton: document.getElementById("exportAlmacenCsvButton"),
       exportOtrosCsvButton: document.getElementById("exportOtrosCsvButton"),
@@ -236,6 +265,7 @@
       handleCopyList,
       handleExportBackup,
       handleBackupFileChange,
+      handlePruneSelections,
       handleExportAlmacenCsv,
       handleExportOtrosCsv,
       handleExportStoresCsv,
@@ -249,6 +279,7 @@
       handleReplaceOrderBatch,
       handleOrdersFilterChange,
       handleOrdersDateFilterChange,
+      handleOrdersSavedSearchInput,
       handleCompleteOrder,
       handleDuplicateOrder,
       handleSaveOrders,
@@ -256,6 +287,13 @@
       handleDeleteOrder,
       handleOrdersTableClick,
       handleOrdersSavedClick,
+      handleOrdersHistoryClick,
+      handleOrdersPlannerClick,
+      handleOrdersViewOperativeClick,
+      handleOrdersViewCalendarClick,
+      handleOrdersViewHistoryClick,
+      handleOrdersCalendarClick,
+      handleOrdersHistoryMetaChange,
       handleToggleOrdersBatchPanel,
       handleCloseOrdersBatchPanel,
     } = handlers;
@@ -272,6 +310,7 @@
       copyListButton,
       exportBackupButton,
       importBackupButton,
+      pruneSelectionsButton,
       backupFileInput,
       exportAlmacenCsvButton,
       exportOtrosCsvButton,
@@ -284,6 +323,8 @@
       ordersTypeFilterSelect,
       ordersScopeFilterSelect,
       ordersDateFilterSelect,
+      ordersSavedSearchInput,
+      addOrderQuickButton,
       addOrderItemButton,
       newOrderButton,
       toggleOrdersBatchButton,
@@ -299,6 +340,15 @@
       clearOrderButton,
       ordersTableBody,
       ordersSavedList,
+      ordersHistoryList,
+      ordersHistoryNameInput,
+      ordersHistoryDateInput,
+      ordersHistoryPriceInput,
+      ordersPlannerList,
+      ordersViewOperativeButton,
+      ordersViewCalendarButton,
+      ordersViewHistoryButton,
+      ordersCalendarList,
     } = refs || {};
 
     const rerenderInstances = renderInstancesTable || (() => {});
@@ -336,6 +386,9 @@
     if (backupFileInput && handleBackupFileChange) {
       backupFileInput.addEventListener("change", handleBackupFileChange);
     }
+    if (pruneSelectionsButton && handlePruneSelections) {
+      pruneSelectionsButton.addEventListener("click", handlePruneSelections);
+    }
     if (exportAlmacenCsvButton && handleExportAlmacenCsv) {
       exportAlmacenCsvButton.addEventListener("click", handleExportAlmacenCsv);
     }
@@ -370,6 +423,12 @@
     }
     if (ordersDateFilterSelect && handleOrdersDateFilterChange) {
       ordersDateFilterSelect.addEventListener("change", handleOrdersDateFilterChange);
+    }
+    if (ordersSavedSearchInput && handleOrdersSavedSearchInput) {
+      ordersSavedSearchInput.addEventListener("input", handleOrdersSavedSearchInput);
+    }
+    if (addOrderQuickButton && handleNewOrder) {
+      addOrderQuickButton.addEventListener("click", handleNewOrder);
     }
     if (addOrderItemButton && handleAddOrderItem) {
       addOrderItemButton.addEventListener("click", handleAddOrderItem);
@@ -409,6 +468,43 @@
     }
     if (ordersSavedList && handleOrdersSavedClick) {
       ordersSavedList.addEventListener("click", handleOrdersSavedClick);
+    }
+    if (ordersHistoryList && handleOrdersHistoryClick) {
+      ordersHistoryList.addEventListener("click", handleOrdersHistoryClick);
+    }
+    if (ordersHistoryNameInput && handleOrdersHistoryMetaChange) {
+      ordersHistoryNameInput.addEventListener("change", handleOrdersHistoryMetaChange);
+      ordersHistoryNameInput.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        ordersHistoryNameInput.blur();
+      });
+    }
+    if (ordersHistoryDateInput && handleOrdersHistoryMetaChange) {
+      ordersHistoryDateInput.addEventListener("change", handleOrdersHistoryMetaChange);
+    }
+    if (ordersHistoryPriceInput && handleOrdersHistoryMetaChange) {
+      ordersHistoryPriceInput.addEventListener("change", handleOrdersHistoryMetaChange);
+      ordersHistoryPriceInput.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        ordersHistoryPriceInput.blur();
+      });
+    }
+    if (ordersPlannerList && handleOrdersPlannerClick) {
+      ordersPlannerList.addEventListener("click", handleOrdersPlannerClick);
+    }
+    if (ordersViewOperativeButton && handleOrdersViewOperativeClick) {
+      ordersViewOperativeButton.addEventListener("click", handleOrdersViewOperativeClick);
+    }
+    if (ordersViewCalendarButton && handleOrdersViewCalendarClick) {
+      ordersViewCalendarButton.addEventListener("click", handleOrdersViewCalendarClick);
+    }
+    if (ordersViewHistoryButton && handleOrdersViewHistoryClick) {
+      ordersViewHistoryButton.addEventListener("click", handleOrdersViewHistoryClick);
+    }
+    if (ordersCalendarList && handleOrdersCalendarClick) {
+      ordersCalendarList.addEventListener("click", handleOrdersCalendarClick);
     }
 
   }

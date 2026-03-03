@@ -33,6 +33,29 @@
     return area;
   };
 
+  const setOrdersFavoriteButtonState = (button, active) => {
+    if (!button) return;
+    const on = !!active;
+    button.dataset.value = on ? "1" : "0";
+    button.setAttribute("aria-pressed", on ? "true" : "false");
+    button.classList.toggle("is-active", on);
+    button.textContent = on ? "★" : "☆";
+    button.title = on
+      ? "Quitar de tiendas destacadas para pedidos"
+      : "Destacar para pedidos";
+  };
+
+  const makeOrdersFavoriteButton = (active = false) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn btn-small store-favorite-btn";
+    button.dataset.action = "toggle-orders-favorite";
+    button.dataset.field = "ordersFavorite";
+    button.setAttribute("aria-label", "Destacar tienda para pedidos");
+    setOrdersFavoriteButtonState(button, active);
+    return button;
+  };
+
   function render(c) {
     const context = getCtx(c);
     const refs = context.refs || {};
@@ -42,9 +65,28 @@
 
     const list =
       (typeof context.getStores === "function" ? context.getStores() : []) || [];
+    const usedIdsRaw =
+      typeof context.getUsedStoreIds === "function"
+        ? context.getUsedStoreIds()
+        : new Set();
+    const usedIds =
+      usedIdsRaw instanceof Set
+        ? usedIdsRaw
+        : new Set(Array.isArray(usedIdsRaw) ? usedIdsRaw.map((id) => String(id || "").trim()) : []);
 
     const buildRow = (s) => {
+      const id = String(s.id || "").trim();
+      const unused = id ? !usedIds.has(id) : true;
       const nameInput = makeInput("name", s.name);
+      const nameWrap = document.createElement("div");
+      nameWrap.className = "entity-name-cell";
+      nameWrap.appendChild(nameInput);
+      if (unused) {
+        const badge = document.createElement("span");
+        badge.className = "entity-orphan-badge";
+        badge.textContent = "Sin productos";
+        nameWrap.appendChild(badge);
+      }
       const sel = document.createElement("select");
       sel.className = "table-input";
       sel.dataset.field = "type";
@@ -60,13 +102,15 @@
       const locInput = makeInput("location", s.location);
       const webInput = makeInput("website", s.website);
       const notesInput = makeTextarea("notes", s.notes || "");
+      const favoriteButton = makeOrdersFavoriteButton(!!s.ordersFavorite);
 
       if (rowTemplate && window.AppComponents && typeof window.AppComponents.buildRowWithTemplate === "function") {
         const row = window.AppComponents.buildRowWithTemplate({
           template: rowTemplate,
           dataset: { id: s.id },
           replacements: {
-            "[data-slot='name']": nameInput,
+            "[data-slot='name']": nameWrap,
+            "[data-slot='ordersFavorite']": favoriteButton,
             "[data-slot='type']": sel,
             "[data-slot='location']": locInput,
             "[data-slot='website']": webInput,
@@ -76,14 +120,25 @@
             "[data-role='delete']": { action: "delete", id: s.id },
           },
         });
-        if (row) return row;
+        if (row) {
+          row.dataset.unused = unused ? "1" : "0";
+          row.dataset.ordersFavorite = s.ordersFavorite ? "1" : "0";
+          return row;
+        }
       }
 
       const tr = document.createElement("tr");
       tr.dataset.id = s.id;
+      tr.dataset.unused = unused ? "1" : "0";
+      tr.dataset.ordersFavorite = s.ordersFavorite ? "1" : "0";
 
       let td = document.createElement("td");
-      td.appendChild(nameInput);
+      td.appendChild(nameWrap);
+      tr.appendChild(td);
+
+      td = document.createElement("td");
+      td.className = "stores-favorite-cell";
+      td.appendChild(favoriteButton);
       tr.appendChild(td);
 
       td = document.createElement("td");
@@ -133,7 +188,7 @@
         template: rowTemplate,
         emptyMessage:
           "No hay tiendas todavía. Usa 'Añadir tienda' para crear una.",
-        emptyColSpan: 6,
+        emptyColSpan: 7,
         createRow: (item) => buildRow(item),
       });
     } else {
@@ -141,7 +196,7 @@
       if (items.length === 0) {
         const tr = document.createElement("tr");
         const td = document.createElement("td");
-        td.colSpan = 6;
+        td.colSpan = 7;
         td.textContent =
           "No hay tiendas todavía. Usa 'Añadir tienda' para crear una.";
         tr.appendChild(td);
@@ -191,6 +246,7 @@
         dataset: { id },
         replacements: {
           "[data-slot='name']": makeInput("name", ""),
+          "[data-slot='ordersFavorite']": makeOrdersFavoriteButton(false),
           "[data-slot='type']": (() => {
             const sel = document.createElement("select");
             sel.className = "table-input";
@@ -214,6 +270,8 @@
         },
       });
       if (row) {
+        row.dataset.unused = "1";
+        row.dataset.ordersFavorite = "0";
         tableBody.prepend(row);
         return;
       }
@@ -221,9 +279,16 @@
 
     const tr = document.createElement("tr");
     tr.dataset.id = id;
+    tr.dataset.unused = "1";
+    tr.dataset.ordersFavorite = "0";
 
     let td = document.createElement("td");
     td.appendChild(makeInput("name", ""));
+    tr.appendChild(td);
+
+    td = document.createElement("td");
+    td.className = "stores-favorite-cell";
+    td.appendChild(makeOrdersFavoriteButton(false));
     tr.appendChild(td);
 
     td = document.createElement("td");
@@ -266,8 +331,17 @@
   }
 
   function handleClick(e) {
-    const target = e.target;
-    if (!target || target.dataset.action !== "delete") return;
+    const target = e.target?.closest("[data-action]") || null;
+    if (!target) return;
+    if (target.dataset.action === "toggle-orders-favorite") {
+      const row = target.closest("tr");
+      const nextValue = target.getAttribute("aria-pressed") !== "true";
+      setOrdersFavoriteButtonState(target, nextValue);
+      if (row) row.dataset.ordersFavorite = nextValue ? "1" : "0";
+      filterRows();
+      return;
+    }
+    if (target.dataset.action !== "delete") return;
     const tr = target.closest("tr");
     if (!tr) return;
     const ok =
@@ -304,6 +378,12 @@
       const website = getField('input[data-field="website"]');
       const notes = (tr.querySelector('textarea[data-field="notes"]') || {})
         .value;
+      const ordersFavoriteButton = tr.querySelector('[data-field="ordersFavorite"]');
+      const ordersFavorite =
+        (ordersFavoriteButton &&
+          (ordersFavoriteButton.getAttribute("aria-pressed") === "true" ||
+            ordersFavoriteButton.dataset.value === "1")) ||
+        false;
 
       if (!name && !location && !website && !notes && !type) continue;
 
@@ -313,6 +393,7 @@
       list.push({
         id,
         name,
+        ordersFavorite,
         type,
         location,
         website,
@@ -334,6 +415,7 @@
     const search = (refs.searchInput?.value || "").toLowerCase();
     const filterType = refs.typeFilter?.value || "";
     const filterLoc = refs.locationFilter?.value || "";
+    const filterUsage = refs.usageFilter?.value || "";
 
     Array.from(tableBody.querySelectorAll("tr")).forEach((tr) => {
       const id = tr.dataset.id;
@@ -362,6 +444,10 @@
         tr.style.display = "none";
         return;
       }
+      if (filterUsage === "unused" && tr.dataset.unused !== "1") {
+        tr.style.display = "none";
+        return;
+      }
 
       if (search) {
         const haystack = `${name} ${location} ${website} ${notes}`.toLowerCase();
@@ -380,10 +466,13 @@
         typeof context.getStores === "function"
           ? (context.getStores() || []).length
           : dataRows.length;
+      const unusedTotal = dataRows.filter((tr) => tr.dataset.unused === "1").length;
+      const favoriteTotal = dataRows.filter((tr) => tr.dataset.ordersFavorite === "1").length;
       const visible = dataRows.filter((tr) => tr.style.display !== "none").length;
       const filtered =
-        visible !== total || (search || "").trim() || filterType || filterLoc;
-      refs.summary.textContent = `Total: ${total}${filtered ? ` · Visibles: ${visible}` : ""}`;
+        visible !== total || (search || "").trim() || filterType || filterLoc || filterUsage;
+      const base = `Total: ${total} · ★ Pedidos: ${favoriteTotal} · Sin productos: ${unusedTotal}`;
+      refs.summary.textContent = filtered ? `${base} · Visibles: ${visible}` : base;
     }
   }
 
@@ -421,6 +510,9 @@
     }
     if (refs.locationFilter) {
       refs.locationFilter.addEventListener("change", () => filterRows());
+    }
+    if (refs.usageFilter) {
+      refs.usageFilter.addEventListener("change", () => filterRows());
     }
 
     render(context);

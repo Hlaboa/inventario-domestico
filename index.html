@@ -31,16 +31,16 @@
               OTROS
             </button>
             <button type="button" id="mainSelectionButton" class="tab-button">
-              SELECCIÓN
+              CONCILIACIÓN
             </button>
-            <button type="button" id="mainProducersButton" class="tab-button">
-              PRODUCTORES
+            <button type="button" id="mainOrdersButton" class="tab-button">
+              PEDIDOS
             </button>
             <button type="button" id="mainStoresButton" class="tab-button">
               TIENDAS
             </button>
-            <button type="button" id="mainOrdersButton" class="tab-button">
-              PEDIDOS
+            <button type="button" id="mainProducersButton" class="tab-button">
+              PRODUCTORES
             </button>
             <button type="button" id="mainClassificationButton" class="tab-button">
               CLASIFICACIÓN
@@ -53,15 +53,6 @@
               title="Copias de seguridad"
             >
               💾
-            </button>
-            <button
-              type="button"
-              id="mainShoppingButton"
-              class="tab-button tab-button-icon"
-              aria-label="Lista de la compra"
-              title="Lista de la compra"
-            >
-              🛒
             </button>
           </div>
 
@@ -165,6 +156,12 @@
                   <label for="filterStore">Tienda</label>
                   <select id="filterStore">
                     <option value="">Todas</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="filterProducer">Productor</label>
+                  <select id="filterProducer">
+                    <option value="">Todos</option>
                   </select>
                 </div>
                 <div class="form-group">
@@ -272,6 +269,12 @@
                   <label for="editFilterStore">Tienda</label>
                   <select id="editFilterStore">
                     <option value="">Todas</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="editFilterProducer">Productor</label>
+                  <select id="editFilterProducer">
+                    <option value="">Todos</option>
                   </select>
                 </div>
               </div>
@@ -553,6 +556,12 @@
                   </select>
                 </div>
                 <div class="form-group">
+                  <label for="extraFilterProducer">Productor</label>
+                  <select id="extraFilterProducer">
+                    <option value="">Todos</option>
+                  </select>
+                </div>
+                <div class="form-group">
                   <label for="extraFilterHave">Estado</label>
                   <select id="extraFilterHave">
                     <option value="all">Todos</option>
@@ -709,6 +718,12 @@
                   </select>
                 </div>
                 <div class="form-group">
+                  <label for="extraEditFilterProducer">Productor</label>
+                  <select id="extraEditFilterProducer">
+                    <option value="">Todos</option>
+                  </select>
+                </div>
+                <div class="form-group">
                   <label for="extraEditFilterHave">Estado</label>
                   <select id="extraEditFilterHave">
                     <option value="all">Todos</option>
@@ -783,6 +798,13 @@
                   <label for="producersLocationFilter">Localización</label>
                   <select id="producersLocationFilter">
                     <option value="">Todas</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="producersUsageFilter">Estado de uso</label>
+                  <select id="producersUsageFilter">
+                    <option value="">Todos</option>
+                    <option value="unused">Sin productos</option>
                   </select>
                 </div>
                 <div class="form-group">
@@ -885,6 +907,13 @@
                   </select>
                 </div>
                 <div class="form-group">
+                  <label for="storesUsageFilter">Estado de uso</label>
+                  <select id="storesUsageFilter">
+                    <option value="">Todos</option>
+                    <option value="unused">Sin productos</option>
+                  </select>
+                </div>
+                <div class="form-group">
                   <label>&nbsp;</label>
                   <button
                     type="button"
@@ -908,6 +937,7 @@
                   <template id="storesRowTemplate">
                     <tr>
                       <td data-slot="name"></td>
+                      <td data-slot="ordersFavorite"></td>
                       <td data-slot="type"></td>
                       <td data-slot="location"></td>
                       <td data-slot="website"></td>
@@ -928,6 +958,7 @@
                   <thead>
                     <tr>
                       <th scope="col">Nombre tienda</th>
+                      <th scope="col" aria-label="Destacar en pedidos">★</th>
                       <th scope="col">Tipo</th>
                       <th scope="col">Localización</th>
                       <th scope="col">Web / contacto</th>
@@ -945,63 +976,21 @@
             <div id="instancesPanel" class="sub-panel active">
               <div class="panel-header">
                 <div>
-                  <h3>Selección de productos</h3>
+                  <h3>Conciliación de selecciones</h3>
                   <p class="panel-subtitle">
-                    Gestiona alternativas distintas para cada producto (productor, marca y tiendas).
+                    Revisa solo los productos no conciliados y corrígelos aquí.
                   </p>
                 </div>
                 <div class="panel-actions"></div>
               </div>
               <div class="filters filters-edit">
-                <div class="form-group quick-add-group">
-                  <label>&nbsp;</label>
-                  <button
-                    type="button"
-                    class="btn btn-secondary btn-small btn-quick-add"
-                    id="addInstanceButton"
-                    title="Añadir selección"
-                    aria-label="Añadir selección"
-                  >
-                    +
-                  </button>
-                </div>
                 <div class="form-group search-group">
                   <label for="instancesSearch">Buscar</label>
                   <input
                     type="text"
                     id="instancesSearch"
-                    placeholder="Producto, productor, marca, tienda..."
+                    placeholder="Producto, familia o notas..."
                   />
-                </div>
-                <div class="form-group">
-                  <label for="instancesFamilyFilter">Familia</label>
-                  <select id="instancesFamilyFilter">
-                    <option value="">Todas</option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label for="instancesProducerFilter">Productor</label>
-                  <select id="instancesProducerFilter">
-                    <option value="">Todos</option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label for="instancesStoreFilter">Tienda</label>
-                  <select id="instancesStoreFilter">
-                    <option value="">Todas</option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label>&nbsp;</label>
-                  <button
-                    type="button"
-                    class="btn btn-secondary btn-small"
-                    id="instancesMissingFilterButton"
-                    title="Mostrar solo no conciliados"
-                    aria-pressed="false"
-                  >
-                    No conciliados
-                  </button>
                 </div>
               </div>
               <div class="list-header panel-header panel-header-compact">
@@ -1058,199 +1047,255 @@
                   Organiza los pedidos pendientes por tienda y planifica cuándo hacerlos.
                 </p>
               </div>
-              <div class="panel-actions">
-                <button
-                  type="button"
-                  class="btn btn-secondary btn-small"
-                  id="clearOrderButton"
-                >
-                  Vaciar pedido
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-primary btn-small"
-                  id="saveOrdersButton"
-                >
-                  Guardar pedidos
-                </button>
-              </div>
+              <div class="panel-actions"></div>
             </div>
 
-            <div class="filters filters-edit">
-              <div class="form-group">
-                <label for="ordersNameInput">Nombre pedido</label>
-                <input type="text" id="ordersNameInput" placeholder="Ej. Pedido semanal, Pedido online..." />
+            <div class="filters filters-edit orders-filter-filters">
+              <div class="form-group quick-add-group">
+                <label>&nbsp;</label>
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-small btn-quick-add"
+                  id="addOrderQuickButton"
+                  title="Nuevo pedido"
+                  aria-label="Nuevo pedido"
+                >
+                  +
+                </button>
               </div>
               <div class="form-group">
-                <label for="ordersStoreSelect">Tienda</label>
+                <label for="ordersStoreSelect">Vista por tienda</label>
                 <select id="ordersStoreSelect">
-                  <option value="">Sin tienda</option>
+                  <option value="">Todas las tiendas</option>
                 </select>
               </div>
               <div class="form-group">
-                <label for="ordersPlannedDate">Fecha del pedido</label>
-                <input type="date" id="ordersPlannedDate" />
-              </div>
-              <div class="form-group">
-                <label for="ordersPriceInput">Importe (€)</label>
-                <input type="number" id="ordersPriceInput" step="0.01" min="0" placeholder="Ej. 123.45" />
-              </div>
-              <div class="form-group">
-                <label for="ordersFamilyFilter">Familia</label>
-                <select id="ordersFamilyFilter">
-                  <option value="">Todas</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label for="ordersTypeFilter">Subfamilia</label>
-                <select id="ordersTypeFilter">
-                  <option value="">Todas</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label for="ordersScopeFilter">Origen</label>
-                <select id="ordersScopeFilter">
-                  <option value="">Todos</option>
-                  <option value="almacen">Almacén</option>
-                  <option value="otros">Otros</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label for="ordersDateFilter">Fecha</label>
+                <label for="ordersDateFilter">Fecha pedido</label>
                 <select id="ordersDateFilter">
                   <option value="">Todas</option>
+                  <option value="today">Hoy</option>
+                  <option value="this_week">Esta semana</option>
+                  <option value="next_week">Próxima semana</option>
+                  <option value="this_month">Este mes</option>
+                  <option value="last_month">Mes pasado</option>
+                  <option value="next_7">Próximos 7 días</option>
+                  <option value="next_30">Próximos 30 días</option>
+                  <option value="overdue">Vencidos / atrasados</option>
                   <option value="future">Futuros</option>
                   <option value="past">Pasados</option>
+                  <option value="no_date">Sin fecha</option>
                 </select>
               </div>
-            </div>
-
-            <div class="list-header panel-header panel-header-compact">
-              <div class="summary">
-                Pedidos guardados
+              <div class="form-group search-group">
+                <label for="ordersSavedSearch">Buscar pedidos</label>
+                <input
+                  type="search"
+                  id="ordersSavedSearch"
+                  placeholder="Pedido, tienda o producto..."
+                />
               </div>
-              <div id="ordersSavedList" class="orders-saved-list"></div>
-            </div>
-
-            <div class="list-header panel-header panel-header-compact">
-              <div class="summary" id="ordersSummaryInfo" aria-live="polite">
-                Sin pedidos para esta tienda
-              </div>
-              <div class="panel-actions">
+              <div class="form-group">
+                <label>&nbsp;</label>
                 <button
                   type="button"
-                  class="btn btn-danger btn-small"
-                  id="deleteOrderButton"
+                  class="btn btn-primary btn-small btn-quick-add"
+                  id="saveOrdersButton"
+                  title="Guardar pedidos"
+                  aria-label="Guardar pedidos"
                 >
-                  Eliminar pedido
+                  ✓
                 </button>
               </div>
             </div>
 
-            <div class="orders-actions-bar">
-              <div class="orders-actions-left">
-                <button
-                  type="button"
-                  class="btn btn-secondary btn-small"
-                  id="addOrderItemButton"
-                >
-                  + producto
-                </button>
-                <div class="orders-batch-group">
-                  <span class="orders-action-label">Añadir varios</span>
-                  <div class="orders-batch-wrapper">
-                    <button
-                      type="button"
-                      class="btn btn-ghost btn-small"
-                      id="toggleOrdersBatchButton"
-                      aria-expanded="false"
-                    >
-                      Seleccionar varios
-                    </button>
-                    <div class="orders-batch-panel" id="ordersBatchPanel" hidden>
-                      <div class="orders-batch-header">
-                        <span>Selecciona productos</span>
-                        <button
-                          type="button"
-                          class="btn btn-text btn-small"
-                          id="closeOrdersBatchButton"
-                          aria-label="Cerrar selector"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                      <select id="ordersBatchSelect" class="orders-batch-select" multiple size="12"></select>
-                    <div class="orders-batch-actions">
-                      <button
-                        type="button"
-                        class="btn btn-secondary btn-small"
-                        id="addOrderBatchButton"
-                      >
-                        Añadir selección
-                      </button>
-                      <button
-                        type="button"
-                        class="btn btn-ghost btn-small"
-                        id="replaceOrderBatchButton"
-                      >
-                        Reemplazar listado
-                      </button>
+            <div class="orders-kpis" id="ordersKpis"></div>
+            <div class="tabs tabs-orders">
+              <button type="button" class="tab-button active" id="ordersViewOperativeButton">Activos</button>
+              <button type="button" class="tab-button" id="ordersViewHistoryButton">Histórico</button>
+            </div>
+
+            <section id="ordersOperativeView" class="orders-subview active">
+              <div class="orders-operativa-layout">
+                <aside class="orders-operativa-left">
+                  <details id="ordersPlannerPanel" class="orders-planner-panel">
+                    <summary id="ordersPlannerSummary">Pendientes por tienda</summary>
+                    <div class="orders-planner-body">
+                      <div id="ordersPlannerList" class="orders-planner-list"></div>
                     </div>
-                    <p class="help-text">Selecciona varios productos y pulsa “Añadir selección”.</p>
+                  </details>
+                  <div class="list-header panel-header panel-header-compact">
+                    <div class="summary">
+                      Activos por fecha
+                    </div>
+                  </div>
+                  <div id="ordersSavedList" class="orders-calendar-list orders-active-calendar-list"></div>
+                </aside>
+
+                <div class="orders-operativa-workspace">
+                  <div class="orders-operativa-top">
+                    <div class="orders-meta-card orders-meta-card-compact">
+                      <div class="orders-meta-inline">
+                        <div class="orders-meta-actions" aria-label="Acciones de productos">
+                          <button
+                            type="button"
+                            class="btn btn-small btn-icon orders-meta-icon-btn"
+                            id="addOrderItemButton"
+                            title="Añadir producto"
+                            aria-label="Añadir producto"
+                          >
+                            +
+                          </button>
+                          <div class="orders-batch-group">
+                            <div class="orders-batch-wrapper">
+                              <button
+                                type="button"
+                                class="btn btn-small btn-icon orders-meta-icon-btn"
+                                id="toggleOrdersBatchButton"
+                                data-icon-mode="true"
+                                aria-expanded="false"
+                                title="Seleccionar varios"
+                                aria-label="Seleccionar varios"
+                              >
+                                ☑
+                              </button>
+                              <div class="orders-batch-panel" id="ordersBatchPanel" hidden>
+                                <div class="orders-batch-header">
+                                  <span>Selecciona productos</span>
+                                  <button
+                                    type="button"
+                                    class="btn btn-text btn-small"
+                                    id="closeOrdersBatchButton"
+                                    aria-label="Cerrar selector"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                                <select id="ordersBatchSelect" class="orders-batch-select" multiple size="12"></select>
+                                <div class="orders-batch-actions">
+                                  <button
+                                    type="button"
+                                    class="btn btn-secondary btn-small"
+                                    id="addOrderBatchButton"
+                                  >
+                                    Añadir selección
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="btn btn-secondary btn-small"
+                                    id="replaceOrderBatchButton"
+                                  >
+                                    Reemplazar listado
+                                  </button>
+                                </div>
+                                <p class="help-text">Selecciona varios productos y pulsa “Añadir selección”.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="form-group orders-meta-name-group">
+                          <label for="ordersNameInput">Nombre pedido</label>
+                          <input type="text" id="ordersNameInput" placeholder="Ej. Pedido semanal..." />
+                        </div>
+                        <div class="form-group orders-meta-date-group">
+                          <label for="ordersPlannedDate">Fecha pedido</label>
+                          <input type="date" id="ordersPlannedDate" />
+                        </div>
+                        <div class="form-group orders-meta-price-group">
+                          <label for="ordersPriceInput">Importe (€)</label>
+                          <input type="number" id="ordersPriceInput" step="0.01" min="0" placeholder="Ej. 123.45" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="orders-operativa-main">
+                    <div class="table-wrapper">
+                      <div class="table-scroll">
+                        <template id="ordersRowTemplate">
+                          <tr>
+                            <td data-slot="product"></td>
+                            <td data-slot="expiry"></td>
+                            <td data-slot="quantity"></td>
+                            <td data-slot="actions"></td>
+                          </tr>
+                        </template>
+                        <table class="product-table orders-product-table">
+                          <thead>
+                            <tr>
+                              <th scope="col">Producto seleccionado</th>
+                              <th scope="col">Caducidad</th>
+                              <th scope="col">Cantidad</th>
+                              <th scope="col" aria-label="Acciones"></th>
+                            </tr>
+                          </thead>
+                          <tbody id="ordersTableBody"></tbody>
+                        </table>
+                      </div>
+                    </div>
+                    <datalist id="ordersProductsDatalist"></datalist>
                   </div>
                 </div>
               </div>
-              </div>
-              <div class="orders-actions-right">
-                <button
-                  type="button"
-                  class="btn btn-secondary btn-small"
-                  id="duplicateOrderButton"
-                >
-                  Duplicar pedido
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-success btn-small"
-                  id="completeOrderButton"
-                >
-                  Marcar realizado
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-primary btn-small"
-                  id="newOrderButton"
-                >
-                  Nuevo pedido
-                </button>
-              </div>
-            </div>
+            </section>
 
-            <div class="table-wrapper">
-              <div class="table-scroll">
-                <template id="ordersRowTemplate">
-                  <tr>
-                    <td data-slot="product"></td>
-                    <td data-slot="expiry"></td>
-                    <td data-slot="quantity"></td>
-                    <td data-slot="actions"></td>
-                  </tr>
-                </template>
-                <table class="product-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Producto seleccionado</th>
-                      <th scope="col">Caducidad</th>
-                      <th scope="col">Cantidad</th>
-                      <th scope="col" aria-label="Acciones"></th>
-                    </tr>
-                  </thead>
-                  <tbody id="ordersTableBody"></tbody>
-                </table>
+            <section id="ordersHistoryView" class="orders-subview" hidden>
+              <div class="list-header panel-header panel-header-compact">
+                <div class="summary" id="ordersHistorySummary">Histórico</div>
               </div>
-            </div>
-
-            <datalist id="ordersProductsDatalist"></datalist>
+              <div class="orders-history-layout">
+                <div id="ordersHistoryList" class="orders-calendar-list orders-history-list"></div>
+                <section id="ordersHistoryPreview" class="orders-history-preview" hidden>
+                  <div class="orders-history-preview-head">
+                    <div class="orders-meta-card orders-meta-card-compact orders-history-meta-card">
+                      <div class="orders-history-meta-inline">
+                        <div class="form-group orders-history-name-group">
+                          <label for="ordersHistoryNameInput">Nombre pedido</label>
+                          <input
+                            type="text"
+                            id="ordersHistoryNameInput"
+                            placeholder="Nombre del pedido histórico"
+                            disabled
+                          />
+                        </div>
+                        <div class="form-group orders-history-date-group">
+                          <label for="ordersHistoryDateInput">Fecha pedido</label>
+                          <input type="date" id="ordersHistoryDateInput" disabled />
+                        </div>
+                        <div class="form-group orders-history-price-group">
+                          <label for="ordersHistoryPriceInput">Importe (€)</label>
+                          <input
+                            type="number"
+                            id="ordersHistoryPriceInput"
+                            step="0.01"
+                            min="0"
+                            placeholder="Ej. 123.45"
+                            disabled
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div class="summary orders-summary-strip" id="ordersHistoryPreviewSummary">
+                      Detalle pedido histórico
+                    </div>
+                  </div>
+                  <div class="table-wrapper">
+                    <div class="table-scroll">
+                      <table class="product-table orders-product-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">Producto seleccionado</th>
+                            <th scope="col">Caducidad</th>
+                            <th scope="col">Cantidad</th>
+                            <th scope="col" aria-label="Acciones"></th>
+                          </tr>
+                        </thead>
+                        <tbody id="ordersHistoryPreviewTableBody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </section>
           </section>
         </section>
 
@@ -1333,6 +1378,18 @@
                 aria-label="Restaurar desde archivo"
               >
                 Restaurar desde archivo
+              </button>
+            </div>
+            <div class="form-group">
+              <label>&nbsp;</label>
+              <button
+                type="button"
+                class="btn btn-secondary btn-small"
+                id="pruneSelectionsButton"
+                title="Eliminar selecciones sin productor y sin tienda"
+                aria-label="Eliminar selecciones sin productor y sin tienda"
+              >
+                Depurar selecciones vacías
               </button>
             </div>
             <div class="form-group">

@@ -12,7 +12,7 @@
    *
    * @typedef {BaseEntity & {name:string, block?:string, type?:string, shelf?:string, quantity?:string, have?:boolean, buy?:boolean, selectionId?:string, acquisitionDate?:string, expiryText?:string, shelfLifeDays?:string, notes?:string, scope?:("almacen"|"otros")}} Product
    * @typedef {BaseEntity & {productId?:string, productName?:string, producerId?:string, brand?:string, storeIds?:string[], notes?:string, priority?:number}} Instance
-   * @typedef {BaseEntity & {name:string, type?:string, location?:string, website?:string, notes?:string}} Supplier
+   * @typedef {BaseEntity & {name:string, type?:string, location?:string, website?:string, notes?:string, ordersFavorite?:boolean}} Supplier
    * @typedef {BaseEntity & {name:string, location?:string, website?:string, notes?:string}} Producer
    * @typedef {BaseEntity & {block:string, type:string, notes?:string}} Classification
    * @typedef {BaseEntity & {productName:string, quantity?:string, plannedDate?:string, instanceId?:string, productId?:string, notes?:string}} OrderItem
@@ -107,6 +107,13 @@
       location: (s.location || "").trim(),
       website: (s.website || "").trim(),
       notes: s.notes || "",
+      ordersFavorite:
+        s.ordersFavorite === true ||
+        s.ordersFavorite === "true" ||
+        s.ordersFavorite === "1" ||
+        s.ordersFavorite === 1 ||
+        s.favorite === true ||
+        s.starred === true,
       createdAt: s.createdAt || now,
       updatedAt: s.updatedAt || s.createdAt || now,
     };

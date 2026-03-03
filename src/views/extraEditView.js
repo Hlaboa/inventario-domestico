@@ -43,6 +43,14 @@
     return true;
   };
 
+  const matchesProducer = (context, productId, producerId) => {
+    if (!producerId) return true;
+    if (typeof context.matchesProducer === "function") {
+      return context.matchesProducer(productId, producerId);
+    }
+    return true;
+  };
+
   const buildStripeMap = (context, items) =>
     typeof context.buildFamilyStripeMap === "function"
       ? context.buildFamilyStripeMap(items)
@@ -389,6 +397,7 @@
     const filterBlock = refs.familyFilter?.value || "";
     const filterType = refs.typeFilter?.value || "";
     const filterStoreId = refs.storeFilter?.value || "";
+    const filterProducerId = refs.producerFilter?.value || "";
     const filterHave = refs.haveFilter?.value || "all";
 
     const predicate = (tr) => {
@@ -406,6 +415,9 @@
       if (filterHave === "have" && !have) return false;
       if (filterHave === "missing" && have) return false;
       if (filterStoreId && !matchesStore(context, id, filterStoreId)) {
+        return false;
+      }
+      if (filterProducerId && !matchesProducer(context, id, filterProducerId)) {
         return false;
       }
       if (search) {
@@ -496,6 +508,7 @@
       refs.familyFilter,
       refs.typeFilter,
       refs.storeFilter,
+      refs.producerFilter,
       refs.haveFilter,
     ].forEach((el) => {
       if (!el) return;

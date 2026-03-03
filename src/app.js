@@ -202,11 +202,118 @@ function flushInstancesUpdates() {
   setInstancesList(toSave);
 }
 
+function getRemovedEntityIds(previousList, nextList) {
+  const prevIds = new Set(
+    (Array.isArray(previousList) ? previousList : [])
+      .map((item) => String(item?.id || "").trim())
+      .filter(Boolean)
+  );
+  const nextIds = new Set(
+    (Array.isArray(nextList) ? nextList : [])
+      .map((item) => String(item?.id || "").trim())
+      .filter(Boolean)
+  );
+  const removed = [];
+  prevIds.forEach((id) => {
+    if (!nextIds.has(id)) removed.push(id);
+  });
+  return removed;
+}
+
+function pruneInstancesWithoutProducerAndStore(list) {
+  if (!Array.isArray(list) || list.length === 0) return { list: [], removed: 0 };
+  const validProducerIds = new Set(
+    getProducersList()
+      .map((p) => String(p?.id || "").trim())
+      .filter(Boolean)
+  );
+  const validStoreIds = new Set(
+    getSuppliersList()
+      .map((s) => String(s?.id || "").trim())
+      .filter(Boolean)
+  );
+  const filtered = [];
+  let removed = 0;
+  list.forEach((inst) => {
+    if (!inst) {
+      removed += 1;
+      return;
+    }
+    const rawProducerId = String(inst.producerId || "").trim();
+    const producerId = rawProducerId && validProducerIds.has(rawProducerId) ? rawProducerId : "";
+    const storeIds = Array.isArray(inst.storeIds)
+      ? inst.storeIds
+          .map((id) => String(id || "").trim())
+          .filter((id) => id && validStoreIds.has(id))
+      : [];
+    if (!producerId && storeIds.length === 0) {
+      removed += 1;
+      return;
+    }
+    filtered.push({
+      ...inst,
+      producerId,
+      storeIds,
+    });
+  });
+  return { list: filtered, removed };
+}
+
+function cleanupInstancesReferences({
+  removedStoreIds = [],
+  removedProducerIds = [],
+} = {}) {
+  const removedStores = new Set(
+    (Array.isArray(removedStoreIds) ? removedStoreIds : [])
+      .map((id) => String(id || "").trim())
+      .filter(Boolean)
+  );
+  const removedProducers = new Set(
+    (Array.isArray(removedProducerIds) ? removedProducerIds : [])
+      .map((id) => String(id || "").trim())
+      .filter(Boolean)
+  );
+  if (!removedStores.size && !removedProducers.size) return false;
+
+  const currentInstances = getInstancesList();
+  if (!Array.isArray(currentInstances) || currentInstances.length === 0) return false;
+
+  let changed = false;
+  const cleaned = currentInstances.map((inst) => {
+    if (!inst) return inst;
+    const currentStoreIds = Array.isArray(inst.storeIds) ? inst.storeIds : [];
+    const nextStoreIds = currentStoreIds.filter((id) => !removedStores.has(String(id || "").trim()));
+    const currentProducerId = String(inst.producerId || "").trim();
+    const nextProducerId = removedProducers.has(currentProducerId) ? "" : currentProducerId;
+    const sameStores =
+      nextStoreIds.length === currentStoreIds.length &&
+      nextStoreIds.every((id, idx) => id === currentStoreIds[idx]);
+    const sameProducer = nextProducerId === currentProducerId;
+    if (sameStores && sameProducer) return inst;
+    changed = true;
+    return {
+      ...inst,
+      producerId: nextProducerId,
+      storeIds: nextStoreIds,
+      updatedAt: nowIsoString(),
+    };
+  });
+
+  if (!changed) return false;
+  const { list: pruned } = pruneInstancesWithoutProducerAndStore(cleaned);
+  setInstancesList(pruned);
+  instancesNeedsRender = true;
+  return true;
+}
+
 function setSuppliersList(list) {
+  const previous = Array.isArray(suppliers) ? suppliers : [];
   const next = Array.isArray(list) ? list : [];
+  const removedStoreIds = getRemovedEntityIds(previous, next);
   suppliers = next;
   memoStores = [];
   memoStoreLocations = [];
+  cleanupInstancesReferences({ removedStoreIds });
   if (isSyncingFromStore) return suppliers;
   if (stateAdapter && typeof stateAdapter.setEntity === "function") {
     stateAdapter.setEntity("suppliers", next);
@@ -241,10 +348,13 @@ function setSuppliersList(list) {
 }
 
 function setProducersList(list) {
+  const previous = Array.isArray(producers) ? producers : [];
   const next = Array.isArray(list) ? list : [];
+  const removedProducerIds = getRemovedEntityIds(previous, next);
   producers = next;
   memoProducerFilterOptions = "";
   memoProducerLocations = [];
+  cleanupInstancesReferences({ removedProducerIds });
   if (isSyncingFromStore) return producers;
   if (stateAdapter && typeof stateAdapter.setEntity === "function") {
     stateAdapter.setEntity("producers", next);
@@ -769,6 +879,7 @@ function applyInventoryFiltersToRow(row, product) {
   const filterType = filterTypeSelect?.value || "";
   const filterShelf = filterShelfSelect?.value || "";
   const filterStoreId = filterStoreSelect?.value || "";
+  const filterProducerId = filterProducerSelect?.value || "";
   const status = filterStatusSelect?.value || "all";
   const futureMap =
     typeof window.buildFutureOrderMap === "function" ? window.buildFutureOrderMap() : null;
@@ -780,6 +891,7 @@ function applyInventoryFiltersToRow(row, product) {
   if (visible && filterType && (product.type || "") !== filterType) visible = false;
   if (visible && filterShelf && (product.shelf || "") !== filterShelf) visible = false;
   if (visible && filterStoreId && !productMatchesStore(product, filterStoreId)) visible = false;
+  if (visible && filterProducerId && !productMatchesProducer(product, filterProducerId)) visible = false;
   if (visible && status === "have" && !have) visible = false;
   if (visible && status === "missing" && have) visible = false;
   if (visible && status === "future" && !future) visible = false;
@@ -895,8 +1007,9 @@ function areInventoryFiltersActive() {
   const type = filterTypeSelect?.value || "";
   const shelf = filterShelfSelect?.value || "";
   const store = filterStoreSelect?.value || "";
+  const producer = filterProducerSelect?.value || "";
   const status = filterStatusSelect?.value || "all";
-  return search || block || type || shelf || store || status !== "all";
+  return search || block || type || shelf || store || producer || status !== "all";
 }
 
 function areExtraFiltersActive() {
@@ -904,9 +1017,10 @@ function areExtraFiltersActive() {
   const family = extraFilterFamilySelect?.value || "";
   const type = extraFilterTypeSelect?.value || "";
   const store = extraFilterStoreSelect?.value || "";
+  const producer = extraFilterProducerSelect?.value || "";
   const have = extraFilterHaveSelect?.value || "all";
   const buy = extraFilterBuySelect?.value || "all";
-  return search || family || type || store || buy !== "all" || have !== "all";
+  return search || family || type || store || producer || buy !== "all" || have !== "all";
 }
 
 
@@ -1054,6 +1168,7 @@ let classificationSearchInput;
 let classificationFamilyFilterSelect;
 let classificationTypeFilterSelect;
 let ordersSummaryInfo;
+let ordersPlannerSummary;
 
 // Navegación principal
 let mainAlmacenButton;
@@ -1090,6 +1205,7 @@ let filterShelfSelect;
 let filterBlockSelect;
 let filterTypeSelect;
 let filterStoreSelect;
+let filterProducerSelect;
 let filterStatusSelect;
 let productTableBody;
 
@@ -1102,6 +1218,7 @@ let editFilterFamilySelect;
 let editFilterTypeSelect;
 let editFilterShelfSelect;
 let editFilterStoreSelect;
+let editFilterProducerSelect;
 
 // Otros (vista principal)
 let extraListTableBody;
@@ -1109,6 +1226,7 @@ let extraFilterSearchInput;
 let extraFilterFamilySelect;
 let extraFilterTypeSelect;
 let extraFilterStoreSelect;
+let extraFilterProducerSelect;
 let extraFilterHaveSelect;
 let extraFilterBuySelect;
 
@@ -1120,6 +1238,7 @@ let extraEditFilterSearchInput;
 let extraEditFilterFamilySelect;
 let extraEditFilterTypeSelect;
 let extraEditFilterStoreSelect;
+let extraEditFilterProducerSelect;
 let extraEditFilterHaveSelect;
 let extraQuickRowTemplate;
 let inventoryRowTemplate;
@@ -1127,6 +1246,7 @@ let inventoryRowTemplate;
 // Productores
 let producersSearchInput;
 let producersLocationFilterSelect;
+let producersUsageFilterSelect;
 let producersTableBody;
 let addProducerButton;
 let saveProducersButton;
@@ -1135,6 +1255,7 @@ let saveProducersButton;
 let storesSearchInput;
 let storesTypeFilterSelect;
 let storesLocationFilterSelect;
+let storesUsageFilterSelect;
 let storesTableBody;
 let addStoreButton;
 let saveStoresButton;
@@ -1173,6 +1294,7 @@ let ordersStoreSelect;
 let ordersPlannedDate;
 let ordersPriceInput;
 let ordersNameInput;
+let addOrderQuickButton;
 let addOrderItemButton;
 let newOrderButton;
 let toggleOrdersBatchButton;
@@ -1190,10 +1312,30 @@ let ordersTableBody;
 let ordersRowTemplate;
 let ordersProductsDatalist;
 let ordersSavedList;
+let ordersHistoryPanel;
+let ordersHistorySummary;
+let ordersHistoryList;
+let ordersHistoryPreview;
+let ordersHistoryNameInput;
+let ordersHistoryDateInput;
+let ordersHistoryPriceInput;
+let ordersHistoryPreviewSummary;
+let ordersHistoryPreviewTableBody;
+let ordersPlannerList;
+let ordersKpis;
+let ordersViewOperativeButton;
+let ordersViewCalendarButton;
+let ordersViewHistoryButton;
+let ordersOperativeView;
+let ordersCalendarView;
+let ordersHistoryView;
+let ordersCalendarSummary;
+let ordersCalendarList;
 let ordersFamilyFilterSelect;
 let ordersTypeFilterSelect;
 let ordersScopeFilterSelect;
 let ordersDateFilterSelect;
+let ordersSavedSearchInput;
 let instancesController;
 let classificationController;
 let producersController;
@@ -1234,6 +1376,13 @@ function initNavAccessibility() {
       btn.setAttribute("role", "tab");
     });
   }
+  const ordersTabs = document.querySelector(".tabs-orders");
+  if (ordersTabs) {
+    ordersTabs.setAttribute("role", "tablist");
+    ordersTabs.querySelectorAll("button").forEach((btn) => {
+      btn.setAttribute("role", "tab");
+    });
+  }
 }
 
 function initFiltersAccessibility() {
@@ -1266,6 +1415,7 @@ let shoppingItemTemplate;
 // Backup y Excel
 let exportBackupButton;
 let importBackupButton;
+let pruneSelectionsButton;
 let backupFileInput;
 let exportAlmacenCsvButton;
 let exportOtrosCsvButton;
@@ -1304,10 +1454,13 @@ let memoProductsDatalistKey = "";
 let currentOrderStoreId = "";
 let currentOrderId = "";
 let orderProductOptionMap = new Map();
+let ordersPlannerStoreMap = new Map();
+let ordersReadOnly = false;
+let currentOrdersSubview = "operative";
 let saveShortcutBound = false;
 let lastDuplicateToast = { name: "", ts: 0 };
 let selectionButtonsVisible = true;
-let instancesMissingFilterActive = false;
+let instancesMissingFilterActive = true;
 
 let filtersDefaultsApplied = false;
 let selectionDragCleanup = null;
@@ -1379,6 +1532,7 @@ function getInventoryContext() {
       filterBlockSelect,
       filterTypeSelect,
       filterStoreSelect,
+      filterProducerSelect,
       filterStatusSelect,
       summaryInfo,
       inventoryRowTemplate,
@@ -1399,6 +1553,7 @@ function getInventoryContext() {
       buildFamilyStripeMap,
       compareShelfBlockTypeName,
       productMatchesStore,
+      productMatchesProducer,
       getSelectionLabelForProduct,
       getSelectionStoresForProduct,
       createSelectionButton,
@@ -1428,6 +1583,7 @@ function initAfterDom(tStart = performance.now()) {
     storesSummaryInfo,
     instancesSummaryInfo,
     ordersSummaryInfo,
+    ordersPlannerSummary,
     classificationSearchInput,
     classificationFamilyFilterSelect,
     classificationTypeFilterSelect,
@@ -1458,6 +1614,7 @@ function initAfterDom(tStart = performance.now()) {
     filterBlockSelect,
     filterTypeSelect,
     filterStoreSelect,
+    filterProducerSelect,
     filterStatusSelect,
     productTableBody,
     inventoryRowTemplate,
@@ -1474,11 +1631,13 @@ function initAfterDom(tStart = performance.now()) {
     editFilterTypeSelect,
     editFilterShelfSelect,
     editFilterStoreSelect,
+    editFilterProducerSelect,
     extraListTableBody,
     extraFilterSearchInput,
     extraFilterFamilySelect,
     extraFilterTypeSelect,
     extraFilterStoreSelect,
+    extraFilterProducerSelect,
     extraFilterHaveSelect,
     extraFilterBuySelect,
     extraTableBody,
@@ -1488,17 +1647,20 @@ function initAfterDom(tStart = performance.now()) {
     extraEditFilterFamilySelect,
     extraEditFilterTypeSelect,
     extraEditFilterStoreSelect,
+    extraEditFilterProducerSelect,
     extraEditFilterHaveSelect,
     extraQuickRowTemplate,
     extraEditRowTemplate,
     producersSearchInput,
     producersLocationFilterSelect,
+    producersUsageFilterSelect,
     producersTableBody,
     addProducerButton,
     saveProducersButton,
     storesSearchInput,
     storesTypeFilterSelect,
     storesLocationFilterSelect,
+    storesUsageFilterSelect,
     storesTableBody,
     addStoreButton,
     saveStoresButton,
@@ -1529,6 +1691,7 @@ function initAfterDom(tStart = performance.now()) {
     ordersPlannedDate,
     ordersPriceInput,
     ordersNameInput,
+    addOrderQuickButton,
     toggleOrdersBatchButton,
     closeOrdersBatchButton,
     ordersBatchPanel,
@@ -1546,13 +1709,34 @@ function initAfterDom(tStart = performance.now()) {
     ordersSummaryInfo,
     ordersProductsDatalist,
     ordersSavedList,
+    ordersHistoryPanel,
+    ordersHistorySummary,
+    ordersHistoryList,
+    ordersHistoryPreview,
+    ordersHistoryNameInput,
+    ordersHistoryDateInput,
+    ordersHistoryPriceInput,
+    ordersHistoryPreviewSummary,
+    ordersHistoryPreviewTableBody,
+    ordersPlannerList,
+    ordersKpis,
+    ordersViewOperativeButton,
+    ordersViewCalendarButton,
+    ordersViewHistoryButton,
+    ordersOperativeView,
+    ordersCalendarView,
+    ordersHistoryView,
+    ordersCalendarSummary,
+    ordersCalendarList,
     ordersFamilyFilterSelect,
     ordersTypeFilterSelect,
     ordersScopeFilterSelect,
     ordersDateFilterSelect,
+    ordersSavedSearchInput,
     ordersBatchSelect,
     exportBackupButton,
     importBackupButton,
+    pruneSelectionsButton,
     backupFileInput,
     exportAlmacenCsvButton,
     exportOtrosCsvButton,
@@ -1595,24 +1779,18 @@ function initAfterDom(tStart = performance.now()) {
   document.addEventListener("keydown", handleOrdersBatchKeydown, { capture: true });
   if (ordersTableBody) {
     ordersTableBody.addEventListener("input", handleOrdersInputChange);
+    ordersTableBody.addEventListener("keydown", handleOrdersTableKeydown);
+  }
+  if (ordersBatchSelect) {
+    ordersBatchSelect.addEventListener("change", updateOrdersBatchToggleLabel);
   }
   setSelectionButtonsVisibility(true);
 
-    if (instancesMissingFilterButton) {
-      const toggleMissingFilter = () => {
-        instancesMissingFilterActive = !instancesMissingFilterActive;
-        instancesMissingFilterButton.classList.toggle("active", instancesMissingFilterActive);
-        instancesMissingFilterButton.setAttribute("aria-pressed", instancesMissingFilterActive ? "true" : "false");
-        const activeInstancesTab =
-          isActiveSection(proveedoresSection) &&
-          instancesPanel &&
-          instancesPanel.classList.contains("active");
-        if (activeInstancesTab) {
-          renderInstancesTable(true, { showLoading: true });
-        }
-      };
-      instancesMissingFilterButton.addEventListener("click", toggleMissingFilter);
-    }
+  if (instancesMissingFilterButton) {
+    instancesMissingFilterButton.classList.add("active");
+    instancesMissingFilterButton.setAttribute("aria-pressed", "true");
+    instancesMissingFilterButton.disabled = true;
+  }
 
   if (window.ProductAutocomplete && typeof window.ProductAutocomplete.init === "function") {
     window.ProductAutocomplete.init({
@@ -1643,6 +1821,7 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
       handleCopyList,
       handleExportBackup,
       handleBackupFileChange,
+      handlePruneSelections,
       handleExportAlmacenCsv,
       handleExportOtrosCsv,
       handleExportStoresCsv,
@@ -1658,6 +1837,7 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
       handleOrderMetaChange,
       handleOrdersFilterChange,
       handleOrdersDateFilterChange,
+      handleOrdersSavedSearchInput,
       handleToggleOrdersBatchPanel,
       handleCloseOrdersBatchPanel,
       handleSaveOrders,
@@ -1665,6 +1845,13 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
       handleDeleteOrder,
       handleOrdersTableClick,
       handleOrdersSavedClick,
+      handleOrdersHistoryClick,
+      handleOrdersPlannerClick,
+      handleOrdersViewOperativeClick,
+      handleOrdersViewCalendarClick,
+      handleOrdersViewHistoryClick,
+      handleOrdersCalendarClick,
+      handleOrdersHistoryMetaChange,
     });
 
     window.AppBootstrap.initPopups(bootRefs, {
@@ -1782,22 +1969,26 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
             filterBlockSelect,
             filterTypeSelect,
             filterStoreSelect,
+            filterProducerSelect,
             filterStatusSelect,
             editFilterSearchInput,
             editFilterFamilySelect,
             editFilterTypeSelect,
             editFilterShelfSelect,
             editFilterStoreSelect,
+            editFilterProducerSelect,
             extraFilterSearchInput,
             extraFilterFamilySelect,
             extraFilterTypeSelect,
             extraFilterStoreSelect,
+            extraFilterProducerSelect,
             extraFilterHaveSelect,
             extraFilterBuySelect,
             extraEditFilterSearchInput,
             extraEditFilterFamilySelect,
             extraEditFilterTypeSelect,
             extraEditFilterStoreSelect,
+            extraEditFilterProducerSelect,
             extraEditFilterHaveSelect,
             instancesSearchInput,
             instancesFamilyFilterSelect,
@@ -1806,8 +1997,10 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
             storesSearchInput,
             storesTypeFilterSelect,
             storesLocationFilterSelect,
+            storesUsageFilterSelect,
             producersSearchInput,
             producersLocationFilterSelect,
+            producersUsageFilterSelect,
             classificationSearchInput,
             classificationFamilyFilterSelect,
             classificationTypeFilterSelect,
@@ -1892,6 +2085,7 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
           familyFilter: extraFilterFamilySelect,
           typeFilter: extraFilterTypeSelect,
           storeFilter: extraFilterStoreSelect,
+          producerFilter: extraFilterProducerSelect,
           haveFilter: extraFilterHaveSelect,
           buyFilter: extraFilterBuySelect,
           rowTemplate: extraQuickRowTemplate,
@@ -1912,6 +2106,7 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
           },
         getSelectionInstanceForProduct,
         getStoreIdsForProduct,
+        getProducerIdsForProduct,
         getStoreNames,
         persistUnified,
         getPantryProducts,
@@ -1980,6 +2175,7 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
           familyFilter: extraEditFilterFamilySelect,
           typeFilter: extraEditFilterTypeSelect,
           storeFilter: extraEditFilterStoreSelect,
+          producerFilter: extraEditFilterProducerSelect,
           haveFilter: extraEditFilterHaveSelect,
           rowTemplate: extraEditRowTemplate,
         },
@@ -1994,6 +2190,11 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
           const product = getOtherProducts().find((p) => p.id === id);
           if (!product) return true;
           return productMatchesStore(product, storeId);
+        },
+        matchesProducer: (id, producerId) => {
+          const product = getOtherProducts().find((p) => p.id === id);
+          if (!product) return true;
+          return productMatchesProducer(product, producerId);
         },
         helpers: {
           createTableInput,
@@ -2062,6 +2263,7 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
           typeFilter: editFilterTypeSelect,
           shelfFilter: editFilterShelfSelect,
           storeFilter: editFilterStoreSelect,
+          producerFilter: editFilterProducerSelect,
           rowTemplate: inventoryEditRowTemplate,
         },
         getProducts: () => getPantryProducts(),
@@ -2072,6 +2274,11 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
           const product = getPantryProducts().find((p) => p.id === id);
           if (!product) return true;
           return productMatchesStore(product, storeId);
+        },
+        matchesProducer: (id, producerId) => {
+          const product = getPantryProducts().find((p) => p.id === id);
+          if (!product) return true;
+          return productMatchesProducer(product, producerId);
         },
         helpers: {
           createTableInput,
@@ -2151,10 +2358,12 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
           saveButton: saveProducersButton,
           searchInput: producersSearchInput,
           locationFilter: producersLocationFilterSelect,
+          usageFilter: producersUsageFilterSelect,
           rowTemplate: producersRowTemplate,
           summary: producersSummaryInfo,
         },
         getProducers: () => getProducersList(),
+        getUsedProducerIds: () => getUsedProducerIdsSet(),
         persist: (list) => {
           setProducersList(Array.isArray(list) ? list : []);
         },
@@ -2184,10 +2393,12 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
           searchInput: storesSearchInput,
           typeFilter: storesTypeFilterSelect,
           locationFilter: storesLocationFilterSelect,
+          usageFilter: storesUsageFilterSelect,
           rowTemplate: storesRowTemplate,
           summary: storesSummaryInfo,
         },
         getStores: () => getSuppliersList(),
+        getUsedStoreIds: () => getUsedStoreIdsSet(),
         persist: (list) => {
           setSuppliersList(Array.isArray(list) ? list : []);
         },
@@ -2236,6 +2447,7 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
                 buildFamilyStripeMap,
                 compareShelfBlockTypeName,
                 productMatchesStore,
+                productMatchesProducer,
                 getSelectionLabelForProduct,
                 getSelectionStoresForProduct,
                 createSelectionButton,
@@ -2255,6 +2467,7 @@ function runMainInit(tStart, renderInstancesDebounced, refsObj) {
           filterBlockSelect,
           filterTypeSelect,
           filterStoreSelect,
+          filterProducerSelect,
           filterStatusSelect,
           summaryInfo,
         };
@@ -2542,10 +2755,6 @@ function setMainSection(section) {
       renderExtraQuickTable(true);
     }
   }
-  if (isSelection) {
-    resetInstancesFilters();
-    renderInstancesTable(true, { showLoading: true });
-  }
 }
 
 function initClassificationOnDemand() {
@@ -2609,6 +2818,7 @@ function ensureInstancesViewContext() {
       onCreateProduct: openInlineProductCreator,
       onAfterSave: handleInstancesDependencies,
       nowIsoString,
+      onlyMissingMode: true,
       getMissingFilterActive: () => instancesMissingFilterActive,
     };
   }
@@ -2882,8 +3092,10 @@ function setProveedoresTab(tab) {
     renderStores(true);
   }
   if (isInstances && proveedoresVisible) {
-    markInstancesLoading();
-    scheduleInstancesRender({ force: true, replace: true, immediate: true, showLoading: true });
+    if (instancesNeedsRender || !instancesWarmupDone) {
+      markInstancesLoading();
+      scheduleInstancesRender({ force: true, replace: true, immediate: true, showLoading: true });
+    }
   } else if (isInstances) {
     instancesNeedsRender = true;
   }
@@ -2907,10 +3119,11 @@ function resetInstancesFilters() {
   if (instancesFamilyFilterSelect) instancesFamilyFilterSelect.value = "";
   if (instancesProducerFilterSelect) instancesProducerFilterSelect.value = "";
   if (instancesStoreFilterSelect) instancesStoreFilterSelect.value = "";
-  instancesMissingFilterActive = false;
+  instancesMissingFilterActive = true;
   if (instancesMissingFilterButton) {
-    instancesMissingFilterButton.classList.remove("active");
-    instancesMissingFilterButton.setAttribute("aria-pressed", "false");
+    instancesMissingFilterButton.classList.add("active");
+    instancesMissingFilterButton.setAttribute("aria-pressed", "true");
+    instancesMissingFilterButton.disabled = true;
   }
 }
 
@@ -3134,12 +3347,14 @@ function isKnownProduct(name, id) {
 // ======= Selecciones (instancias de producto) =======
 
 function getProducerName(id) {
-  const p = getProducersList().find((x) => x.id === id);
+  const normalized = String(id || "");
+  const p = getProducersList().find((x) => String(x.id || "") === normalized);
   return p ? p.name || "" : "";
 }
 
 function getStoreName(id) {
-  const s = getSuppliersList().find((x) => x.id === id);
+  const normalized = String(id || "");
+  const s = getSuppliersList().find((x) => String(x.id || "") === normalized);
   return s ? s.name || "" : "";
 }
 
@@ -3617,11 +3832,68 @@ function getStoreIdsForProduct(product) {
   return Array.from(ids);
 }
 
+function getProducerIdsForProduct(product) {
+  if (!product) return [];
+  const ids = new Set();
+  const addId = (id) => {
+    const normalized = String(id || "").trim();
+    if (normalized) ids.add(normalized);
+  };
+
+  const inst = getSelectionInstanceForProduct(product);
+  addId(inst?.producerId);
+
+  const nameLower = (product.name || "").trim().toLowerCase();
+  const productId = String(product.id || "").trim();
+  const instances = getInstancesList();
+  instances.forEach((pi) => {
+    const sameId = productId && String(pi.productId || "").trim() === productId;
+    const sameName =
+      nameLower && (pi.productName || "").trim().toLowerCase() === nameLower;
+    if (sameId || sameName) {
+      addId(pi.producerId);
+    }
+  });
+
+  return Array.from(ids);
+}
+
 function productMatchesStore(product, storeId) {
   const target = String(storeId || "").trim();
   if (!target) return true;
   const storeIds = getStoreIdsForProduct(product);
   return storeIds.includes(target);
+}
+
+function productMatchesProducer(product, producerId) {
+  const target = String(producerId || "").trim();
+  if (!target) return true;
+  const producerIds = getProducerIdsForProduct(product);
+  return producerIds.includes(target);
+}
+
+function getUsedProducerIdsSet() {
+  const used = new Set();
+  const allProducts = [...getPantryProducts(), ...getOtherProducts()];
+  allProducts.forEach((product) => {
+    getProducerIdsForProduct(product).forEach((id) => {
+      const normalized = String(id || "").trim();
+      if (normalized) used.add(normalized);
+    });
+  });
+  return used;
+}
+
+function getUsedStoreIdsSet() {
+  const used = new Set();
+  const allProducts = [...getPantryProducts(), ...getOtherProducts()];
+  allProducts.forEach((product) => {
+    getStoreIdsForProduct(product).forEach((id) => {
+      const normalized = String(id || "").trim();
+      if (normalized) used.add(normalized);
+    });
+  });
+  return used;
 }
 
 function createSelectionButton(selectionId, id) {
@@ -3741,6 +4013,7 @@ function addQuickStore(data, selectEl, chipsContainer) {
     location: normalizedData.location || "",
     website: normalizedData.website || "",
     notes: normalizedData.notes || "",
+    ordersFavorite: false,
     createdAt: now,
     updatedAt: now,
   };
@@ -4928,7 +5201,9 @@ function renderStoreOptions() {
     .sort((a, b) =>
       (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" })
     );
-  const memoKey = storeList.map((s) => `${s.id}::${s.name || ""}`).join("|||");
+  const memoKey = storeList
+    .map((s) => `${s.id}::${s.name || ""}::${s.ordersFavorite ? "1" : "0"}`)
+    .join("|||");
   if (memoStores.join("|||") === memoKey && memoStores.length) return;
   memoStores = memoKey ? memoKey.split("|||") : [];
 
@@ -4959,38 +5234,34 @@ function renderStoreOptions() {
   });
 
   if (ordersStoreSelect) {
-    const current = ordersStoreSelect.value;
+    const current = String(ordersStoreSelect.value || "");
     ordersStoreSelect.innerHTML = "";
     const optNone = document.createElement("option");
     optNone.value = "";
-    optNone.textContent = "Sin tienda";
+    optNone.textContent = "Todas las tiendas";
     ordersStoreSelect.appendChild(optNone);
-    storeList.forEach((s) => {
+    const favoriteStores = storeList.filter((s) => !!s.ordersFavorite);
+    favoriteStores.forEach((s) => {
       const o = document.createElement("option");
-      o.value = s.id;
+      o.value = String(s.id || "");
       o.textContent = s.name || "(sin nombre)";
       ordersStoreSelect.appendChild(o);
     });
-    const existingOrderStores = new Set(
-      getOrdersList()
-        .map((o) => o.storeId || "")
-        .filter((id) => id && !storeList.some((s) => s.id === id))
-    );
-    existingOrderStores.forEach((id) => {
-      const opt = document.createElement("option");
-      opt.value = id;
-      opt.textContent = getOrderStoreLabel({ storeId: id, fallback: "(tienda eliminada)" });
-      ordersStoreSelect.appendChild(opt);
-    });
-    if (current && Array.from(ordersStoreSelect.options).some((o) => o.value === current)) {
+    if (current && Array.from(ordersStoreSelect.options).some((o) => String(o.value || "") === current)) {
       ordersStoreSelect.value = current;
+    } else {
+      ordersStoreSelect.value = "";
     }
   }
 }
 
+function sameStoreId(a = "", b = "") {
+  return String(a || "") === String(b || "");
+}
+
 function getOrderStoreLabel({ storeId = "", fallback = "Sin tienda" } = {}) {
   if (!storeId) return fallback;
-  const matchOrder = getOrdersList().find((o) => o.storeId === storeId);
+  const matchOrder = getOrdersList().find((o) => sameStoreId(o.storeId, storeId));
   if (matchOrder && matchOrder.storeName) return matchOrder.storeName;
   const name = getStoreName(storeId);
   return name || fallback;
@@ -5005,22 +5276,97 @@ function getOrderById(orderId = "") {
 function resolveOrderPlannedDate(order) {
   if (!order) return "";
   if (order.plannedDate) return order.plannedDate;
+  if (order.completedPlannedDate) return order.completedPlannedDate;
   const datedItem = Array.isArray(order.items) ? order.items.find((i) => i?.plannedDate) : null;
   return datedItem ? datedItem.plannedDate : "";
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function dayStartValue(date = new Date()) {
+  if (!(date instanceof Date)) return NaN;
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  return d.getTime();
+}
+
+function monthBounds(dayTs) {
+  if (!Number.isFinite(dayTs)) return { start: NaN, end: NaN };
+  const d = new Date(dayTs);
+  const start = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+  const end = new Date(d.getFullYear(), d.getMonth() + 1, 0).getTime();
+  return { start, end };
+}
+
+function weekBounds(dayTs) {
+  if (!Number.isFinite(dayTs)) return { start: NaN, end: NaN };
+  const d = new Date(dayTs);
+  const dayOfWeek = d.getDay();
+  const mondayOffset = (dayOfWeek + 6) % 7;
+  const start = dayTs - mondayOffset * DAY_MS;
+  const end = start + 6 * DAY_MS;
+  return { start, end };
+}
+
+function inDayRange(value, start, end) {
+  if (!Number.isFinite(value) || !Number.isFinite(start) || !Number.isFinite(end)) return false;
+  return value >= start && value <= end;
+}
+
+function getOrderFilterDate(order) {
+  const planned = (resolveOrderPlannedDate(order) || "").trim();
+  if (planned) return planned;
+  const completed = (order?.completedAt || "").slice(0, 10).trim();
+  if (completed) return completed;
+  return "";
 }
 
 function orderMatchesDateFilter(order, filter = "") {
   const mode = (filter || "").trim();
   if (!mode) return true;
   if (!order) return false;
-  const planned = (resolveOrderPlannedDate(order) || "").trim();
-  if (!planned) return true;
-  const plannedVal = dateValue(planned);
-  const todayVal = dateValue(todayDateString());
-  if (!Number.isFinite(plannedVal) || !Number.isFinite(todayVal)) return true;
-  if (mode === "future") return plannedVal >= todayVal;
-  if (mode === "past") return plannedVal < todayVal;
+  const orderDate = getOrderFilterDate(order);
+  const hasDate = !!orderDate;
+  const orderDay = hasDate ? dateValue(orderDate) : NaN;
+  const today = dayStartValue(new Date());
+  if (!Number.isFinite(today)) return true;
+  if (mode === "no_date") return !hasDate;
+  if (!hasDate || !Number.isFinite(orderDay)) return false;
+  const { start: weekStart, end: weekEnd } = weekBounds(today);
+  const nextWeekStart = weekStart + 7 * DAY_MS;
+  const nextWeekEnd = weekEnd + 7 * DAY_MS;
+  const { start: monthStart, end: monthEnd } = monthBounds(today);
+  const prevMonthRef = new Date(today);
+  prevMonthRef.setMonth(prevMonthRef.getMonth() - 1);
+  const { start: prevMonthStart, end: prevMonthEnd } = monthBounds(dayStartValue(prevMonthRef));
+  if (mode === "today") return orderDay === today;
+  if (mode === "this_week") return inDayRange(orderDay, weekStart, weekEnd);
+  if (mode === "next_week") return inDayRange(orderDay, nextWeekStart, nextWeekEnd);
+  if (mode === "this_month") return inDayRange(orderDay, monthStart, monthEnd);
+  if (mode === "last_month") return inDayRange(orderDay, prevMonthStart, prevMonthEnd);
+  if (mode === "next_7") return inDayRange(orderDay, today, today + 6 * DAY_MS);
+  if (mode === "next_30") return inDayRange(orderDay, today, today + 29 * DAY_MS);
+  if (mode === "overdue") return !order.completedAt && orderDay < today;
+  if (mode === "future") return orderDay >= today;
+  if (mode === "past") return orderDay < today;
   return true;
+}
+
+function getOrdersDateFilterLabel(filter = "") {
+  const mode = (filter || "").trim();
+  const labels = {
+    today: "Hoy",
+    this_week: "Esta semana",
+    next_week: "Próxima semana",
+    this_month: "Este mes",
+    last_month: "Mes pasado",
+    next_7: "Próximos 7 días",
+    next_30: "Próximos 30 días",
+    overdue: "Vencidos / atrasados",
+    future: "Futuros",
+    past: "Pasados",
+    no_date: "Sin fecha",
+  };
+  return labels[mode] || "Todas";
 }
 
 function normalizeProductNameForMatch(name = "") {
@@ -5219,24 +5565,56 @@ function markOrderItemsAsHave(order) {
 function getCurrentOrderContext() {
   const list = getOrdersList();
   const dateFilter = ordersDateFilterSelect?.value || "";
-  const selectedStore = (ordersStoreSelect && ordersStoreSelect.value) || currentOrderStoreId || "";
+  const selectedStore = ordersStoreSelect ? String(ordersStoreSelect.value || "") : "";
   let order = currentOrderId ? getOrderById(currentOrderId) : null;
   // Si estamos en un pedido nuevo (id no guardado), no sobrescribimos el contexto
   if (!order && currentOrderId) {
     return { order: null, storeId: selectedStore };
   }
   if (order) {
-    return { order, storeId: order.storeId || selectedStore };
+    const orderStoreId = order.storeId || "";
+    if (!selectedStore || sameStoreId(orderStoreId, selectedStore)) {
+      currentOrderStoreId = orderStoreId || "";
+      if (ordersStoreSelect) {
+        const filterValue = String(selectedStore || "");
+        const hasOption = Array.from(ordersStoreSelect.options || []).some(
+          (o) => String(o.value || "") === filterValue
+        );
+        ordersStoreSelect.value = hasOption ? filterValue : "";
+      }
+      return { order, storeId: orderStoreId || selectedStore };
+    }
+    // Si el usuario selecciona otra tienda, descartamos el pedido actual para respetar el filtro.
+    order = null;
   }
   const filteredByStore = list.filter((o) =>
-    selectedStore ? (o.storeId || "") === selectedStore : true
+    selectedStore ? sameStoreId(o.storeId, selectedStore) : true
   );
+  const activeFiltered = filteredByStore.filter(
+    (o) => !o.completedAt && orderMatchesDateFilter(o, dateFilter)
+  );
+  const activeByStore = filteredByStore.filter((o) => !o.completedAt);
   const filtered = filteredByStore.filter((o) => orderMatchesDateFilter(o, dateFilter));
-  order = filtered[0] || filteredByStore[0] || list[0] || null;
+  const activeGlobal = list.filter((o) => !o.completedAt && orderMatchesDateFilter(o, dateFilter));
+  if (selectedStore) {
+    order = activeFiltered[0] || activeByStore[0] || filtered[0] || filteredByStore[0] || null;
+  } else {
+    order =
+      activeFiltered[0] ||
+      activeByStore[0] ||
+      filtered[0] ||
+      activeGlobal[0] ||
+      list.find((o) => !o.completedAt) ||
+      list[0] ||
+      null;
+  }
   const storeId = order?.storeId || selectedStore || "";
   if (ordersStoreSelect) {
-    const hasOption = Array.from(ordersStoreSelect.options || []).some((o) => o.value === storeId);
-    if (hasOption) ordersStoreSelect.value = storeId;
+    const filterValue = String(selectedStore || "");
+    const hasOption = Array.from(ordersStoreSelect.options || []).some(
+      (o) => String(o.value || "") === filterValue
+    );
+    ordersStoreSelect.value = hasOption ? filterValue : "";
   }
   currentOrderId = order?.id || currentOrderId || "";
   currentOrderStoreId = storeId;
@@ -5245,12 +5623,6 @@ function getCurrentOrderContext() {
 
 function applyOrderMetaToInputs(order) {
   const planned = resolveOrderPlannedDate(order) || ordersPlannedDate?.value || todayDateString();
-  if (ordersStoreSelect) {
-    const val = order?.storeId || ordersStoreSelect.value || "";
-    const hasOption = Array.from(ordersStoreSelect.options || []).some((o) => o.value === val);
-    ordersStoreSelect.value = hasOption ? val : "";
-    currentOrderStoreId = ordersStoreSelect.value;
-  }
   if (ordersPriceInput) {
     ordersPriceInput.value = order?.price || "";
   }
@@ -5275,6 +5647,21 @@ function pickExpiryText(...values) {
       .map((val) => (val === undefined || val === null ? "" : String(val).trim()))
       .find((val) => val.length > 0) || ""
   );
+}
+
+function isFalsyHaveFlag(value) {
+  return value === false || value === 0 || value === "0";
+}
+
+function isMissingByScope(entity = null, scopeHint = "") {
+  if (!entity) return false;
+  const scope = String(entity.scope || scopeHint || "").trim().toLowerCase();
+  const buy = entity.buy === true;
+  if (scope === "otros") {
+    // En "Otros", faltante solo depende de "Comprar".
+    return buy;
+  }
+  return isFalsyHaveFlag(entity.have) || entity.status === "missing" || buy;
 }
 
 function buildOrderProductOptions(storeId = "", order = null) {
@@ -5365,25 +5752,17 @@ function buildOrderProductOptions(storeId = "", order = null) {
         product && product.selectionId && product.selectionId === inst.id;
       const isPriority = Number(inst.priority) > 0;
       const marker = isCurrentSelection ? "★" : "☆";
+      const resolvedScope =
+        product?.scope ||
+        unifiedProduct?.scope ||
+        ((inst.productId && findProductById(inst.productId)?.scope) || "") ||
+        scopeFilter ||
+        "";
       const isMissing =
         !!(
-          (unifiedProduct &&
-            (unifiedProduct.have === false ||
-              unifiedProduct.have === 0 ||
-              unifiedProduct.have === "0" ||
-              unifiedProduct.status === "missing" ||
-              unifiedProduct.buy === true)) ||
-          (product &&
-            (product.have === false ||
-              product.have === 0 ||
-              product.have === "0" ||
-              product.status === "missing" ||
-              product.buy === true)) ||
-          inst.have === false ||
-          inst.have === 0 ||
-          inst.have === "0" ||
-          inst.status === "missing" ||
-          inst.buy === true
+          isMissingByScope(unifiedProduct, unifiedProduct?.scope || resolvedScope) ||
+          isMissingByScope(product, product?.scope || resolvedScope) ||
+          isMissingByScope(inst, resolvedScope)
         );
       const parts = [marker, baseName];
       const labelParts = [baseName];
@@ -5474,6 +5853,51 @@ function renderOrderBatchSelect(options = []) {
       if (selectedKeys.has(opt.key || o.value.toLowerCase())) o.selected = true;
       ordersBatchSelect.appendChild(o);
     });
+  updateOrdersBatchToggleLabel();
+}
+
+function updateOrdersBatchToggleLabel() {
+  if (!toggleOrdersBatchButton || !ordersBatchSelect) return;
+  const selectedCount = Array.from(ordersBatchSelect.selectedOptions || []).length;
+  const iconMode = toggleOrdersBatchButton.dataset.iconMode === "true";
+  if (iconMode) {
+    toggleOrdersBatchButton.textContent = "☑";
+    const label = selectedCount > 0 ? `Seleccionar varios (${selectedCount})` : "Seleccionar varios";
+    if (selectedCount > 0) {
+      toggleOrdersBatchButton.dataset.count = String(selectedCount);
+    } else {
+      delete toggleOrdersBatchButton.dataset.count;
+    }
+    toggleOrdersBatchButton.title = label;
+    toggleOrdersBatchButton.setAttribute("aria-label", label);
+    return;
+  }
+  toggleOrdersBatchButton.textContent =
+    selectedCount > 0 ? `Seleccionar varios (${selectedCount})` : "Seleccionar varios";
+}
+
+function setOrdersSummaryChips(chips = []) {
+  if (!ordersSummaryInfo) return;
+  ordersSummaryInfo.innerHTML = "";
+  if (!Array.isArray(chips) || !chips.length) {
+    ordersSummaryInfo.textContent = "Sin pedidos para esta tienda";
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  chips.forEach((chip) => {
+    const label = (chip?.label || "").trim();
+    if (!label) return;
+    const tone = (chip?.tone || "").trim();
+    const span = document.createElement("span");
+    span.className = `orders-summary-chip${tone ? ` is-${tone}` : ""}`;
+    span.textContent = label;
+    frag.appendChild(span);
+  });
+  if (!frag.childNodes.length) {
+    ordersSummaryInfo.textContent = "Sin pedidos para esta tienda";
+    return;
+  }
+  ordersSummaryInfo.appendChild(frag);
 }
 
 function getRowFamilyType(row, scopeHint = "") {
@@ -5557,20 +5981,12 @@ function isOrderItemMissing(item = {}) {
     ? getInstancesList().find((i) => i.id === item.instanceId)
     : null;
   const prod = resolveProductFromOrderItem(item);
-  const isMissingInst =
-    inst &&
-    (inst.have === false ||
-      inst.have === 0 ||
-      inst.have === "0" ||
-      inst.status === "missing" ||
-      inst.buy === true);
-  const isMissingProd =
-    prod &&
-    (prod.have === false ||
-      prod.have === 0 ||
-      prod.have === "0" ||
-      prod.status === "missing" ||
-      prod.buy === true);
+  const resolvedScope =
+    prod?.scope ||
+    ((inst?.productId && findProductById(inst.productId)?.scope) || "") ||
+    "";
+  const isMissingInst = isMissingByScope(inst, resolvedScope);
+  const isMissingProd = isMissingByScope(prod, prod?.scope || resolvedScope);
   return !!(isMissingInst || isMissingProd);
 }
 
@@ -5729,6 +6145,8 @@ function removeOrdersPlaceholder() {
 function renderOrdersSummary(order, storeId) {
   if (!ordersSummaryInfo) return;
   const count = Array.isArray(order?.items) ? order.items.length : 0;
+  const isHistory = !!order?.completedAt;
+  const completed = (order?.completedAt || "").slice(0, 10);
   const storeLabel =
     getStoreName(storeId || "") ||
     order?.storeName ||
@@ -5736,17 +6154,22 @@ function renderOrdersSummary(order, storeId) {
   const name = (ordersNameInput?.value || order?.name || "").trim();
   const planned = (ordersPlannedDate?.value || order?.plannedDate || resolveOrderPlannedDate(order) || "").trim();
   const price = (ordersPriceInput?.value || order?.price || "").trim();
-  const parts = [];
-  if (name) parts.push(name);
-  parts.push(`${count} producto(s)`);
-  if (storeLabel) parts.push(storeLabel);
-  if (planned) parts.push(planned);
-  if (price) parts.push(`€${price}`);
-  ordersSummaryInfo.textContent = parts.join(" · ");
+  const chips = [];
+  if (isHistory) chips.push({ label: "Histórico", tone: "muted" });
+  if (name) chips.push({ label: name, tone: "name" });
+  chips.push({ label: `${count} producto(s)` });
+  if (storeLabel) chips.push({ label: storeLabel, tone: storeId ? "" : "muted" });
+  if (planned) chips.push({ label: planned });
+  if (completed) chips.push({ label: `Realizado ${completed}`, tone: "success" });
+  if (price) chips.push({ label: `€${price}` });
+  setOrdersSummaryChips(chips);
 }
 
 function updateOrdersSummaryFromTable() {
   if (!ordersSummaryInfo) return;
+  const order = currentOrderId ? getOrderById(currentOrderId) : null;
+  const isHistory = !!order?.completedAt;
+  const completed = (order?.completedAt || "").slice(0, 10);
   const rows = ordersTableBody
     ? Array.from(ordersTableBody.querySelectorAll("tr")).filter(
         (row) => row.dataset.empty !== "true" && row.style.display !== "none"
@@ -5759,13 +6182,588 @@ function updateOrdersSummaryFromTable() {
   const name = (ordersNameInput?.value || "").trim();
   const planned = (ordersPlannedDate?.value || "").trim();
   const price = (ordersPriceInput?.value || "").trim();
-  const parts = [];
-  if (name) parts.push(name);
-  parts.push(`${rows.length} producto(s)`);
-  if (label) parts.push(label);
-  if (planned) parts.push(planned);
-  if (price) parts.push(`€${price}`);
-  ordersSummaryInfo.textContent = parts.join(" · ");
+  const chips = [];
+  if (isHistory) chips.push({ label: "Histórico", tone: "muted" });
+  if (name) chips.push({ label: name, tone: "name" });
+  chips.push({ label: `${rows.length} producto(s)` });
+  if (label) chips.push({ label, tone: storeId ? "" : "muted" });
+  if (planned) chips.push({ label: planned });
+  if (completed) chips.push({ label: `Realizado ${completed}`, tone: "success" });
+  if (price) chips.push({ label: `€${price}` });
+  setOrdersSummaryChips(chips);
+}
+
+function syncOrdersReadOnlyState(order) {
+  const readOnly = !!order?.completedAt;
+  ordersReadOnly = readOnly;
+  if (ordersNameInput) ordersNameInput.disabled = readOnly;
+  if (ordersPlannedDate) ordersPlannedDate.disabled = readOnly;
+  if (ordersPriceInput) ordersPriceInput.disabled = readOnly;
+  if (addOrderItemButton) addOrderItemButton.disabled = readOnly;
+  if (toggleOrdersBatchButton) toggleOrdersBatchButton.disabled = readOnly;
+  if (addOrderBatchButton) addOrderBatchButton.disabled = readOnly;
+  if (replaceOrderBatchButton) replaceOrderBatchButton.disabled = readOnly;
+  if (saveOrdersButton) saveOrdersButton.disabled = readOnly;
+  if (clearOrderButton) clearOrderButton.disabled = readOnly;
+  if (completeOrderButton) completeOrderButton.disabled = readOnly;
+  if (duplicateOrderButton) {
+    duplicateOrderButton.disabled = !order;
+    duplicateOrderButton.textContent = readOnly ? "Copiar pedido" : "Duplicar pedido";
+  }
+  if (deleteOrderButton) deleteOrderButton.disabled = !order;
+  if (ordersBatchPanel && readOnly) {
+    ordersBatchPanel.hidden = true;
+    ordersBatchPanel.classList.remove("open");
+    if (toggleOrdersBatchButton) toggleOrdersBatchButton.setAttribute("aria-expanded", "false");
+  }
+  if (!ordersTableBody) return;
+  Array.from(ordersTableBody.querySelectorAll("tr")).forEach((row) => {
+    if (row.dataset.empty === "true") return;
+    const productInput = row.querySelector("input[data-field='product']");
+    const quantityInput = row.querySelector("input[data-field='quantity']");
+    const deleteBtn = row.querySelector("[data-role='delete']");
+    if (productInput) productInput.readOnly = readOnly;
+    if (quantityInput) quantityInput.readOnly = readOnly;
+    if (deleteBtn) deleteBtn.disabled = readOnly;
+  });
+}
+
+function buildOrderItemMatchKeys(item = {}) {
+  const keys = new Set();
+  const productId = item.productId ? String(item.productId) : "";
+  const instanceId = item.instanceId ? String(item.instanceId) : "";
+  const name = item.productName || "";
+  const normalized = normalizeProductNameForMatch(name);
+  const noSpaces = name.replace(/\s+/g, "").toLowerCase();
+  if (productId) keys.add(`id:${productId}`);
+  if (instanceId) keys.add(`sel:${instanceId}`);
+  if (normalized.clean) keys.add(`name:${normalized.clean}`);
+  if (normalized.base) keys.add(`name:${normalized.base}`);
+  if (noSpaces) keys.add(`nospace:${noSpaces}`);
+  return keys;
+}
+
+function buildProductMatchKeys(product = {}) {
+  const keys = new Set();
+  const productId = product.id !== undefined && product.id !== null ? String(product.id) : "";
+  const selectionId = product.selectionId ? String(product.selectionId) : "";
+  const name = product.name || "";
+  const normalized = normalizeProductNameForMatch(name);
+  const noSpaces = name.replace(/\s+/g, "").toLowerCase();
+  if (productId) keys.add(`id:${productId}`);
+  if (selectionId) keys.add(`sel:${selectionId}`);
+  if (normalized.clean) keys.add(`name:${normalized.clean}`);
+  if (normalized.base) keys.add(`name:${normalized.base}`);
+  if (noSpaces) keys.add(`nospace:${noSpaces}`);
+  return keys;
+}
+
+function buildActiveOrderItemKeys() {
+  const activeOrders = getOrdersList().filter((order) => !order.completedAt);
+  const keySet = new Set();
+  activeOrders.forEach((order) => {
+    (order.items || []).forEach((item) => {
+      buildOrderItemMatchKeys(item).forEach((key) => keySet.add(key));
+    });
+  });
+  return keySet;
+}
+
+function buildOrdersPlannerModel() {
+  const shoppingSummary = buildShoppingStoreSummary();
+  const plannedKeys = buildActiveOrderItemKeys();
+  const stores = shoppingSummary.stores.map((storeEntry) => {
+    const storeKey = normalizeStoreGroupingKey(storeEntry.storeId || "", storeEntry.storeName || "");
+    const items = storeEntry.items.map(({ product, source }) => {
+      const productKeys = buildProductMatchKeys(product);
+      const planned = Array.from(productKeys).some((key) => plannedKeys.has(key));
+      return { product, source, planned };
+    });
+    const pendingCount = items.length;
+    const plannedCount = items.filter((item) => item.planned).length;
+    const newItems = items.filter((item) => !item.planned);
+    const newCount = newItems.length;
+    return {
+      ...storeEntry,
+      key: storeKey,
+      pendingCount,
+      plannedCount,
+      newCount,
+      items,
+      newItems,
+    };
+  });
+  stores.sort((a, b) => {
+    if (b.newCount !== a.newCount) return b.newCount - a.newCount;
+    if (b.pendingCount !== a.pendingCount) return b.pendingCount - a.pendingCount;
+    return (a.storeName || "").localeCompare(b.storeName || "", "es", { sensitivity: "base" });
+  });
+  return {
+    stores,
+    totalStores: stores.length,
+    totalPending: stores.reduce((acc, store) => acc + store.pendingCount, 0),
+    totalPlanned: stores.reduce((acc, store) => acc + store.plannedCount, 0),
+    totalNew: stores.reduce((acc, store) => acc + store.newCount, 0),
+  };
+}
+
+function pickOrderForStore(storeId = "", storeName = "") {
+  const normalizedStoreId = String(storeId || "");
+  const normalizedStoreName = String(storeName || "").trim().toLowerCase();
+  const byStore = getOrdersList().filter((order) => {
+    if (normalizedStoreId) {
+      return String(order.storeId || "") === normalizedStoreId;
+    }
+    if (!normalizedStoreName) {
+      return String(order.storeId || "") === "";
+    }
+    const label = (
+      order.storeName ||
+      getOrderStoreLabel({ storeId: order.storeId || "", fallback: "" }) ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+    return label === normalizedStoreName;
+  });
+  if (!byStore.length) return null;
+  const openOrders = byStore.filter((order) => !order.completedAt);
+  const futureOpen = openOrders.filter((order) => orderMatchesDateFilter(order, "future"));
+  const pool = futureOpen.length ? futureOpen : openOrders.length ? openOrders : byStore;
+  return (
+    pool
+      .slice()
+      .sort((a, b) => {
+        const aDate = dateValue(resolveOrderPlannedDate(a));
+        const bDate = dateValue(resolveOrderPlannedDate(b));
+        if (Number.isFinite(aDate) && Number.isFinite(bDate)) return aDate - bDate;
+        if (Number.isFinite(aDate)) return -1;
+        if (Number.isFinite(bDate)) return 1;
+        return (b.updatedAt || "").localeCompare(a.updatedAt || "");
+      })[0] || null
+  );
+}
+
+function pickFutureOpenOrderForStore(storeId = "", storeName = "") {
+  const normalizedStoreId = String(storeId || "");
+  const normalizedStoreName = String(storeName || "").trim().toLowerCase();
+  const byStore = getOrdersList().filter((order) => {
+    if (normalizedStoreId) {
+      return String(order.storeId || "") === normalizedStoreId;
+    }
+    if (!normalizedStoreName) {
+      return String(order.storeId || "") === "";
+    }
+    const label = (
+      order.storeName ||
+      getOrderStoreLabel({ storeId: order.storeId || "", fallback: "" }) ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+    return label === normalizedStoreName;
+  });
+  if (!byStore.length) return null;
+  const futureOpen = byStore.filter(
+    (order) => !order.completedAt && orderMatchesDateFilter(order, "future")
+  );
+  if (!futureOpen.length) return null;
+  return (
+    futureOpen
+      .slice()
+      .sort((a, b) => {
+        const aDate = dateValue(resolveOrderPlannedDate(a));
+        const bDate = dateValue(resolveOrderPlannedDate(b));
+        if (Number.isFinite(aDate) && Number.isFinite(bDate)) return aDate - bDate;
+        if (Number.isFinite(aDate)) return -1;
+        if (Number.isFinite(bDate)) return 1;
+        return (b.updatedAt || "").localeCompare(a.updatedAt || "");
+      })[0] || null
+  );
+}
+
+function setOrdersStoreValue(storeId = "") {
+  if (!ordersStoreSelect) return "";
+  const normalized = String(storeId || "");
+  const hasOption = Array.from(ordersStoreSelect.options || []).some((opt) => opt.value === normalized);
+  ordersStoreSelect.value = hasOption ? normalized : "";
+  return ordersStoreSelect.value;
+}
+
+function openOrCreateOrderForStore(storeId = "", storeName = "") {
+  const selectedStoreId = setOrdersStoreValue(storeId);
+  const effectiveStoreId = selectedStoreId || String(storeId || "");
+  currentOrderStoreId = effectiveStoreId;
+  const existing = pickOrderForStore(effectiveStoreId, storeName);
+  if (existing) {
+    currentOrderId = existing.id || "";
+    renderOrdersSection(true);
+    return existing;
+  }
+  currentOrderId = "";
+  handleNewOrder();
+  const finalStoreId = setOrdersStoreValue(selectedStoreId) || effectiveStoreId;
+  currentOrderStoreId = finalStoreId;
+  if (ordersNameInput && !ordersNameInput.value.trim()) {
+    const label = storeName || getOrderStoreLabel({ storeId: finalStoreId }) || "Pedido";
+    const planned = ordersPlannedDate?.value || todayDateString();
+    ordersNameInput.value = `${label} ${planned}`.trim();
+  }
+  updateOrdersSummaryFromTable();
+  return null;
+}
+
+function resolveOrderLabelForPlannerItem(product = {}) {
+  const productId = product.id !== undefined && product.id !== null ? String(product.id) : "";
+  const selectionId = product.selectionId ? String(product.selectionId) : "";
+  const option = Array.from(orderProductOptionMap.values()).find((entry) => {
+    if (productId && entry.productId && String(entry.productId) === productId) return true;
+    if (selectionId && entry.instanceId && String(entry.instanceId) === selectionId) return true;
+    return false;
+  });
+  return option?.markerLabel || option?.productName || product.name || "";
+}
+
+function appendPlannerItemsToCurrentOrder(
+  storePlan,
+  { targetOrderId = "", autoOpenStoreOrder = true } = {}
+) {
+  if (!storePlan || !Array.isArray(storePlan.items) || !ordersTableBody) return 0;
+  const normalizedTargetOrderId = String(targetOrderId || "");
+  if (normalizedTargetOrderId) {
+    const targetOrder = getOrderById(normalizedTargetOrderId);
+    if (!targetOrder) return 0;
+    currentOrderId = targetOrder.id || "";
+    currentOrderStoreId = targetOrder.storeId || storePlan.storeId || "";
+    setOrdersStoreValue(currentOrderStoreId);
+    setOrdersSubview("operative");
+    renderOrdersSection(true);
+  } else if (autoOpenStoreOrder) {
+    openOrCreateOrderForStore(storePlan.storeId || "", storePlan.storeName || "");
+  }
+  const { order, storeId } = getCurrentOrderContext();
+  buildOrderProductOptions(storeId, order);
+  const existing = readOrderRows();
+  const pending = storePlan.items.filter((item) => !item.planned);
+  if (!pending.length) return 0;
+  removeOrdersPlaceholder();
+  let added = 0;
+  pending.forEach(({ product }) => {
+    if (!product) return;
+    const duplicate = existing.some((item) => productMatchesOrderItem(product, item));
+    if (duplicate) return;
+    const row = createOrderRow({
+      productName: resolveOrderLabelForPlannerItem(product) || product.name || "",
+      quantity:
+        product.quantity === undefined || product.quantity === null ? "" : String(product.quantity).trim(),
+      instanceId: product.selectionId || "",
+      productId: product.id || "",
+      missing: true,
+    });
+    if (!row || !ordersTableBody) return;
+    ordersTableBody.appendChild(row);
+    existing.push({
+      productName: product.name || "",
+      instanceId: product.selectionId || "",
+      productId: product.id || "",
+      quantity: "",
+    });
+    added += 1;
+  });
+  applyOrdersFilters();
+  updateOrdersSummaryFromTable();
+  return added;
+}
+
+function renderOrdersPlanner() {
+  if (!ordersPlannerList || !ordersPlannerSummary) return;
+  const model = buildOrdersPlannerModel();
+  const proposedStores = model.stores
+    .filter((store) => Number(store.newCount) > 0)
+    .map((store) => {
+      const futureOpenOrder = pickFutureOpenOrderForStore(
+        store.storeId || "",
+        store.storeName || ""
+      );
+      return {
+        ...store,
+        futureOpenOrderId: futureOpenOrder?.id || "",
+      };
+    });
+  const totalSuggested = proposedStores.reduce((acc, store) => acc + (Number(store.newCount) || 0), 0);
+  ordersPlannerStoreMap = new Map(proposedStores.map((store) => [store.key, store]));
+  ordersPlannerSummary.textContent = `${totalSuggested} sugerido(s) · ${proposedStores.length} tienda(s)`;
+  ordersPlannerList.innerHTML = "";
+  if (!proposedStores.length) {
+    const empty = document.createElement("div");
+    empty.className = "orders-planner-empty";
+    empty.textContent = "No hay propuestas pendientes con productos sugeridos.";
+    ordersPlannerList.appendChild(empty);
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  proposedStores.forEach((store) => {
+    const card = document.createElement("article");
+    card.className = "orders-planner-store";
+    card.dataset.storeKey = store.key;
+
+    const head = document.createElement("div");
+    head.className = "orders-planner-head";
+    const name = document.createElement("div");
+    name.className = "orders-planner-store-name";
+    name.textContent = store.storeName || "Sin tienda";
+    const metrics = document.createElement("div");
+    metrics.className = "orders-planner-metrics";
+    metrics.textContent = `Pendientes: ${store.pendingCount} · Nuevos: ${store.newCount} · En pedido: ${store.plannedCount}`;
+    head.appendChild(name);
+    head.appendChild(metrics);
+
+    const actions = document.createElement("div");
+    actions.className = "orders-planner-actions";
+    const createBtn = document.createElement("button");
+    createBtn.type = "button";
+    createBtn.className = "btn btn-primary btn-small";
+    createBtn.dataset.role = "create-store-order";
+    createBtn.dataset.storeKey = store.key;
+    createBtn.textContent = "Crear pedido";
+    actions.appendChild(createBtn);
+    if (store.futureOpenOrderId) {
+      const appendBtn = document.createElement("button");
+      appendBtn.type = "button";
+      appendBtn.className = "btn btn-secondary btn-small";
+      appendBtn.dataset.role = "append-store-pending";
+      appendBtn.dataset.storeKey = store.key;
+      appendBtn.dataset.orderId = store.futureOpenOrderId;
+      appendBtn.textContent = "Añadir a pedido abierto";
+      actions.appendChild(appendBtn);
+    }
+
+    const preview = document.createElement("ul");
+    preview.className = "orders-planner-preview";
+    store.newItems.slice(0, 4).forEach(({ product }) => {
+      const li = document.createElement("li");
+      const quantity =
+        product?.quantity === undefined || product?.quantity === null
+          ? ""
+          : String(product.quantity).trim();
+      const label = quantity ? `${product?.name || ""} — ${quantity}` : product?.name || "";
+      li.textContent = label || "Producto sin nombre";
+      preview.appendChild(li);
+    });
+    if (store.newItems.length > 4) {
+      const li = document.createElement("li");
+      li.className = "orders-planner-preview-muted";
+      li.textContent = `+${store.newItems.length - 4} más`;
+      preview.appendChild(li);
+    }
+
+    card.appendChild(head);
+    card.appendChild(actions);
+    card.appendChild(preview);
+    frag.appendChild(card);
+  });
+  ordersPlannerList.appendChild(frag);
+}
+
+function handleOrdersPlannerClick(e) {
+  const button = e.target?.closest("button[data-role]");
+  if (!button) return;
+  const storeKey = button.dataset.storeKey || "";
+  const storePlan = ordersPlannerStoreMap.get(storeKey);
+  if (!storePlan) return;
+  if (button.dataset.role === "create-store-order") {
+    const pending = Array.isArray(storePlan.items)
+      ? storePlan.items.filter((item) => !item.planned)
+      : [];
+    if (!pending.length) {
+      showToast("No hay productos sugeridos nuevos para crear este pedido");
+      return;
+    }
+    const created = createNewOrderDraft(storePlan.storeId || "", {
+      clearFilters: true,
+      switchToOperative: true,
+    });
+    const added = appendPlannerItemsToCurrentOrder(storePlan, {
+      targetOrderId: created?.id || "",
+      autoOpenStoreOrder: false,
+    });
+    saveOrdersForCurrentStore({ silent: true, removeIfEmpty: false });
+    showToast(
+      `Pedido creado en ${storePlan.storeName || "la tienda"} con ${added} producto(s)`
+    );
+    return;
+  }
+  if (button.dataset.role !== "append-store-pending") return;
+  const targetOrderId = button.dataset.orderId || storePlan.futureOpenOrderId || "";
+  if (!targetOrderId) return;
+  const added = appendPlannerItemsToCurrentOrder(storePlan, {
+    targetOrderId,
+    autoOpenStoreOrder: false,
+  });
+  if (!added) {
+    showToast("No hay productos nuevos para añadir en esta tienda");
+    return;
+  }
+  saveOrdersForCurrentStore({ silent: true, removeIfEmpty: false });
+  showToast(`Añadidos ${added} producto(s) al pedido de ${storePlan.storeName || "la tienda"}`);
+}
+
+function renderOrdersKpis() {
+  if (!ordersKpis) return;
+  const planner = buildOrdersPlannerModel();
+  const suggestedStores = planner.stores.filter((store) => Number(store.newCount) > 0);
+  const activeOrders = getOrdersList().filter((order) => !order.completedAt);
+  const metrics = [
+    { label: "Productos sin Pedido", value: planner.totalNew },
+    { label: "Sugerencias", value: suggestedStores.length },
+    { label: "Pedidos activos", value: activeOrders.length },
+  ];
+  ordersKpis.innerHTML = metrics
+    .map((item) => `<span class="orders-kpi"><strong>${item.value}</strong> ${item.label}</span>`)
+    .join("");
+}
+
+function setOrdersSubview(view = "operative") {
+  const normalized = view === "history" ? "history" : "operative";
+  currentOrdersSubview = normalized;
+  if (ordersViewOperativeButton) ordersViewOperativeButton.classList.toggle("active", normalized === "operative");
+  if (ordersViewHistoryButton) ordersViewHistoryButton.classList.toggle("active", normalized === "history");
+  if (ordersOperativeView) {
+    const active = normalized === "operative";
+    ordersOperativeView.hidden = !active;
+    ordersOperativeView.classList.toggle("active", active);
+  }
+  if (ordersHistoryView) {
+    const active = normalized === "history";
+    ordersHistoryView.hidden = !active;
+    ordersHistoryView.classList.toggle("active", active);
+  }
+  if (normalized === "history") renderSavedOrdersList();
+}
+
+function normalizeOrderSearchText(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[★☆]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function orderMatchesSavedSearch(order = {}, rawSearch = "") {
+  const normalizedSearch = normalizeOrderSearchText(rawSearch);
+  if (!normalizedSearch) return true;
+  const tokens = normalizedSearch.split(/\s+/).filter(Boolean);
+  if (!tokens.length) return true;
+  const storeLabel = getOrderStoreLabel({
+    storeId: order.storeId || "",
+    fallback: order.storeName || "Sin tienda",
+  });
+  const itemText = Array.isArray(order.items)
+    ? order.items
+        .map((item) =>
+          [item?.productName || "", item?.quantity || ""]
+            .map((part) => String(part || "").trim())
+            .filter(Boolean)
+            .join(" ")
+        )
+        .join(" ")
+    : "";
+  const haystack = normalizeOrderSearchText(
+    [order.name || "", storeLabel, itemText].filter(Boolean).join(" ")
+  );
+  return tokens.every((token) => haystack.includes(token));
+}
+
+function renderOrdersCalendarView() {
+  if (!ordersCalendarList) return;
+  const storeId = ordersStoreSelect ? ordersStoreSelect.value : "";
+  const search = (ordersSavedSearchInput?.value || "").trim();
+  const dateFilter = ordersDateFilterSelect?.value || "";
+  const list = getOrdersList()
+    .filter(
+      (order) =>
+        !order.completedAt &&
+        (!storeId || String(order.storeId || "") === String(storeId)) &&
+        orderMatchesDateFilter(order, dateFilter) &&
+        orderMatchesSavedSearch(order, search)
+    )
+    .slice()
+    .sort((a, b) => {
+      const aDate = dateValue(resolveOrderPlannedDate(a));
+      const bDate = dateValue(resolveOrderPlannedDate(b));
+      if (Number.isFinite(aDate) && Number.isFinite(bDate) && aDate !== bDate) return aDate - bDate;
+      if (Number.isFinite(aDate) && !Number.isFinite(bDate)) return -1;
+      if (!Number.isFinite(aDate) && Number.isFinite(bDate)) return 1;
+      return (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" });
+    });
+  const grouped = new Map();
+  list.forEach((order) => {
+    const key = resolveOrderPlannedDate(order) || "Sin fecha";
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(order);
+  });
+  ordersCalendarList.innerHTML = "";
+  if (ordersCalendarSummary) {
+    ordersCalendarSummary.textContent = `Calendario · ${list.length} pedido(s) programado(s)`;
+  }
+  if (!list.length) {
+    const empty = document.createElement("div");
+    empty.className = "orders-calendar-empty";
+    empty.textContent = "No hay pedidos programados para el filtro actual.";
+    ordersCalendarList.appendChild(empty);
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  Array.from(grouped.entries()).forEach(([dateLabel, ordersInDate]) => {
+    const block = document.createElement("section");
+    block.className = "orders-calendar-day";
+    const title = document.createElement("h4");
+    title.textContent = dateLabel;
+    block.appendChild(title);
+    const items = document.createElement("div");
+    items.className = "orders-calendar-items";
+    ordersInDate.forEach((order) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "orders-calendar-item";
+      btn.dataset.role = "open-calendar-order";
+      btn.dataset.orderId = order.id || "";
+      const store = getOrderStoreLabel({
+        storeId: order.storeId || "",
+        fallback: order.storeName || "Sin tienda",
+      });
+      const count = Array.isArray(order.items) ? order.items.length : 0;
+      const name = order.name || store;
+      btn.innerHTML = `<span>${name}</span><small>${store} · ${count} producto(s)</small>`;
+      items.appendChild(btn);
+    });
+    block.appendChild(items);
+    frag.appendChild(block);
+  });
+  ordersCalendarList.appendChild(frag);
+}
+
+function handleOrdersViewOperativeClick() {
+  setOrdersSubview("operative");
+}
+
+function handleOrdersViewCalendarClick() {
+  setOrdersSubview("calendar");
+}
+
+function handleOrdersViewHistoryClick() {
+  setOrdersSubview("history");
+}
+
+function handleOrdersCalendarClick(e) {
+  const btn = e.target?.closest("button[data-role='open-calendar-order']");
+  if (!btn) return;
+  const orderId = btn.dataset.orderId || "";
+  if (!orderId) return;
+  currentOrderId = orderId;
+  setOrdersSubview("operative");
+  renderOrdersSection(true);
 }
 
 function renderOrdersTable(order, storeId) {
@@ -5796,8 +6794,12 @@ function renderOrdersSection(force = false) {
   const { order, storeId } = getCurrentOrderContext();
   applyOrderMetaToInputs(order);
   buildOrderProductOptions(storeId, order);
+  renderOrdersKpis();
+  renderOrdersPlanner();
   renderOrdersTable(order || { items: [] }, storeId);
+  syncOrdersReadOnlyState(order || null);
   renderSavedOrdersList();
+  setOrdersSubview(currentOrdersSubview);
   ordersNeedsRender = false;
 }
 
@@ -5825,45 +6827,359 @@ function readOrderRows() {
   return items;
 }
 
+function clearOrdersHistoryPreviewTable(message = "Selecciona un pedido histórico para ver su detalle.") {
+  if (!ordersHistoryPreviewTableBody) return;
+  ordersHistoryPreviewTableBody.innerHTML = "";
+  const tr = document.createElement("tr");
+  tr.dataset.empty = "true";
+  const td = document.createElement("td");
+  td.colSpan = 4;
+  td.textContent = message;
+  tr.appendChild(td);
+  ordersHistoryPreviewTableBody.appendChild(tr);
+}
+
+function createHistoryPreviewRow(item = {}) {
+  const row = createOrderRow(item);
+  if (!row) return null;
+  const productInput = row.querySelector("input[data-field='product']");
+  if (productInput) {
+    productInput.readOnly = true;
+    productInput.setAttribute("aria-readonly", "true");
+    productInput.removeAttribute("list");
+  }
+  const quantityInput = row.querySelector("input[data-field='quantity']");
+  if (quantityInput) {
+    quantityInput.readOnly = true;
+    quantityInput.setAttribute("aria-readonly", "true");
+  }
+  const deleteButton = row.querySelector("button[data-role='delete']");
+  if (deleteButton) deleteButton.remove();
+  const actionsCell = row.querySelector(".orders-actions-cell");
+  if (actionsCell) actionsCell.textContent = "";
+  return row;
+}
+
+function setOrdersHistoryMetaState({
+  name = "",
+  plannedDate = "",
+  price = "",
+  disabled = true,
+} = {}) {
+  if (ordersHistoryNameInput) {
+    ordersHistoryNameInput.value = name;
+    ordersHistoryNameInput.disabled = !!disabled;
+  }
+  if (ordersHistoryDateInput) {
+    ordersHistoryDateInput.value = plannedDate;
+    ordersHistoryDateInput.disabled = !!disabled;
+  }
+  if (ordersHistoryPriceInput) {
+    ordersHistoryPriceInput.value = price;
+    ordersHistoryPriceInput.disabled = !!disabled;
+  }
+}
+
+function handleOrdersHistoryMetaChange() {
+  if (!ordersHistoryNameInput && !ordersHistoryDateInput && !ordersHistoryPriceInput) return;
+  const order = currentOrderId ? getOrderById(currentOrderId) : null;
+  if (!order || !order.completedAt) {
+    setOrdersHistoryMetaState({ disabled: true });
+    return;
+  }
+  const nextName = (ordersHistoryNameInput?.value || "").trim();
+  const nextPlannedDate = (ordersHistoryDateInput?.value || "").trim();
+  const nextPrice = (ordersHistoryPriceInput?.value || "").trim();
+  const currentName = (order.name || "").trim();
+  const currentPlannedDate = (
+    order.plannedDate || resolveOrderPlannedDate(order) || ""
+  ).trim();
+  const currentPrice = (order.price || "").trim();
+  if (
+    nextName === currentName &&
+    nextPlannedDate === currentPlannedDate &&
+    nextPrice === currentPrice
+  ) {
+    return;
+  }
+  const now = nowIsoString();
+  const next = getOrdersList().map((entry) =>
+    String(entry.id || "") === String(order.id || "")
+      ? {
+          ...entry,
+          name: nextName,
+          plannedDate: nextPlannedDate,
+          completedPlannedDate: entry.completedAt ? nextPlannedDate : entry.completedPlannedDate || "",
+          price: nextPrice,
+          updatedAt: now,
+        }
+      : entry
+  );
+  setOrdersList(next);
+  renderSavedOrdersList();
+  renderOrdersHistoryPreview();
+  showToast("Pedido histórico actualizado", 1400);
+}
+
+function renderOrdersHistoryPreview() {
+  if (!ordersHistoryPreview || !ordersHistoryPreviewSummary || !ordersHistoryPreviewTableBody) return;
+  const order = currentOrderId ? getOrderById(currentOrderId) : null;
+  if (currentOrdersSubview !== "history") {
+    ordersHistoryPreview.hidden = true;
+    ordersHistoryPreviewSummary.textContent = "Detalle pedido histórico";
+    setOrdersHistoryMetaState({ disabled: true });
+    clearOrdersHistoryPreviewTable();
+    return;
+  }
+  if (!order || !order.completedAt) {
+    ordersHistoryPreviewSummary.textContent = "Detalle pedido histórico";
+    setOrdersHistoryMetaState({ disabled: true });
+    clearOrdersHistoryPreviewTable();
+    ordersHistoryPreview.hidden = false;
+    return;
+  }
+  const store = getOrderStoreLabel({
+    storeId: order.storeId || "",
+    fallback: order.storeName || "Sin tienda",
+  });
+  const done = (order.completedAt || "").slice(0, 10) || "Sin fecha";
+  const count = Array.isArray(order.items) ? order.items.length : 0;
+  const currentName = (order.name || "").trim();
+  const currentPlannedDate = (order.plannedDate || resolveOrderPlannedDate(order) || "").trim();
+  const currentPrice = (order.price || "").trim();
+  setOrdersHistoryMetaState({
+    name: currentName,
+    plannedDate: currentPlannedDate,
+    price: currentPrice,
+    disabled: false,
+  });
+  if (ordersHistoryNameInput) {
+    ordersHistoryNameInput.placeholder = `Ej. ${store}`;
+  }
+  ordersHistoryPreviewSummary.textContent = `${done} · ${store} · ${count} producto(s)${currentPrice ? ` · €${currentPrice}` : ""}`;
+  ordersHistoryPreviewTableBody.innerHTML = "";
+  const items = Array.isArray(order.items) ? order.items : [];
+  if (!items.length) {
+    clearOrdersHistoryPreviewTable("Este pedido no tiene productos.");
+    ordersHistoryPreview.hidden = false;
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  items.forEach((item) => {
+    const row = createHistoryPreviewRow(item);
+    if (row) frag.appendChild(row);
+  });
+  if (!frag.childNodes.length) {
+    clearOrdersHistoryPreviewTable("Este pedido no tiene productos.");
+    ordersHistoryPreview.hidden = false;
+    return;
+  }
+  ordersHistoryPreviewTableBody.appendChild(frag);
+  ordersHistoryPreview.hidden = false;
+}
+
 function renderSavedOrdersList() {
   if (!ordersSavedList) return;
   const storeId = ordersStoreSelect ? ordersStoreSelect.value : "";
   const dateFilter = ordersDateFilterSelect?.value || "";
-  const list = getOrdersList().filter((o) => orderMatchesDateFilter(o, dateFilter));
+  const search = (ordersSavedSearchInput?.value || "").trim();
+  const byStore = getOrdersList().filter((order) =>
+    (storeId ? String(order.storeId || "") === String(storeId) : true) &&
+    orderMatchesSavedSearch(order, search)
+  );
+  const activeOrders = byStore.filter(
+    (order) => !order.completedAt && orderMatchesDateFilter(order, dateFilter)
+  );
+  const historyOrders = byStore.filter(
+    (order) => !!order.completedAt && orderMatchesDateFilter(order, dateFilter)
+  );
+  const filterLabel = getOrdersDateFilterLabel(dateFilter);
+  const createHistoryCalendarEntry = (order) => {
+    const row = document.createElement("div");
+    row.className = "orders-calendar-item-row";
+    row.dataset.orderId = order.id || "";
+    row.dataset.storeId = order.storeId || "";
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "orders-calendar-item";
+    btn.dataset.orderId = order.id || "";
+    btn.dataset.storeId = order.storeId || "";
+    btn.dataset.role = "open-history-order";
+    btn.dataset.history = "1";
+    const store = getOrderStoreLabel({
+      storeId: order.storeId || "",
+      fallback: order.storeName || "Sin tienda",
+    });
+    const count = Array.isArray(order.items) ? order.items.length : 0;
+    const name = order.name || store;
+    if (String(currentOrderId || "") === String(order.id || "")) {
+      btn.classList.add("is-active");
+    }
+    btn.innerHTML = `<span>${name}</span><small>${store} · ${count} producto(s)</small>`;
+    btn.title = `Ver pedido del histórico · ${store}`;
+    row.appendChild(btn);
+
+    const actions = document.createElement("div");
+    actions.className = "orders-calendar-item-actions";
+    const actionDefs = [
+      { key: "duplicate", icon: "⧉", title: "Duplicar pedido" },
+      { key: "delete", icon: "🗑", title: "Eliminar pedido" },
+    ];
+    actionDefs.forEach((def) => {
+      const actionBtn = document.createElement("button");
+      actionBtn.type = "button";
+      actionBtn.className = "btn btn-small btn-icon orders-calendar-action";
+      actionBtn.dataset.orderAction = def.key;
+      actionBtn.dataset.orderId = order.id || "";
+      actionBtn.dataset.storeId = order.storeId || "";
+      actionBtn.dataset.history = "1";
+      actionBtn.title = def.title;
+      actionBtn.setAttribute("aria-label", def.title);
+      actionBtn.textContent = def.icon;
+      actions.appendChild(actionBtn);
+    });
+    row.appendChild(actions);
+    return row;
+  };
+  const sortActive = (a, b) => {
+    const aDate = dateValue(resolveOrderPlannedDate(a));
+    const bDate = dateValue(resolveOrderPlannedDate(b));
+    if (Number.isFinite(aDate) && Number.isFinite(bDate) && aDate !== bDate) return aDate - bDate;
+    if (Number.isFinite(aDate) && !Number.isFinite(bDate)) return -1;
+    if (!Number.isFinite(aDate) && Number.isFinite(bDate)) return 1;
+    return (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" });
+  };
+  const sortHistory = (a, b) => {
+    const aPlanned = dateValue(resolveOrderPlannedDate(a));
+    const bPlanned = dateValue(resolveOrderPlannedDate(b));
+    if (Number.isFinite(aPlanned) && Number.isFinite(bPlanned) && aPlanned !== bPlanned) return bPlanned - aPlanned;
+    if (Number.isFinite(aPlanned) && !Number.isFinite(bPlanned)) return -1;
+    if (!Number.isFinite(aPlanned) && Number.isFinite(bPlanned)) return 1;
+    return (b.updatedAt || "").localeCompare(a.updatedAt || "");
+  };
   ordersSavedList.innerHTML = "";
-  if (!list.length) {
-    const span = document.createElement("span");
-    span.className = "muted";
-    span.textContent = "No hay pedidos guardados";
-    ordersSavedList.appendChild(span);
-    return;
-  }
-  const frag = document.createDocumentFragment();
-  list
-    .slice()
-    .sort((a, b) =>
-      (getOrderStoreLabel({ storeId: a.storeId }).toLowerCase() || "").localeCompare(
-        getOrderStoreLabel({ storeId: b.storeId }).toLowerCase() || "",
-        "es",
-        { sensitivity: "base" }
-      )
-    )
-    .forEach((order) => {
+  if (!activeOrders.length) {
+    const empty = document.createElement("div");
+    empty.className = "orders-calendar-empty";
+    empty.textContent = "No hay pedidos activos para el filtro actual.";
+    ordersSavedList.appendChild(empty);
+  } else {
+    const createActiveCalendarEntry = (order) => {
+      const row = document.createElement("div");
+      row.className = "orders-calendar-item-row";
+      row.dataset.orderId = order.id || "";
+      row.dataset.storeId = order.storeId || "";
+
       const btn = document.createElement("button");
       btn.type = "button";
+      btn.className = "orders-calendar-item";
       btn.dataset.orderId = order.id || "";
       btn.dataset.storeId = order.storeId || "";
-      const label = getOrderStoreLabel({ storeId: order.storeId });
-      const name = order.name || label;
-      const planned = resolveOrderPlannedDate(order);
+      btn.dataset.role = "open-active-order";
+      const store = getOrderStoreLabel({
+        storeId: order.storeId || "",
+        fallback: order.storeName || "Sin tienda",
+      });
       const count = Array.isArray(order.items) ? order.items.length : 0;
-      btn.innerHTML = `<span>${name}</span><span class="count">${count}</span>`;
-      const titleParts = [label];
-      if (planned) titleParts.push(planned);
-      btn.title = `Ver pedido de ${titleParts.join(" · ")}`;
-      frag.appendChild(btn);
+      const name = order.name || store;
+      if (String(currentOrderId || "") === String(order.id || "")) {
+        btn.classList.add("is-active");
+      }
+      btn.innerHTML = `<span>${name}</span><small>${store} · ${count} producto(s)</small>`;
+      btn.title = `Abrir pedido · ${store}`;
+      row.appendChild(btn);
+
+      const actions = document.createElement("div");
+      actions.className = "orders-calendar-item-actions";
+      const actionDefs = [
+        { key: "duplicate", icon: "⧉", title: "Duplicar pedido" },
+        { key: "complete", icon: "✓", title: "Marcar como realizado" },
+        { key: "delete", icon: "🗑", title: "Eliminar pedido" },
+      ];
+      actionDefs.forEach((def) => {
+        const actionBtn = document.createElement("button");
+        actionBtn.type = "button";
+        actionBtn.className = "btn btn-small btn-icon orders-calendar-action";
+        actionBtn.dataset.orderAction = def.key;
+        actionBtn.dataset.orderId = order.id || "";
+        actionBtn.dataset.storeId = order.storeId || "";
+        actionBtn.title = def.title;
+        actionBtn.setAttribute("aria-label", def.title);
+        actionBtn.textContent = def.icon;
+        actions.appendChild(actionBtn);
+      });
+      row.appendChild(actions);
+      return row;
+    };
+    const groupedActive = new Map();
+    activeOrders
+      .slice()
+      .sort(sortActive)
+      .forEach((order) => {
+        const key = resolveOrderPlannedDate(order) || "Sin fecha";
+        if (!groupedActive.has(key)) groupedActive.set(key, []);
+        groupedActive.get(key).push(order);
+      });
+    const frag = document.createDocumentFragment();
+    Array.from(groupedActive.entries()).forEach(([dateLabel, ordersInDate]) => {
+      const block = document.createElement("section");
+      block.className = "orders-calendar-day";
+      const title = document.createElement("h4");
+      title.textContent = dateLabel;
+      block.appendChild(title);
+      const items = document.createElement("div");
+      items.className = "orders-calendar-items";
+      ordersInDate.forEach((order) => {
+        items.appendChild(createActiveCalendarEntry(order));
+      });
+      block.appendChild(items);
+      frag.appendChild(block);
     });
-  ordersSavedList.appendChild(frag);
+    ordersSavedList.appendChild(frag);
+  }
+  if (!ordersHistoryList || !ordersHistorySummary) {
+    return;
+  }
+  const historyCount = historyOrders.length;
+  ordersHistorySummary.textContent = dateFilter
+    ? `Histórico · ${filterLabel} · ${historyCount} pedido(s)`
+    : `Histórico · ${historyCount} pedido(s)`;
+  ordersHistoryList.innerHTML = "";
+  if (!historyCount) {
+    const empty = document.createElement("div");
+    empty.className = "orders-calendar-empty";
+    empty.textContent = storeId
+      ? "No hay pedidos realizados para esta tienda."
+      : "No hay pedidos realizados con el filtro actual.";
+    ordersHistoryList.appendChild(empty);
+    renderOrdersHistoryPreview();
+    return;
+  }
+  const sortedHistory = historyOrders.slice().sort(sortHistory);
+  const grouped = new Map();
+  sortedHistory.forEach((order) => {
+    const key = resolveOrderPlannedDate(order) || (order.completedAt || "").slice(0, 10) || "Sin fecha";
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(order);
+  });
+  const historyFrag = document.createDocumentFragment();
+  Array.from(grouped.entries()).forEach(([dateLabel, ordersInDate]) => {
+    const block = document.createElement("section");
+    block.className = "orders-calendar-day";
+    const title = document.createElement("h4");
+    title.textContent = dateLabel;
+    block.appendChild(title);
+    const items = document.createElement("div");
+    items.className = "orders-calendar-items";
+    ordersInDate.forEach((order) => {
+      items.appendChild(createHistoryCalendarEntry(order));
+    });
+    block.appendChild(items);
+    historyFrag.appendChild(block);
+  });
+  ordersHistoryList.appendChild(historyFrag);
+  renderOrdersHistoryPreview();
 }
 
 function generateOrderId() {
@@ -5876,6 +7192,10 @@ function saveOrdersForCurrentStore({ silent = false, removeIfEmpty = true } = {}
   const plannedDate = (ordersPlannedDate?.value || "").trim();
   const price = (ordersPriceInput?.value || "").trim();
   const existing = currentOrderId ? getOrderById(currentOrderId) : null;
+  if (ordersReadOnly && existing?.completedAt) {
+    if (!silent) showToast("El histórico es de solo consulta. Duplica para editar.");
+    return;
+  }
   const items = readOrderRows();
   let next = getOrdersList().slice();
   const idx = existing ? next.findIndex((o) => String(o.id) === String(existing.id)) : -1;
@@ -5915,17 +7235,31 @@ function handleOrdersDateFilterChange() {
   renderOrdersSection(true);
 }
 
+function handleOrdersSavedSearchInput() {
+  renderSavedOrdersList();
+}
+
 function handleOrdersStoreChange() {
   currentOrderStoreId = ordersStoreSelect ? ordersStoreSelect.value : "";
-  const byStore = getOrdersList().find((o) => o.storeId === currentOrderStoreId) || null;
-  const exists = currentOrderId ? getOrderById(currentOrderId) : null;
-  if (!exists && !currentOrderId) {
-    currentOrderId = byStore ? byStore.id : currentOrderId;
+  if (!currentOrderStoreId) {
+    currentOrderId = "";
+    renderOrdersSection(true);
+    return;
   }
+  const byStore =
+    getOrdersList().find((o) => !o.completedAt && sameStoreId(o.storeId, currentOrderStoreId)) ||
+    getOrdersList().find((o) => sameStoreId(o.storeId, currentOrderStoreId)) ||
+    null;
+  // Al cambiar tienda, actualizamos el contexto al pedido de esa tienda (o vacío si no existe).
+  currentOrderId = byStore ? byStore.id || "" : "";
   renderOrdersSection(true);
 }
 
 function handleAddOrderItem() {
+  if (ordersReadOnly) {
+    showToast("El histórico es de solo consulta. Duplica para editar.");
+    return;
+  }
   const { order, storeId } = getCurrentOrderContext();
   buildOrderProductOptions(storeId, order);
   removeOrdersPlaceholder();
@@ -5938,6 +7272,7 @@ function handleAddOrderItem() {
 }
 
 function handleOrdersTableClick(e) {
+  if (ordersReadOnly) return;
   const target = e.target?.closest("[data-role='delete']") || null;
   if (!target) return;
   const row = target.closest("tr");
@@ -5953,14 +7288,48 @@ function handleOrdersTableClick(e) {
 }
 
 function handleOrdersInputChange(e) {
+  if (ordersReadOnly) return;
   const target = e.target;
-  if (!target || target.dataset.field !== "product") return;
+  if (!target) return;
+  const field = target.dataset.field || "";
   const row = target.closest("tr");
   if (!row) return;
-  updateOrderRowExpiry(row);
+  if (field === "product") updateOrderRowExpiry(row);
+}
+
+function handleOrdersTableKeydown(e) {
+  if (ordersReadOnly) return;
+  if (e.key !== "Enter") return;
+  const target = e.target;
+  if (!(target instanceof HTMLElement)) return;
+  if (target.dataset.field !== "quantity") return;
+  e.preventDefault();
+  if (!ordersTableBody) return;
+  const rows = Array.from(ordersTableBody.querySelectorAll("tr")).filter(
+    (row) => row.dataset.empty !== "true" && row.style.display !== "none"
+  );
+  const row = target.closest("tr");
+  if (!row || !rows.length) return;
+  const index = rows.findIndex((candidate) => candidate === row);
+  const nextRow = index >= 0 && index < rows.length - 1 ? rows[index + 1] : null;
+  if (nextRow) {
+    const nextQuantity = nextRow.querySelector("input[data-field='quantity']");
+    if (nextQuantity) nextQuantity.focus();
+    return;
+  }
+  handleAddOrderItem();
+  const newestRow = Array.from(ordersTableBody.querySelectorAll("tr"))
+    .filter((candidate) => candidate.dataset.empty !== "true")
+    .pop();
+  const newestQuantity = newestRow?.querySelector("input[data-field='quantity']");
+  if (newestQuantity) newestQuantity.focus();
 }
 
 function handleClearOrder() {
+  if (ordersReadOnly) {
+    showToast("El histórico es de solo consulta. Duplica para editar.");
+    return;
+  }
   if (!ordersTableBody) return;
   ordersTableBody.innerHTML = "";
   addOrdersPlaceholderRow();
@@ -5969,50 +7338,224 @@ function handleClearOrder() {
 }
 
 function handleDeleteOrder() {
+  const current = currentOrderId ? getOrderById(currentOrderId) : null;
+  const mode = current?.completedAt ? "histórico" : "activo";
+  const confirmed = window.confirm
+    ? window.confirm(`¿Eliminar este pedido ${mode}? Esta acción no se puede deshacer.`)
+    : true;
+  if (!confirmed) return;
   const targetId = currentOrderId || "";
   const next = getOrdersList().filter((o) => String(o.id) !== String(targetId));
   setOrdersList(next);
-  currentOrderId = next.length ? next[0].id || "" : "";
-  currentOrderStoreId = next.length ? next[0].storeId || "" : "";
+  const nextActive = next.find((order) => !order.completedAt) || next[0] || null;
+  currentOrderId = nextActive ? nextActive.id || "" : "";
+  currentOrderStoreId = nextActive ? nextActive.storeId || "" : "";
   renderOrdersSection(true);
   showToast("Pedido eliminado");
   renderSavedOrdersList();
 }
 
 function handleSaveOrders() {
+  if (ordersReadOnly) {
+    showToast("El histórico es de solo consulta. Duplica para editar.");
+    return;
+  }
   saveOrdersForCurrentStore();
 }
 
 function handleOrdersSavedClick(e) {
-  const btn = e.target?.closest("button[data-order-id]");
+  const actionBtn = e.target?.closest("button[data-order-action]");
+  if (actionBtn) {
+    const orderId = actionBtn.dataset.orderId || "";
+    if (!orderId) return;
+    currentOrderId = orderId;
+    const action = actionBtn.dataset.orderAction || "";
+    if (action === "duplicate") {
+      handleDuplicateOrder();
+      return;
+    }
+    if (action === "complete") {
+      handleCompleteOrder();
+      return;
+    }
+    if (action === "delete") {
+      handleDeleteOrder();
+      return;
+    }
+    return;
+  }
+  const btn = e.target?.closest("button[data-role='open-active-order'][data-order-id]");
   if (!btn) return;
   const orderId = btn.dataset.orderId || "";
+  if (!orderId) return;
   currentOrderId = orderId;
   renderOrdersSection(true);
 }
 
-function handleNewOrder() {
-  currentOrderId = generateOrderId();
-  const storeId = ordersStoreSelect ? ordersStoreSelect.value : currentOrderStoreId;
-  currentOrderStoreId = storeId;
-  if (ordersNameInput && !ordersNameInput.value) {
-    const storeLabel = getOrderStoreLabel({ storeId });
-    const planned = ordersPlannedDate?.value || todayDateString();
-    ordersNameInput.value = `${storeLabel} ${planned}`.trim();
+function handleOrdersHistoryClick(e) {
+  const actionBtn = e.target?.closest("button[data-order-action]");
+  if (actionBtn) {
+    const orderId = actionBtn.dataset.orderId || "";
+    if (!orderId) return;
+    currentOrderId = orderId;
+    const action = actionBtn.dataset.orderAction || "";
+    if (action === "duplicate") {
+      handleDuplicateOrder();
+      return;
+    }
+    if (action === "delete") {
+      handleDeleteOrder();
+      return;
+    }
+    return;
   }
-  if (ordersPlannedDate && !ordersPlannedDate.value) {
-    ordersPlannedDate.value = todayDateString();
+  const btn = e.target?.closest("button[data-role='open-history-order'][data-order-id]");
+  if (!btn) return;
+  const orderId = btn.dataset.orderId || "";
+  if (!orderId) return;
+  currentOrderId = orderId;
+  renderOrdersSection(true);
+}
+
+function promptStoreForNewOrder() {
+  const stores = getSuppliersList()
+    .slice()
+    .sort((a, b) => (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" }))
+    .map((store) => ({
+      id: String(store?.id || ""),
+      name: (store?.name || "").trim() || "(sin nombre)",
+    }));
+
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "orders-store-picker-overlay";
+    overlay.innerHTML = `
+      <div class="orders-store-picker-dialog" role="dialog" aria-modal="true" aria-label="Seleccionar tienda">
+        <div class="orders-store-picker-title">Nueva orden</div>
+        <div class="orders-store-picker-help">Selecciona la tienda para crear el pedido.</div>
+        <div class="form-group orders-store-picker-group">
+          <label for="ordersStorePickerSelect">Tienda</label>
+          <select id="ordersStorePickerSelect"></select>
+        </div>
+        <div class="orders-store-picker-actions">
+          <button type="button" class="btn btn-secondary btn-small" data-role="cancel">Cancelar</button>
+          <button type="button" class="btn btn-primary btn-small" data-role="confirm">Crear pedido</button>
+        </div>
+      </div>
+    `;
+
+    const select = overlay.querySelector("#ordersStorePickerSelect");
+    const cancelBtn = overlay.querySelector("button[data-role='cancel']");
+    const confirmBtn = overlay.querySelector("button[data-role='confirm']");
+    if (!select || !cancelBtn || !confirmBtn) {
+      resolve(null);
+      return;
+    }
+
+    const addOption = (value, label) => {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = label;
+      select.appendChild(opt);
+    };
+    addOption("", "Sin tienda");
+    stores.forEach((store) => addOption(store.id, store.name));
+
+    const activeStoreId = String(currentOrderStoreId || "");
+    if (activeStoreId && stores.some((store) => store.id === activeStoreId)) {
+      select.value = activeStoreId;
+    } else {
+      select.value = "";
+    }
+
+    const close = (result = null) => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      resolve(result);
+    };
+
+    const confirm = () => {
+      const storeId = String(select.value || "");
+      const store = stores.find((item) => item.id === storeId) || { id: "", name: "Sin tienda" };
+      close(store);
+    };
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close(null);
+        return;
+      }
+      if (e.key === "Enter") {
+        const target = e.target;
+        if (target instanceof HTMLButtonElement && target.dataset.role === "cancel") return;
+        e.preventDefault();
+        confirm();
+      }
+    };
+
+    cancelBtn.addEventListener("click", () => close(null));
+    confirmBtn.addEventListener("click", confirm);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close(null);
+    });
+    document.addEventListener("keydown", onKeyDown, true);
+    document.body.appendChild(overlay);
+    setTimeout(() => select.focus(), 0);
+  });
+}
+
+function createNewOrderDraft(storeId = "", { clearFilters = false, switchToOperative = false } = {}) {
+  const normalizedStoreId = String(storeId || "");
+  const now = nowIsoString();
+  const today = todayDateString();
+  const payload = {
+    id: generateOrderId(),
+    name: "",
+    plannedDate: today,
+    price: "",
+    completedAt: "",
+    completedPlannedDate: "",
+    storeId: normalizedStoreId,
+    storeName: getStoreName(normalizedStoreId) || "",
+    items: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+  const next = getOrdersList().slice();
+  next.push(payload);
+  currentOrderId = payload.id || "";
+  currentOrderStoreId = normalizedStoreId;
+  if (clearFilters) {
+    if (ordersStoreSelect) ordersStoreSelect.value = "";
+    if (ordersDateFilterSelect) ordersDateFilterSelect.value = "";
   }
-  if (ordersTableBody) {
-    ordersTableBody.innerHTML = "";
-    addOrdersPlaceholderRow();
+  if (switchToOperative) setOrdersSubview("operative");
+  setOrdersList(next);
+  renderOrdersSection(true);
+  return payload;
+}
+
+function handleNewOrder(e) {
+  const triggeredFromTopQuick =
+    !!e &&
+    typeof e === "object" &&
+    e.currentTarget &&
+    e.currentTarget.id === "addOrderQuickButton";
+  let storeId = ordersStoreSelect ? ordersStoreSelect.value || currentOrderStoreId : currentOrderStoreId;
+  if (triggeredFromTopQuick) {
+    promptStoreForNewOrder().then((selectedStore) => {
+      if (!selectedStore) return;
+      const nextStoreId = selectedStore.id || "";
+      createNewOrderDraft(nextStoreId, { clearFilters: true, switchToOperative: true });
+    });
+    return;
   }
-  buildOrderProductOptions(storeId, null);
-  applyOrdersFilters();
-  updateOrdersSummaryFromTable();
+  createNewOrderDraft(storeId || "", { clearFilters: false, switchToOperative: false });
 }
 
 function handleOrderMetaChange() {
+  if (ordersReadOnly) return;
   updateOrdersSummaryFromTable();
 }
 
@@ -6024,6 +7567,7 @@ function handleOrdersFilterChange() {
 
 function openOrdersBatchPanel() {
   if (!ordersBatchPanel) return;
+  updateOrdersBatchToggleLabel();
   ordersBatchPanel.hidden = false;
   ordersBatchPanel.classList.add("open");
   if (toggleOrdersBatchButton) toggleOrdersBatchButton.setAttribute("aria-expanded", "true");
@@ -6058,6 +7602,10 @@ function handleOrdersBatchKeydown(e) {
 }
 
 function handleAddOrderBatch() {
+  if (ordersReadOnly) {
+    showToast("El histórico es de solo consulta. Duplica para editar.");
+    return;
+  }
   if (!ordersBatchSelect) return;
   const selected = Array.from(ordersBatchSelect.selectedOptions || []);
   if (!selected.length) return;
@@ -6077,13 +7625,13 @@ function handleAddOrderBatch() {
     if (row && ordersTableBody) ordersTableBody.appendChild(row);
     opt.selected = false;
   });
+  updateOrdersBatchToggleLabel();
   applyOrdersFilters();
   updateOrdersSummaryFromTable();
 }
 
-function handleDuplicateOrder() {
-  const { order } = getCurrentOrderContext();
-  if (!order) return;
+function duplicateOrderPayload(order) {
+  if (!order) return null;
   const now = nowIsoString();
   const newId = generateOrderId();
   const cloneItems = Array.isArray(order.items)
@@ -6097,38 +7645,74 @@ function handleDuplicateOrder() {
       }))
     : [];
   const name = order.name ? `${order.name} (copia)` : "Pedido copia";
-  const payload = {
+  return {
     ...order,
     id: newId,
     name,
     items: cloneItems,
+    completedAt: "",
+    completedPlannedDate: "",
     createdAt: now,
     updatedAt: now,
   };
+}
+
+function handleDuplicateOrder() {
+  const { order } = getCurrentOrderContext();
+  if (!order) return;
+  const payload = duplicateOrderPayload(order);
+  if (!payload) return;
   const next = getOrdersList().slice();
   next.push(payload);
-  currentOrderId = newId;
+  currentOrderId = payload.id || "";
+  currentOrderStoreId = payload.storeId || "";
   setOrdersList(next);
-    renderOrdersSection(true);
-    showToast("Pedido duplicado");
+  setOrdersSubview("operative");
+  renderOrdersSection(true);
+  showToast("Pedido duplicado");
 }
 
 function handleCompleteOrder() {
   const { order } = getCurrentOrderContext();
   if (!order) return;
+  if (order.completedAt) {
+    showToast("Este pedido ya está en histórico");
+    return;
+  }
+  const confirmed = window.confirm
+    ? window.confirm("¿Marcar este pedido como realizado y moverlo al histórico?")
+    : true;
+  if (!confirmed) return;
   const planned = resolveOrderPlannedDate(order) || todayDateString();
+  const completedAt = nowIsoString();
   markOrderItemsAsHave(order);
   const next = getOrdersList().map((o) =>
     String(o.id) === String(order.id)
-      ? { ...o, completedAt: nowIsoString(), completedPlannedDate: planned }
+      ? { ...o, completedAt, completedPlannedDate: planned, updatedAt: completedAt }
       : o
   );
+  const nextByStore = next.find(
+    (candidate) =>
+      !candidate.completedAt &&
+      String(candidate.id || "") !== String(order.id || "") &&
+      String(candidate.storeId || "") === String(order.storeId || "")
+  );
+  const nextAny = next.find(
+    (candidate) =>
+      !candidate.completedAt && String(candidate.id || "") !== String(order.id || "")
+  );
+  currentOrderId = (nextByStore || nextAny || order).id || "";
+  currentOrderStoreId = (nextByStore || nextAny || order).storeId || "";
   setOrdersList(next);
   renderOrdersSection(true);
   showToast("Pedido marcado como realizado");
 }
 
 function handleReplaceOrderBatch() {
+  if (ordersReadOnly) {
+    showToast("El histórico es de solo consulta. Duplica para editar.");
+    return;
+  }
   if (!ordersBatchSelect || !ordersTableBody) return;
   const selected = Array.from(ordersBatchSelect.selectedOptions || []);
   const { order, storeId } = getCurrentOrderContext();
@@ -6167,6 +7751,7 @@ function handleReplaceOrderBatch() {
     if (row) ordersTableBody.appendChild(row);
     opt.selected = false;
   });
+  updateOrdersBatchToggleLabel();
   applyOrdersFilters();
   updateOrdersSummaryFromTable();
 }
@@ -6231,10 +7816,13 @@ function updateProducerFilterOptions() {
           .filter((l) => l.length > 0)
       )
     ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
-  if (memoProducerLocations.join("|||") === locations.join("|||")) return;
-  memoProducerLocations = locations.slice();
+  const locationsKey = locations.join("|||");
+  const locationsChanged = memoProducerLocations.join("|||") !== locationsKey;
+  if (locationsChanged) {
+    memoProducerLocations = locations.slice();
+  }
 
-  if (producersLocationFilterSelect) {
+  if (producersLocationFilterSelect && locationsChanged) {
     const current = producersLocationFilterSelect.value;
     producersLocationFilterSelect.innerHTML = "";
     const optAll = document.createElement("option");
@@ -6252,41 +7840,50 @@ function updateProducerFilterOptions() {
     }
   }
 
-  if (instancesProducerFilterSelect) {
-    const current = instancesProducerFilterSelect.value;
-    const key = producersList
-      .slice()
-      .sort((a, b) =>
-        (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" })
-      )
-      .map((p) => `${p.id}::${p.name || ""}`)
-      .join("|||");
-    const alreadyHydrated =
-      memoProducerFilterOptions === key &&
-      instancesProducerFilterSelect.options.length > 0;
-    if (!alreadyHydrated) {
-      instancesProducerFilterSelect.innerHTML = "";
+  const sortedProducers = producersList
+    .slice()
+    .sort((a, b) =>
+      (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" })
+    );
+  const key = sortedProducers.map((p) => `${p.id}::${p.name || ""}`).join("|||");
+  const producerSelects = [
+    instancesProducerFilterSelect,
+    filterProducerSelect,
+    editFilterProducerSelect,
+    extraFilterProducerSelect,
+    extraEditFilterProducerSelect,
+  ].filter(Boolean);
+
+  if (!producerSelects.length) return;
+
+  const needsHydration =
+    memoProducerFilterOptions !== key ||
+    producerSelects.some((sel) => (sel.options?.length || 0) === 0);
+
+  const currentValues = producerSelects.map((sel) => String(sel.value || ""));
+  if (needsHydration) {
+    producerSelects.forEach((sel) => {
+      sel.innerHTML = "";
       const optAll = document.createElement("option");
       optAll.value = "";
       optAll.textContent = "Todos";
-      instancesProducerFilterSelect.appendChild(optAll);
-      producersList
-        .slice()
-        .sort((a, b) =>
-          (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" })
-        )
-        .forEach((p) => {
-          const o = document.createElement("option");
-          o.value = p.id;
-          o.textContent = p.name || "(sin nombre)";
-          instancesProducerFilterSelect.appendChild(o);
-        });
-      memoProducerFilterOptions = key;
-    }
-    if (current && producersList.some((p) => p.id === current)) {
-      instancesProducerFilterSelect.value = current;
-    }
+      sel.appendChild(optAll);
+      sortedProducers.forEach((p) => {
+        const o = document.createElement("option");
+        o.value = p.id;
+        o.textContent = p.name || "(sin nombre)";
+        sel.appendChild(o);
+      });
+    });
+    memoProducerFilterOptions = key;
   }
+
+  producerSelects.forEach((sel, idx) => {
+    const current = currentValues[idx];
+    if (current && producersList.some((p) => String(p.id || "") === current)) {
+      sel.value = current;
+    }
+  });
 }
 
 function updateStoreFilterOptions() {
@@ -6924,7 +8521,8 @@ function persistInstances(list, options = {}) {
 
   const next = Array.from(updates.values());
   const consolidated = consolidateInstances(next, now);
-  setInstancesList(consolidated);
+  const { list: sanitized } = pruneInstancesWithoutProducerAndStore(consolidated);
+  setInstancesList(sanitized);
   cleanupSelectionsWithInstances();
 }
 
@@ -7182,6 +8780,16 @@ function renderInstancesTable(force = false, { showLoading = true } = {}) {
 function refreshInstancesViews({ immediate = false } = {}) {
   const run = () => {
     instancesRefreshTimer = null;
+    producersNeedsRender = true;
+    storesNeedsRender = true;
+    if (isActiveSection(proveedoresSection)) {
+      if (producersPanel && producersPanel.classList.contains("active")) {
+        renderProducers(true);
+      }
+      if (storesPanel && storesPanel.classList.contains("active")) {
+        renderStores(true);
+      }
+    }
     renderInstancesTable();
     renderProducts();
     renderExtraQuickTable();
@@ -7512,6 +9120,87 @@ function createExtraProductFromPrompt(initialName = "") {
 //  LISTA DE LA COMPRA
 // ==============================
 
+function findStoreByName(name = "") {
+  const normalized = (name || "").trim().toLowerCase();
+  if (!normalized) return null;
+  return (
+    getSuppliersList().find((store) => (store.name || "").trim().toLowerCase() === normalized) ||
+    null
+  );
+}
+
+function normalizeStoreGroupingKey(storeId = "", storeName = "") {
+  if (storeId) return `id:${storeId}`;
+  const safeName = (storeName || "").trim().toLowerCase();
+  return `name:${safeName || "sin tienda"}`;
+}
+
+function resolveShoppingStoreContext(product, fallbackStoreName = "") {
+  const fallback = (fallbackStoreName || "").trim();
+  const selectedStoreName = getSelectionMainStoreName(product);
+  const hasSelectedStore = selectedStoreName && selectedStoreName !== "Sin tienda seleccionada";
+  const resolvedName = hasSelectedStore ? selectedStoreName : fallback || "Sin tienda";
+  const instance = getSelectionInstanceForProduct(product);
+  const selectedId =
+    instance && Array.isArray(instance.storeIds) && instance.storeIds.length
+      ? String(instance.storeIds[0] || "").trim()
+      : "";
+  if (selectedId) {
+    return {
+      storeId: selectedId,
+      storeName: getStoreName(selectedId) || resolvedName || "Sin tienda",
+    };
+  }
+  const matchedStore = findStoreByName(resolvedName);
+  return {
+    storeId: matchedStore?.id || "",
+    storeName: resolvedName || "Sin tienda",
+  };
+}
+
+function buildShoppingStoreSummary() {
+  const pantryProducts = getPantryProducts();
+  const otherProducts = getOtherProducts();
+  const baseSummary =
+    (window.AppStore &&
+      window.AppStore.selectors &&
+      window.AppStore.selectors.shoppingSummary &&
+      window.AppStore.selectors.shoppingSummary({
+        products: pantryProducts,
+        extraProducts: otherProducts,
+      })) || {
+      stores: [],
+      totalItems: 0,
+      totalStores: 0,
+    };
+  const grouped = new Map();
+  baseSummary.stores.forEach(({ store, items }) => {
+    items.forEach(({ product, source }) => {
+      const storeCtx = resolveShoppingStoreContext(product, store || "");
+      const groupKey = normalizeStoreGroupingKey(storeCtx.storeId, storeCtx.storeName);
+      if (!grouped.has(groupKey)) {
+        grouped.set(groupKey, {
+          key: groupKey,
+          storeId: storeCtx.storeId || "",
+          storeName: storeCtx.storeName || "Sin tienda",
+          items: [],
+        });
+      }
+      grouped.get(groupKey).items.push({ product, source });
+    });
+  });
+  const stores = Array.from(grouped.values()).map((entry) => ({
+    ...entry,
+    count: entry.items.length,
+  }));
+  const totalItems = stores.reduce((acc, entry) => acc + entry.items.length, 0);
+  return {
+    stores,
+    totalItems,
+    totalStores: stores.length,
+  };
+}
+
 function renderShoppingList(force = false) {
   if (!shoppingListContainer || !shoppingSummary) return;
   const main = document.querySelector(".app-main");
@@ -7524,42 +9213,7 @@ function renderShoppingList(force = false) {
   shoppingNeedsRender = false;
   shoppingListContainer.innerHTML = "";
 
-  const baseSummary =
-    (window.AppStore &&
-      window.AppStore.selectors &&
-      window.AppStore.selectors.shoppingSummary &&
-      window.AppStore.selectors.shoppingSummary({ products, extraProducts })) || {
-      stores: [],
-      totalItems: 0,
-      totalStores: 0,
-    };
-
-  // Reasignar tienda usando la selección prioritaria cuando esté vacía
-  const regrouped = new Map();
-  baseSummary.stores.forEach(({ store, items }) => {
-    items.forEach(({ product, source }) => {
-      let resolvedStore = store;
-      if (!resolvedStore || resolvedStore === "Sin tienda") {
-        const mainStore = getSelectionMainStoreName(product);
-        if (mainStore && mainStore !== "Sin tienda seleccionada") {
-          resolvedStore = mainStore;
-        }
-      }
-      const key = resolvedStore && resolvedStore.trim() ? resolvedStore : "Sin tienda";
-      if (!regrouped.has(key)) regrouped.set(key, []);
-      regrouped.get(key).push({ product, source });
-    });
-  });
-
-  const summary = {
-    stores: Array.from(regrouped.entries()).map(([store, items]) => ({
-      store,
-      items,
-      count: items.length,
-    })),
-    totalStores: regrouped.size,
-    totalItems: Array.from(regrouped.values()).reduce((acc, items) => acc + items.length, 0),
-  };
+  const summary = buildShoppingStoreSummary();
 
   if (summary.stores.length === 0) {
     shoppingSummary.textContent = "0 producto(s) · 0 tienda(s)";
@@ -7570,7 +9224,7 @@ function renderShoppingList(force = false) {
     return;
   }
 
-  const createStoreBlock = (store, items) => {
+  const createStoreBlock = (storeName, items) => {
     const frag = cloneTemplateContent(shoppingStoreTemplate);
     if (!frag) return null;
     const block = frag.querySelector(".shopping-store-block");
@@ -7578,8 +9232,8 @@ function renderShoppingList(force = false) {
     const count = frag.querySelector(".shopping-store-count");
     const list = frag.querySelector(".shopping-store-items");
     if (!block || !title || !count || !list) return null;
-    block.dataset.store = store;
-    title.textContent = store;
+    block.dataset.store = storeName;
+    title.textContent = storeName;
     count.textContent = `${items.length} producto(s)`;
 
     const grouped = new Map();
@@ -7645,9 +9299,9 @@ function renderShoppingList(force = false) {
 
   summary.stores
     .slice()
-    .sort((a, b) => a.store.localeCompare(b.store, "es", { sensitivity: "base" }))
-    .forEach(({ store, items }) => {
-      const block = createStoreBlock(store, items);
+    .sort((a, b) => a.storeName.localeCompare(b.storeName, "es", { sensitivity: "base" }))
+    .forEach(({ storeName, items }) => {
+      const block = createStoreBlock(storeName, items);
       if (block) {
         shoppingListContainer.appendChild(block);
       }
@@ -7894,6 +9548,27 @@ function handleBackupFileChange(e) {
     }
   };
   reader.readAsText(file);
+}
+
+function handlePruneSelections() {
+  flushInstancesUpdates();
+  const current = getInstancesList();
+  const { list: cleaned, removed } = pruneInstancesWithoutProducerAndStore(current);
+  if (!removed) {
+    showToast("No hay selecciones vacías para depurar");
+    return;
+  }
+  const ok =
+    typeof window.confirm === "function"
+      ? window.confirm(
+          `Se eliminarán ${removed} selección(es) sin productor y sin tienda. ¿Continuar?`
+        )
+      : true;
+  if (!ok) return;
+  setInstancesList(cleaned);
+  cleanupSelectionsWithInstances();
+  refreshInstancesViews({ immediate: true });
+  showToast(`${removed} selección(es) eliminada(s)`);
 }
 
 function handleExportAlmacenCsv() {

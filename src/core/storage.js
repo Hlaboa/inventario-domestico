@@ -77,6 +77,13 @@
 
   function normalizeSupplier(s) {
     const now = nowIsoString();
+    const ordersFavorite =
+      s.ordersFavorite === true ||
+      s.ordersFavorite === "true" ||
+      s.ordersFavorite === "1" ||
+      s.ordersFavorite === 1 ||
+      s.favorite === true ||
+      s.starred === true;
     return {
       id:
         s.id !== undefined && s.id !== null && String(s.id).trim().length > 0
@@ -89,6 +96,7 @@
       location: (s.location || s.storesText || "").trim(),
       website: (s.website || "").trim(),
       notes: s.notes || "",
+      ordersFavorite,
       createdAt: s.createdAt || now,
       updatedAt: s.updatedAt || now,
     };

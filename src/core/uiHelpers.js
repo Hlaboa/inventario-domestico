@@ -28,6 +28,7 @@
     setValue(refs.filterBlockSelect, "");
     setValue(refs.filterTypeSelect, "");
     setValue(refs.filterStoreSelect, "");
+    setValue(refs.filterProducerSelect, "");
     setValue(refs.filterStatusSelect, "all");
 
     setValue(refs.editFilterSearchInput, "");
@@ -35,17 +36,20 @@
     setValue(refs.editFilterTypeSelect, "");
     setValue(refs.editFilterShelfSelect, "");
     setValue(refs.editFilterStoreSelect, "");
+    setValue(refs.editFilterProducerSelect, "");
 
     setValue(refs.extraFilterSearchInput, "");
     setValue(refs.extraFilterFamilySelect, "");
     setValue(refs.extraFilterTypeSelect, "");
     setValue(refs.extraFilterStoreSelect, "");
+    setValue(refs.extraFilterProducerSelect, "");
     setValue(refs.extraFilterBuySelect, "all");
 
     setValue(refs.extraEditFilterSearchInput, "");
     setValue(refs.extraEditFilterFamilySelect, "");
     setValue(refs.extraEditFilterTypeSelect, "");
     setValue(refs.extraEditFilterStoreSelect, "");
+    setValue(refs.extraEditFilterProducerSelect, "");
 
     setValue(refs.instancesSearchInput, "");
     setValue(refs.instancesFamilyFilterSelect, "");
@@ -55,9 +59,11 @@
     setValue(refs.storesSearchInput, "");
     setValue(refs.storesTypeFilterSelect, "");
     setValue(refs.storesLocationFilterSelect, "");
+    setValue(refs.storesUsageFilterSelect, "");
 
     setValue(refs.producersSearchInput, "");
     setValue(refs.producersLocationFilterSelect, "");
+    setValue(refs.producersUsageFilterSelect, "");
 
     setValue(refs.classificationSearchInput, "");
     setValue(refs.classificationFamilyFilterSelect, "");

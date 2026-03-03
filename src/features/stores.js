@@ -25,6 +25,9 @@
     if (refs.locationFilter) {
       refs.locationFilter.addEventListener("change", () => actions.filter?.());
     }
+    if (refs.usageFilter) {
+      refs.usageFilter.addEventListener("change", () => actions.filter?.());
+    }
   }
 
   function render() {

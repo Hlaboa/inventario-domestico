@@ -44,9 +44,28 @@
       (typeof context.getProducers === "function"
         ? context.getProducers()
         : []) || [];
+    const usedIdsRaw =
+      typeof context.getUsedProducerIds === "function"
+        ? context.getUsedProducerIds()
+        : new Set();
+    const usedIds =
+      usedIdsRaw instanceof Set
+        ? usedIdsRaw
+        : new Set(Array.isArray(usedIdsRaw) ? usedIdsRaw.map((id) => String(id || "").trim()) : []);
 
     const buildRow = (p) => {
+      const id = String(p.id || "").trim();
+      const unused = id ? !usedIds.has(id) : true;
       const nameInput = makeInput("name", p.name);
+      const nameWrap = document.createElement("div");
+      nameWrap.className = "entity-name-cell";
+      nameWrap.appendChild(nameInput);
+      if (unused) {
+        const badge = document.createElement("span");
+        badge.className = "entity-orphan-badge";
+        badge.textContent = "Sin productos";
+        nameWrap.appendChild(badge);
+      }
       const locInput = makeInput("location", p.location);
       const notesInput = makeTextarea("notes", p.notes || "");
       if (rowTemplate && window.AppComponents && typeof window.AppComponents.buildRowWithTemplate === "function") {
@@ -54,7 +73,7 @@
           template: rowTemplate,
           dataset: { id: p.id },
           replacements: {
-            "[data-slot='name']": nameInput,
+            "[data-slot='name']": nameWrap,
             "[data-slot='location']": locInput,
             "[data-slot='notes']": notesInput,
           },
@@ -62,14 +81,18 @@
             "[data-role='delete']": { action: "delete", id: p.id },
           },
         });
-        if (row) return row;
+        if (row) {
+          row.dataset.unused = unused ? "1" : "0";
+          return row;
+        }
       }
 
       const tr = document.createElement("tr");
       tr.dataset.id = p.id;
+      tr.dataset.unused = unused ? "1" : "0";
 
       let td = document.createElement("td");
-      td.appendChild(nameInput);
+      td.appendChild(nameWrap);
       tr.appendChild(td);
 
       td = document.createElement("td");
@@ -177,6 +200,7 @@
         },
       });
       if (row) {
+        row.dataset.unused = "1";
         tableBody.prepend(row);
         return;
       }
@@ -184,6 +208,7 @@
 
     const tr = document.createElement("tr");
     tr.dataset.id = id;
+    tr.dataset.unused = "1";
 
     let td = document.createElement("td");
     td.appendChild(makeInput("name", ""));
@@ -274,6 +299,7 @@
 
     const search = (refs.searchInput?.value || "").toLowerCase();
     const filterLoc = refs.locationFilter?.value || "";
+    const filterUsage = refs.usageFilter?.value || "";
 
     Array.from(tableBody.querySelectorAll("tr")).forEach((tr) => {
       const id = tr.dataset.id;
@@ -290,6 +316,10 @@
       const notes = (notesEl && notesEl.value) || "";
 
       if (filterLoc && location !== filterLoc) {
+        tr.style.display = "none";
+        return;
+      }
+      if (filterUsage === "unused" && tr.dataset.unused !== "1") {
         tr.style.display = "none";
         return;
       }
@@ -311,9 +341,11 @@
         typeof context.getProducers === "function"
           ? (context.getProducers() || []).length
           : dataRows.length;
+      const unusedTotal = dataRows.filter((tr) => tr.dataset.unused === "1").length;
       const visible = dataRows.filter((tr) => tr.style.display !== "none").length;
-      const filtered = visible !== total || (search || "").trim() || filterLoc;
-      refs.summary.textContent = `Total: ${total}${filtered ? ` · Visibles: ${visible}` : ""}`;
+      const filtered = visible !== total || (search || "").trim() || filterLoc || filterUsage;
+      const base = `Total: ${total} · Sin productos: ${unusedTotal}`;
+      refs.summary.textContent = filtered ? `${base} · Visibles: ${visible}` : base;
     }
   }
 
@@ -348,6 +380,9 @@
     }
     if (refs.locationFilter) {
       refs.locationFilter.addEventListener("change", () => filterRows());
+    }
+    if (refs.usageFilter) {
+      refs.usageFilter.addEventListener("change", () => filterRows());
     }
 
     render(context);

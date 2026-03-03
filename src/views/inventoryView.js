@@ -40,8 +40,9 @@
     const type = refs.filterTypeSelect?.value || "";
     const shelf = refs.filterShelfSelect?.value || "";
     const store = refs.filterStoreSelect?.value || "";
+    const producer = refs.filterProducerSelect?.value || "";
     const status = refs.filterStatusSelect?.value || "all";
-    return search || block || type || shelf || store || status !== "all";
+    return search || block || type || shelf || store || producer || status !== "all";
   }
 
   function getStripeMap(items, helpers) {
@@ -127,6 +128,7 @@
       filterBlockSelect,
       filterTypeSelect,
       filterStoreSelect,
+      filterProducerSelect,
       filterStatusSelect,
       summaryInfo,
       inventoryRowTemplate,
@@ -584,6 +586,7 @@
       filterBlockSelect,
       filterTypeSelect,
       filterStoreSelect,
+      filterProducerSelect,
       filterStatusSelect,
       summaryInfo,
     } = refs;
@@ -593,6 +596,7 @@
     const filterType = filterTypeSelect.value || "";
     const filterShelf = filterShelfSelect.value || "";
     const filterStoreId = filterStoreSelect.value || "";
+    const filterProducerId = filterProducerSelect?.value || "";
     const status = filterStatusSelect.value || "all";
     const products = resolveProducts(state);
     const map = new Map(products.map((p) => [p.id, p]));
@@ -622,6 +626,7 @@
       if (filterType && (p.type || "") !== filterType) return false;
       if (filterShelf && (p.shelf || "") !== filterShelf) return false;
       if (filterStoreId && !helpers.productMatchesStore(p, filterStoreId)) return false;
+      if (filterProducerId && !helpers.productMatchesProducer(p, filterProducerId)) return false;
       const future = getFutureFlag(p, tr);
       const have = !!p.have;
       if (status === "have" && !have) return false;
@@ -674,6 +679,7 @@
       filterBlockSelect,
       filterTypeSelect,
       filterStoreSelect,
+      filterProducerSelect,
       filterStatusSelect,
     } = refs;
 
@@ -687,6 +693,7 @@
     filterBlockSelect.addEventListener("change", debouncedRender);
     filterTypeSelect.addEventListener("change", debouncedRender);
     filterStoreSelect.addEventListener("change", debouncedRender);
+    filterProducerSelect?.addEventListener("change", debouncedRender);
     filterStatusSelect.addEventListener("change", debouncedRender);
     productTableBody.addEventListener("click", helpers.handleInventoryTableClick);
     filterRows({ refs, state, helpers });

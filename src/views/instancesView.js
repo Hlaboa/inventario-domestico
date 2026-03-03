@@ -4,14 +4,13 @@
   const hashMap = new Map();
   let stripeCacheKey = "";
   let stripeCache = {};
-  let filtersActive = false;
   let lastEditTs = 0;
   let currentScrollHandler = null;
   const stripeClassRegex = /^family-stripe-/;
   const storeNamesSep = " · ";
   const DEFAULT_ROW_HEIGHT = 64;
   const BUFFER_ROWS = 1;
-  const FULL_RENDER_THRESHOLD = Number.POSITIVE_INFINITY; // desactiva virtualización para mostrar siempre todas las filas
+  const FULL_RENDER_THRESHOLD = 120; // activar virtualización en listados grandes
   const scrollSelector = ".table-scroll";
 
   const getCtx = (c) => c || ctx || {};
@@ -123,11 +122,27 @@
     }
   }
 
+  function updateSummary(context, allItems, filteredItems, hasFilters) {
+    const refs = context.refs || {};
+    if (!refs.summary) return;
+    const total = Array.isArray(allItems) ? allItems.length : 0;
+    const visible = Array.isArray(filteredItems) ? filteredItems.length : 0;
+    const missing = Array.isArray(allItems)
+      ? allItems.reduce((acc, item) => acc + (item && item.__missing === "1" ? 1 : 0), 0)
+      : 0;
+    const filtered = !!hasFilters && visible !== total;
+    const parts = [`Total: ${total}`];
+    if (missing > 0) parts.push(`No conciliados: ${missing}`);
+    if (filtered) parts.push(`Visibles: ${visible}`);
+    refs.summary.textContent = parts.join(" · ");
+  }
+
   function render(c) {
     const context = getCtx(c);
     const refs = context.refs || {};
     const tableBody = refs.tableBody;
     const rowTemplate = refs.rowTemplate;
+    const reconciliationOnly = !!context.onlyMissingMode;
     if (!tableBody) return;
     if (shouldDeferRender(context)) return;
     if (context.__skipNextRender) {
@@ -166,12 +181,19 @@
     const productById = new Map();
     const productByName = new Map();
     allProducts.forEach((p) => {
-      if (p.id) productById.set(p.id, p);
+      if (p.id !== undefined && p.id !== null && String(p.id || "").trim()) {
+        productById.set(String(p.id), p);
+      }
       const lower = (p.name || "").trim().toLowerCase();
       if (lower && !productByName.has(lower)) {
         productByName.set(lower, p);
       }
     });
+    const getProductById = (id) => {
+      const key = String(id || "").trim();
+      if (!key) return null;
+      return productById.get(key) || null;
+    };
 
     const producerNameFor = (id) => {
       if (typeof context.getProducerName === "function") {
@@ -205,76 +227,105 @@
       return names.join(", ");
     };
 
-    // Renderizamos siempre limpio para respetar el orden por familia
-    tableBody.innerHTML = "";
-    rowMap.clear();
-    hashMap.clear();
-    removeScrollHandler();
-    context.__pageSize = 20;
+    // Preparar estado de render una sola vez por cambio real de datos.
+    if (!context.__renderPrepared) {
+      tableBody.innerHTML = "";
+      rowMap.clear();
+      hashMap.clear();
+      removeScrollHandler();
+      context.__pageSize = 20;
+      context.__renderPrepared = true;
+    }
 
-    const normalized = instances.slice().map((inst) => {
-      const familyRaw = inst.block || getFamilyForInstance(inst) || "";
-      const lower = (inst.productName || "").trim().toLowerCase();
-      const matchById = inst.productId ? productById.get(inst.productId) : null;
-      const matchByName = lower ? productByName.get(lower) : null;
-      const idMatchesName =
-        !!(matchById && lower && (matchById.name || "").trim().toLowerCase() === lower);
-      const familyResolved =
-        familyRaw ||
-        (matchByName && matchByName.block) ||
-        (idMatchesName && matchById && matchById.block) ||
-        "";
-      const family = (familyResolved || "").trim();
+    const canReuseNormalized =
+      context.__instancesRef === instances &&
+      context.__producersRef === producersList &&
+      context.__storesRef === storesList &&
+      context.__productsRef === allProducts &&
+      Array.isArray(context.__normalized);
 
-      const producerName =
-        (inst.producerName || "").trim() ||
-        (inst.producerId ? (producerById.get(inst.producerId)?.name || "") : "") ||
-        getProducerName(inst.producerId) ||
-        "";
-      const storeNames = storeNamesFor(inst.storeIds);
-      const haystack = [
-        inst.productName || "",
-        inst.brand || "",
-        inst.notes || "",
-        family || "",
-        producerName,
-        storeNames,
-      ]
-        .join(" ")
-        .toLowerCase();
+    let items = null;
+    if (canReuseNormalized) {
+      items = context.__normalized.slice();
+    } else {
+      // En modo conciliación procesamos solo no conciliados para evitar cargar todo el bloque.
+      const sourceList = reconciliationOnly
+        ? instances.filter((inst) => {
+            if (!inst) return false;
+            const lower = (inst.productName || "").trim().toLowerCase();
+            const knownFromId = getProductById(inst.productId);
+            const knownFromName = lower ? productByName.get(lower) : null;
+            return !(knownFromId || knownFromName);
+          })
+        : instances.slice();
 
-      const knownFromId = inst.productId ? productById.get(inst.productId) : null;
-      const knownFromName = matchByName;
-      const knownFromHelper =
-        typeof context.isKnownProduct === "function"
-          ? context.isKnownProduct(inst.productName, inst.productId)
-          : false;
-      const missing = !(knownFromId || knownFromName || knownFromHelper);
+      const normalized = sourceList.map((inst) => {
+        const familyRaw = inst.block || getFamilyForInstance(inst) || "";
+        const lower = (inst.productName || "").trim().toLowerCase();
+        const matchById = inst.productId ? getProductById(inst.productId) : null;
+        const matchByName = lower ? productByName.get(lower) : null;
+        const idMatchesName =
+          !!(matchById && lower && (matchById.name || "").trim().toLowerCase() === lower);
+        const familyResolved =
+          familyRaw ||
+          (matchByName && matchByName.block) ||
+          (idMatchesName && matchById && matchById.block) ||
+          "";
+        const family = (familyResolved || "").trim();
 
-      return {
-        ...inst,
-        block: family || inst.block || "",
-        __familySort: (family || "__none__").toLowerCase(),
-        __producerName: producerName,
-        __storeNames: storeNames,
-        __haystack: haystack,
-        __missing: missing ? "1" : "0",
+        const knownFromId = inst.productId ? getProductById(inst.productId) : null;
+        const knownFromName = matchByName;
+        const missing = reconciliationOnly ? true : !(knownFromId || knownFromName);
+        const producerName = reconciliationOnly
+          ? ""
+          :
+              (inst.producerName || "").trim() ||
+              (inst.producerId ? producerById.get(inst.producerId)?.name || "" : "") ||
+              getProducerName(inst.producerId) ||
+              "";
+        const storeNames = reconciliationOnly ? "" : storeNamesFor(inst.storeIds);
+        const haystack = reconciliationOnly
+          ? [inst.productName || "", family || "", inst.notes || ""].join(" ").toLowerCase()
+          : [
+              inst.productName || "",
+              inst.brand || "",
+              inst.notes || "",
+              family || "",
+              producerName,
+              storeNames,
+            ]
+              .join(" ")
+              .toLowerCase();
+
+        return {
+          ...inst,
+          block: family || inst.block || "",
+          __familySort: (family || "__none__").toLowerCase(),
+          __producerName: producerName,
+          __storeNames: storeNames,
+          __haystack: haystack,
+          __missing: missing ? "1" : "0",
+        };
+      });
+      const sortByFamilyProduct = (a, b) => {
+        const cmpFam = (a.__familySort || "").localeCompare(b.__familySort || "", "es", {
+          sensitivity: "base",
+        });
+        if (cmpFam !== 0) return cmpFam;
+        return (a.productName || "").localeCompare(b.productName || "", "es", {
+          sensitivity: "base",
+        });
       };
-    });
-    const sortByFamilyProduct = (a, b) => {
-      const cmpFam = (a.__familySort || "").localeCompare(b.__familySort || "", "es", {
-        sensitivity: "base",
-      });
-      if (cmpFam !== 0) return cmpFam;
-      return (a.productName || "").localeCompare(b.productName || "", "es", {
-        sensitivity: "base",
-      });
-    };
-    const items = normalized.sort(sortByFamilyProduct);
-    context.__normKey = null;
-    context.__normalized = items;
+      items = normalized.sort(sortByFamilyProduct);
+      context.__normalized = items.slice();
+      context.__instancesRef = instances;
+      context.__producersRef = producersList;
+      context.__storesRef = storesList;
+      context.__productsRef = allProducts;
+    }
     if (context.data) {
-      context.data.instances = items.slice();
+      context.data.instances = instances.slice();
+      context.__sourceInstances = context.data.instances.slice();
       context.__currentItems = items.slice();
       context.__filteredItems = null;
     }
@@ -311,6 +362,14 @@
 
     const filteredItems = items.filter((inst) => matchesFilters(inst));
     context.__filteredItems = filteredItems.slice();
+    const hasFilters = !!(
+      filterSearch ||
+      filterFamily ||
+      filterProducerId ||
+      filterStoreId ||
+      filterMissing
+    );
+    updateSummary(context, items, filteredItems, hasFilters);
 
     const stripeMap = getStripeMap(context, filteredItems.slice(0, BUFFER_ROWS * 2 + 100), getFamilyForInstance);
 
@@ -675,7 +734,7 @@
       if (inputNameEl) {
         const getFamilyForName = (name) => {
           const lower = (name || "").trim().toLowerCase();
-          const prodById = inst.productId ? productById.get(inst.productId) : null;
+          const prodById = inst.productId ? getProductById(inst.productId) : null;
           const prodByName = lower ? productByName.get(lower) : null;
           const idMatchesName =
             !!(prodById && lower && (prodById.name || "").trim().toLowerCase() === lower);
@@ -689,15 +748,11 @@
         };
         const isKnown = (name) => {
           const lower = (name || "").trim().toLowerCase();
-          const prodById = inst.productId ? productById.get(inst.productId) : null;
+          const prodById = inst.productId ? getProductById(inst.productId) : null;
           const idMatchesName =
             !!(prodById && lower && (prodById.name || "").trim().toLowerCase() === lower);
           const hasByName = lower && productByName.has(lower);
-          const helperKnown =
-            typeof context.isKnownProduct === "function"
-              ? context.isKnownProduct(name, inst.productId)
-              : false;
-          return !!((idMatchesName && prodById) || hasByName || helperKnown);
+          return !!((idMatchesName && prodById) || hasByName);
         };
         const updateMissingState = () => {
           const known = isKnown(inputNameEl.value);
@@ -816,18 +871,6 @@
       }
 
       context.__lastItemsCount = filteredItems.length;
-
-      if (typeof context.attachMultiSelectToggle === "function") {
-        Array.from(tableBody.querySelectorAll('select[multiple][data-field="storeIds"]')).forEach(
-          (sel) => {
-            if (sel.dataset.enhanced === "1") return;
-            context.attachMultiSelectToggle(sel);
-            sel.dataset.enhanced = "1";
-          }
-        );
-      }
-
-      filterRows(context);
     };
 
     const scheduleWindow = () => {
@@ -862,19 +905,7 @@
       context.__forceScrollTop = false;
     }
 
-    renderWindow();
-
-    if (typeof context.attachMultiSelectToggle === "function") {
-      Array.from(tableBody.querySelectorAll('select[multiple][data-field="storeIds"]')).forEach(
-        (sel) => {
-          if (sel.dataset.enhanced === "1") return;
-          context.attachMultiSelectToggle(sel);
-          sel.dataset.enhanced = "1";
-        }
-      );
-    }
-
-    filterRows(context);
+      renderWindow();
   }
 
   function persistAndRender(context, list, options = {}) {
@@ -895,7 +926,10 @@
     if (!tableBody) return [];
     const rows = Array.from(tableBody.querySelectorAll("tr"));
     const now = getNow(context);
-    const existing = context.data?.instances || [];
+    const existing =
+      (Array.isArray(context.__sourceInstances) && context.__sourceInstances) ||
+      context.data?.instances ||
+      [];
     const byId = new Map();
     existing.forEach((inst) => {
       if (inst && inst.id) byId.set(inst.id, inst);
@@ -911,13 +945,20 @@
       };
       const getStoreIds = () => {
         const sel = tr.querySelector('select[data-field="storeIds"]');
-        if (!sel) return [];
+        const prev = byId.get(id) || {};
+        if (!sel) return Array.isArray(prev.storeIds) ? prev.storeIds.slice() : [];
+        const selectedOpts = sel.selectedOptions ? Array.from(sel.selectedOptions) : [];
+        const hasAnyOption = Array.isArray(sel.options) ? sel.options.length > 0 : !!(sel.options && sel.options.length);
+        // Si el selector sigue en carga diferida (sin opciones), conservamos valores previos.
+        if (!selectedOpts.length && !hasAnyOption) {
+          return Array.isArray(prev.storeIds) ? prev.storeIds.slice() : [];
+        }
         const opts =
-          (sel.selectedOptions && sel.selectedOptions.length
-            ? Array.from(sel.selectedOptions)
+          (selectedOpts.length
+            ? selectedOpts
             : Array.from(sel.options || sel.children || [])) || [];
         return opts
-          .filter((o) => !sel.selectedOptions || sel.selectedOptions.length ? true : o.selected)
+          .filter((o) => (selectedOpts.length ? true : o.selected))
           .map((o) => o.value)
           .filter(Boolean);
       };
@@ -1088,76 +1129,6 @@
     persistAndRender(context, list, { allowClear: true });
   }
 
-  function filterRows(context) {
-    const ctx = getCtx(context);
-    const refs = ctx.refs || {};
-    const tableBody = refs.tableBody;
-    if (!tableBody) return;
-    const search = (refs.searchInput?.value || "").toLowerCase();
-    const filterFamily = refs.familyFilter?.value || "";
-    const filterProducerId = refs.producerFilter?.value || "";
-    const filterStoreId = refs.storeFilter?.value || "";
-    const filterMissing =
-      typeof ctx.getMissingFilterActive === "function" ? !!ctx.getMissingFilterActive() : false;
-
-    const allItems =
-      (ctx.__currentItems && Array.isArray(ctx.__currentItems) && ctx.__currentItems) ||
-      (ctx.data && Array.isArray(ctx.data.instances) && ctx.data.instances) ||
-      [];
-
-    const hasFilters = !!(search || filterFamily || filterProducerId || filterStoreId || filterMissing);
-    filtersActive = hasFilters;
-
-    const matches = (item) => {
-      if (!item) return false;
-      if (filterFamily && (item.block || "") !== filterFamily) return false;
-      if (filterProducerId && (item.producerId || "") !== filterProducerId) return false;
-      if (filterStoreId) {
-        const ids = Array.isArray(item.storeIds) ? item.storeIds : [];
-        if (!ids.includes(filterStoreId)) return false;
-      }
-      if (filterMissing && item.__missing !== "1") return false;
-      if (search) {
-        const hay = item.__haystack || "";
-        if (!hay.includes(search)) return false;
-      }
-      return true;
-    };
-
-    // Visibilidad de filas renderizadas
-    const rows = Array.from(tableBody.querySelectorAll("tr"));
-    rows.forEach((row) => {
-      if (row.classList.contains("instances-spacer")) {
-        row.style.display = "";
-        return;
-      }
-      if (row.dataset.isNew === "1") {
-        row.style.display = "";
-        return;
-      }
-      const id = row.dataset.id;
-      if (!id) return;
-      const item = allItems.find((i) => i && i.id === id);
-      const visible = matches(item);
-      row.style.display = visible ? "" : "none";
-    });
-
-    if (refs.summary) {
-      const total = allItems.length;
-      const visible = allItems.filter((it) => matches(it)).length;
-      const missing = allItems.filter((it) => it && it.__missing === "1").length;
-      const filtered = hasFilters && visible !== total;
-      const parts = [`Total: ${total}`];
-      if (missing > 0) {
-        parts.push(`No conciliados: ${missing}`);
-      }
-      if (filtered) {
-        parts.push(`Visibles: ${visible}`);
-      }
-      refs.summary.textContent = parts.join(" · ");
-    }
-  }
-
   function bindFilters(context) {
     const refs = context.refs || {};
     const handle =
@@ -1189,10 +1160,6 @@
     const refs = context.refs || {};
     bindFilters(context);
     const attachButtons = context.attachButtonHandlers !== false;
-    const refilterOnEdit =
-      window.AppUtils && typeof window.AppUtils.debounce === "function"
-        ? window.AppUtils.debounce(() => filterRows(context), 120)
-        : () => filterRows(context);
     if (attachButtons) {
       refs.addButton?.addEventListener("click", () => addRow());
       refs.saveButton?.addEventListener("click", () => save());
@@ -1201,10 +1168,8 @@
     const markEdit = () => {
       lastEditTs = Date.now();
     };
-    refs.tableBody?.addEventListener("input", refilterOnEdit);
     refs.tableBody?.addEventListener("input", markEdit);
     refs.tableBody?.addEventListener("keydown", markEdit);
-    refs.tableBody?.addEventListener("change", refilterOnEdit);
     render(context);
   }
 

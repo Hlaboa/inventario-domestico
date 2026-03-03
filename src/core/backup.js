@@ -53,6 +53,7 @@
       )
       .map((s) => ({
         Tienda: s.name || "",
+        "★ Pedidos": s.ordersFavorite ? "Sí" : "",
         Tipo: s.type || "",
         Ubicación: s.location || "",
         Web: s.website || "",

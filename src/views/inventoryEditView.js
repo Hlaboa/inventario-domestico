@@ -44,6 +44,14 @@
     return true;
   };
 
+  const matchesProducer = (context, productId, producerId) => {
+    if (!producerId) return true;
+    if (typeof context.matchesProducer === "function") {
+      return context.matchesProducer(productId, producerId);
+    }
+    return true;
+  };
+
   const buildStripeMap = (context, items) =>
     typeof context.buildFamilyStripeMap === "function"
       ? context.buildFamilyStripeMap(items)
@@ -478,6 +486,7 @@
     const filterType = refs.typeFilter?.value || "";
     const filterShelf = refs.shelfFilter?.value || "";
     const filterStoreId = refs.storeFilter?.value || "";
+    const filterProducerId = refs.producerFilter?.value || "";
 
     const predicate = (tr) => {
       const id = tr.dataset.id;
@@ -493,6 +502,9 @@
       if (filterType && type !== filterType) return false;
       if (filterShelf && shelf !== filterShelf) return false;
       if (filterStoreId && !matchesStore(context, id, filterStoreId)) {
+        return false;
+      }
+      if (filterProducerId && !matchesProducer(context, id, filterProducerId)) {
         return false;
       }
       if (search) {
@@ -575,7 +587,14 @@
     if (refs.saveButton) refs.saveButton.addEventListener("click", () => save());
 
     const filterListener = () => filterRows();
-    [refs.searchInput, refs.familyFilter, refs.typeFilter, refs.shelfFilter, refs.storeFilter].forEach(
+    [
+      refs.searchInput,
+      refs.familyFilter,
+      refs.typeFilter,
+      refs.shelfFilter,
+      refs.storeFilter,
+      refs.producerFilter,
+    ].forEach(
       (el) => {
         if (!el) return;
         const evt = el.tagName === "INPUT" ? "input" : "change";

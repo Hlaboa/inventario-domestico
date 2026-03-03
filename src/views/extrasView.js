@@ -243,7 +243,17 @@
     const normalizedStoreIds = Array.isArray(storeIds)
       ? storeIds.map((id) => String(id || "").trim()).filter(Boolean)
       : [];
+    const producerIds =
+      typeof context.getProducerIdsForProduct === "function"
+        ? context.getProducerIdsForProduct(item)
+        : inst?.producerId
+          ? [inst.producerId]
+          : [];
+    const normalizedProducerIds = Array.isArray(producerIds)
+      ? producerIds.map((id) => String(id || "").trim()).filter(Boolean)
+      : [];
     row.dataset.storeIds = normalizedStoreIds.join(",");
+    row.dataset.producerIds = normalizedProducerIds.join(",");
     row.dataset.search = `${item.name || ""} ${item.block || ""} ${item.type || ""} ${item.quantity || ""} ${selectionLabel} ${storesLabel} ${futureLabel || ""} ${item.notes || ""}`.toLowerCase();
     const buyChk = row.querySelector('input[data-field="buy"]');
     if (buyChk) buyChk.checked = !!item.buy;
@@ -261,6 +271,7 @@
     const filterFamily = refs.familyFilter?.value || "";
     const filterType = refs.typeFilter?.value || "";
     const filterStore = refs.storeFilter?.value || "";
+    const filterProducer = refs.producerFilter?.value || "";
     const filterBuy = refs.buyFilter?.value || "all";
     const filterHave = refs.haveFilter?.value || "all";
     return (
@@ -268,6 +279,7 @@
       filterFamily ||
       filterType ||
       filterStore ||
+      filterProducer ||
       filterBuy !== "all" ||
       filterHave !== "all"
     );
@@ -667,6 +679,7 @@
     const filterFamily = refs.familyFilter?.value || "";
     const filterType = refs.typeFilter?.value || "";
     const filterStore = refs.storeFilter?.value || "";
+    const filterProducer = refs.producerFilter?.value || "";
     const filterBuy = refs.buyFilter?.value || "all";
     const filterHave = refs.haveFilter?.value || "all";
     const futureMap =
@@ -685,6 +698,7 @@
       const buy = row.dataset.buy === "1";
       const have = row.dataset.have === "1";
       const storeIds = (row.dataset.storeIds || "").split(",").filter(Boolean);
+      const producerIds = (row.dataset.producerIds || "").split(",").filter(Boolean);
       const future =
         row.dataset.futureOrder === "1"
           ? true
@@ -701,6 +715,7 @@
       if (filterFamily && block !== filterFamily) visible = false;
       if (visible && filterType && type !== filterType) visible = false;
       if (visible && filterStore && !storeIds.includes(filterStore)) visible = false;
+      if (visible && filterProducer && !producerIds.includes(filterProducer)) visible = false;
       if (visible && filterHave === "have" && !have) visible = false;
       if (visible && filterHave === "missing" && have) visible = false;
       if (visible && filterBuy === "yes" && !buy) visible = false;
@@ -829,6 +844,7 @@
       refs.familyFilter,
       refs.typeFilter,
       refs.storeFilter,
+      refs.producerFilter,
       refs.haveFilter,
       refs.buyFilter,
     ].forEach((el) => {
