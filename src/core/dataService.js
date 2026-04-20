@@ -3,10 +3,218 @@
   const stateStore = window.AppState;
   const utils = window.AppUtils || {};
 
+  const PANTRY_API_BASE = "http://127.0.0.1:8040";
+  const PANTRY_SNAPSHOT_PATH = "/api/pantry/snapshot";
+  let apiConnected = null;
+  let apiWarningLogged = false;
+  let pendingApiSnapshot = null;
+  let apiPersistTimer = null;
+  let apiLoadPromise = null;
+  let pantryStatus = {
+    connected: null,
+    checking: true,
+    blocking: true,
+    message: "Conectando con la API local de pantry...",
+  };
+  const API_PERSIST_DEBOUNCE = 140;
+
   const nowIsoString =
     (utils && typeof utils.nowIsoString === "function"
       ? utils.nowIsoString
       : () => new Date().toISOString());
+
+  function buildSnapshot(state) {
+    const source = state && typeof state === "object" ? state : {};
+    const sourceProducts = Array.isArray(source.products) ? source.products : [];
+    const sourceExtraProducts = Array.isArray(source.extraProducts)
+      ? source.extraProducts
+      : [];
+    const sourceUnifiedProducts = Array.isArray(source.unifiedProducts)
+      ? source.unifiedProducts
+      : [];
+    const unifiedProducts = sourceUnifiedProducts.length
+      ? sourceUnifiedProducts
+      : [
+          ...sourceProducts
+            .filter((item) => item && typeof item === "object")
+            .map((item) => ({ ...item, scope: "almacen" })),
+          ...sourceExtraProducts
+            .filter((item) => item && typeof item === "object")
+            .map((item) => ({ ...item, scope: "otros" })),
+        ];
+    const products = unifiedProducts.length
+      ? unifiedProducts.filter((item) => item && item.scope === "almacen")
+      : sourceProducts;
+    const extraProducts = unifiedProducts.length
+      ? unifiedProducts.filter((item) => item && item.scope === "otros")
+      : sourceExtraProducts;
+    return {
+      products,
+      extraProducts,
+      unifiedProducts,
+      suppliers: Array.isArray(source.suppliers) ? source.suppliers : [],
+      producers: Array.isArray(source.producers) ? source.producers : [],
+      productInstances: Array.isArray(source.productInstances)
+        ? source.productInstances
+        : [],
+      classifications: Array.isArray(source.classifications)
+        ? source.classifications
+        : [],
+      orders: Array.isArray(source.orders) ? source.orders : [],
+    };
+  }
+
+  function saveSnapshotCache(snapshot) {
+    if (!snapshot || typeof snapshot !== "object") return;
+    try {
+      const normalized = buildSnapshot(snapshot);
+      persistEntityImmediate("products", normalized.products);
+      persistEntityImmediate("extraProducts", normalized.extraProducts);
+      persistEntityImmediate("unifiedProducts", normalized.unifiedProducts);
+      persistEntityImmediate("suppliers", normalized.suppliers);
+      persistEntityImmediate("producers", normalized.producers);
+      persistEntityImmediate("productInstances", normalized.productInstances);
+      persistEntityImmediate("classifications", normalized.classifications);
+      persistEntityImmediate("orders", normalized.orders);
+    } catch (err) {
+      console.warn("Pantry cache update failed", err);
+    }
+  }
+
+  function emitPantryStatus(patch = {}) {
+    pantryStatus = { ...pantryStatus, ...patch };
+    if (
+      window &&
+      typeof window.dispatchEvent === "function" &&
+      typeof window.CustomEvent === "function"
+    ) {
+      window.dispatchEvent(new window.CustomEvent("pantry:status", { detail: pantryStatus }));
+    }
+    return pantryStatus;
+  }
+
+  function setApiConnected() {
+    apiConnected = true;
+    apiWarningLogged = false;
+    emitPantryStatus({
+      connected: true,
+      checking: false,
+      blocking: false,
+      message: "Pantry API conectada.",
+      error: "",
+    });
+  }
+
+  function setApiUnavailable(message, err) {
+    apiConnected = false;
+    const detail = err && (err.message || String(err));
+    emitPantryStatus({
+      connected: false,
+      checking: false,
+      blocking: true,
+      message,
+      error: detail || "",
+    });
+    if (!apiWarningLogged) {
+      console.warn(detail ? `${message}:` : message, detail || "");
+      apiWarningLogged = true;
+    }
+  }
+
+  function canWritePantry() {
+    if (apiConnected === true) return true;
+    setApiUnavailable(
+      "Pantry API no disponible. Escritura bloqueada para evitar divergencias con localStorage."
+    );
+    return false;
+  }
+
+  async function fetchPantrySnapshot() {
+    const fetchImpl = window.fetch;
+    if (typeof fetchImpl !== "function") return null;
+    const url = `${PANTRY_API_BASE}${PANTRY_SNAPSHOT_PATH}`;
+    const response = await fetchImpl(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw new Error(`Pantry snapshot fetch failed with status ${response.status}`);
+    }
+    const payload = await response.json();
+    return payload;
+  }
+
+  async function pushPantrySnapshot(snapshot) {
+    const fetchImpl = window.fetch;
+    if (typeof fetchImpl !== "function") return null;
+    const url = `${PANTRY_API_BASE}${PANTRY_SNAPSHOT_PATH}`;
+    const payload = buildSnapshot(snapshot);
+    const response = await fetchImpl(url, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw new Error(`Pantry snapshot push failed with status ${response.status}`);
+    }
+    return payload;
+  }
+
+  function scheduleApiSnapshot(snapshot) {
+    if (typeof window.fetch !== "function") {
+      setApiUnavailable("Pantry API no disponible. Este navegador no expone fetch.");
+      return;
+    }
+    pendingApiSnapshot = buildSnapshot(snapshot);
+    if (apiPersistTimer) {
+      clearTimeout(apiPersistTimer);
+    }
+    apiPersistTimer = setTimeout(async () => {
+      apiPersistTimer = null;
+      const payload = pendingApiSnapshot;
+      pendingApiSnapshot = null;
+      try {
+        await pushPantrySnapshot(payload);
+        saveSnapshotCache(payload);
+        setApiConnected();
+        console.debug("Pantry API snapshot persisted");
+      } catch (err) {
+        setApiUnavailable(
+          "Pantry API no disponible. No se ha guardado el ultimo cambio.",
+          err
+        );
+      }
+    }, API_PERSIST_DEBOUNCE);
+  }
+
+  async function refreshFromApi() {
+    if (apiLoadPromise) return apiLoadPromise;
+    if (typeof window.fetch !== "function") {
+      setApiUnavailable("Pantry API no disponible. Este navegador no expone fetch.");
+      return null;
+    }
+    apiLoadPromise = (async () => {
+      try {
+        const remote = await fetchPantrySnapshot();
+        if (remote && typeof remote === "object") {
+          saveSnapshotCache(remote);
+          setApiConnected();
+          console.info("Pantry API snapshot loaded");
+        }
+        return remote;
+      } catch (err) {
+        setApiUnavailable(
+          "Pantry API no disponible al arrancar. La app queda bloqueada para evitar multiples verdades.",
+          err
+        );
+        return null;
+      }
+    })();
+    const result = await apiLoadPromise;
+    apiLoadPromise = null;
+    return result;
+  }
 
   const normalizers =
     storage.normalize ||
@@ -21,17 +229,21 @@
       order: (p) => p,
     };
 
-  const storageKeys =
-    storage.keys || {
-      unifiedProducts: "productosCocinaUnificados",
-      suppliers: "proveedoresCocina",
-      producers: "productoresCocina",
-      productInstances: "instanciasProductosCocina",
-      classifications: "clasificacionesProductosCocina",
-      orders: "pedidosCocina",
-    };
+  const defaultStorageKeys = {
+    products: "inventarioCocinaAlmacen",
+    extraProducts: "otrosProductosCompra",
+    unifiedProducts: "productosCocinaUnificados",
+    suppliers: "proveedoresCocina",
+    producers: "productoresCocina",
+    productInstances: "instanciasProductosCocina",
+    classifications: "clasificacionesProductosCocina",
+    orders: "pedidosCocina",
+  };
+  const storageKeys = { ...defaultStorageKeys, ...(storage.keys || {}) };
 
   const saveMap = {
+    products: storage.saveProducts,
+    extraProducts: storage.saveExtraProducts,
     unifiedProducts: storage.saveUnifiedProducts,
     suppliers: storage.saveSuppliers,
     producers: storage.saveProducers,
@@ -41,6 +253,8 @@
   };
 
   const normalizerMap = {
+    products: normalizers.product,
+    extraProducts: normalizers.extraProduct,
     unifiedProducts: normalizers.unifiedProduct,
     suppliers: normalizers.supplier,
     producers: normalizers.producer,
@@ -50,6 +264,8 @@
   };
 
   const loadMap = {
+    products: storage.loadProducts,
+    extraProducts: storage.loadExtraProducts,
     unifiedProducts: storage.loadUnifiedProducts,
     suppliers: storage.loadSuppliers,
     producers: storage.loadProducers,
@@ -313,19 +529,23 @@
   }
 
   function schedulePersist() {
-    if (typeof cancelIdleCallback === "function" && persistIdleHandle) {
-      cancelIdleCallback(persistIdleHandle);
+    if (typeof window.setTimeout !== "function") {
+      flushPendingPersists();
+      return;
+    }
+    if (typeof window.cancelIdleCallback === "function" && persistIdleHandle) {
+      window.cancelIdleCallback(persistIdleHandle);
       persistIdleHandle = null;
     }
-    clearTimeout(persistTimer);
+    window.clearTimeout(persistTimer);
     const run = () => {
       persistIdleHandle = null;
       flushPendingPersists();
     };
-    if (typeof requestIdleCallback === "function") {
-      persistIdleHandle = requestIdleCallback(run, { timeout: PERSIST_DEBOUNCE });
+    if (typeof window.requestIdleCallback === "function") {
+      persistIdleHandle = window.requestIdleCallback(run, { timeout: PERSIST_DEBOUNCE });
     } else {
-      persistTimer = setTimeout(run, PERSIST_DEBOUNCE);
+      persistTimer = window.setTimeout(run, PERSIST_DEBOUNCE);
     }
   }
 
@@ -335,6 +555,7 @@
   }
 
   function persistState(nextState) {
+    if (!canWritePantry()) return false;
     const state = nextState || (stateStore && stateStore.getState()) || {};
     const unified = buildUnifiedList(
       state.products,
@@ -342,27 +563,21 @@
       state.unifiedProducts
     );
 
-    persistEntity("unifiedProducts", unified);
-    persistEntity(
-      "suppliers",
-      normalizeList(state.suppliers, normalizers.supplier)
-    );
-    persistEntity(
-      "producers",
-      normalizeList(state.producers, normalizers.producer)
-    );
-    persistEntity(
-      "classifications",
-      normalizeList(state.classifications, normalizers.classification)
-    );
-    persistEntity(
-      "productInstances",
-      normalizeList(state.productInstances, normalizers.instance)
-    );
-    persistEntity("orders", normalizeList(state.orders, normalizers.order));
+    scheduleApiSnapshot({
+      ...state,
+      unifiedProducts: unified,
+    });
+    return true;
   }
 
   function setEntity(name, list) {
+    if (!canWritePantry()) {
+      const current =
+        stateStore && typeof stateStore.getState === "function"
+          ? stateStore.getState()
+          : {};
+      return Array.isArray(current[name]) ? current[name] : [];
+    }
     const normalizer = normalizerMap[name] || ((item) => item);
     const normalized = normalizeList(list, normalizer);
     if (stateStore && typeof stateStore.hydrate === "function") {
@@ -379,11 +594,20 @@
         name === "extraProducts" ? normalized : state.extraProducts,
         name === "unifiedProducts" ? normalized : state.unifiedProducts
       );
-      persistEntity("unifiedProducts", unified);
+      scheduleApiSnapshot({
+        ...state,
+        unifiedProducts: unified,
+      });
       return normalized;
     }
 
-    persistEntity(name, normalized);
+    const state =
+      stateStore && typeof stateStore.getState === "function"
+        ? stateStore.getState()
+        : null;
+    if (state) {
+      scheduleApiSnapshot(state);
+    }
     return normalized;
   }
 
@@ -392,7 +616,17 @@
     if (stateStore && typeof stateStore.hydrate === "function") {
       stateStore.hydrate(data);
     }
+    hydrateFromApi();
     return data;
+  }
+
+  function hydrateFromApi() {
+    return refreshFromApi().then((remote) => {
+      if (remote && typeof remote === "object" && stateStore && typeof stateStore.hydrate === "function") {
+        stateStore.hydrate(buildSnapshot(remote));
+      }
+      return remote;
+    });
   }
 
   function getFamilies(state) {
@@ -457,6 +691,9 @@
 
   window.DataService = {
     hydrateFromStorage,
+    hydrateFromApi,
+    getPantryStatus: () => ({ ...pantryStatus }),
+    isPantryWriteBlocked: () => apiConnected !== true,
     persistState,
     setProducts: (list) => setEntity("products", list),
     setExtraProducts: (list) => setEntity("extraProducts", list),

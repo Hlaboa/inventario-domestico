@@ -380,7 +380,7 @@ register("AppStorage normaliza productos y extraProducts con scope correcto", ()
   assert.strictEqual(unified.id, "3", "Unified fuerza id numérico a string");
 });
 
-register("DataService.persistState guarda unifiedProducts y listas separadas", () => {
+register("DataService.persistState bloquea escritura si no hay Pantry API", () => {
   const AppState = {
     state: {},
     hydrate(patch) {
@@ -427,17 +427,18 @@ register("DataService.persistState guarda unifiedProducts y listas separadas", (
     productInstances: [{ id: "i1", productId: "p1" }],
   };
 
-  global.window.DataService.persistState(state);
+  const saved = global.window.DataService.persistState(state);
 
-  const unified = JSON.parse(localStorage.getItem(storageKeys.unifiedProducts));
-  const prods = JSON.parse(localStorage.getItem(storageKeys.products));
-  const extras = JSON.parse(localStorage.getItem(storageKeys.extraProducts));
-  assert.strictEqual(unified.length, 2, "Unificados incluye productos y extras");
-  assert.strictEqual(prods.length, 1, "Guarda lista de productos");
-  assert.strictEqual(extras.length, 1, "Guarda lista de extras");
+  assert.strictEqual(saved, false, "Debe rechazar escritura sin API conectada");
+  assert.strictEqual(
+    localStorage.getItem(storageKeys.unifiedProducts),
+    null,
+    "No debe escribir cache local como fuente alternativa"
+  );
+  assert.strictEqual(global.window.DataService.getPantryStatus().blocking, true);
 });
 
-register("DataService.setUnifiedProducts persiste y actualiza AppState", () => {
+register("DataService.setUnifiedProducts no muta AppState si no hay Pantry API", () => {
   const AppState = {
     state: {},
     hydrate(patch) {
@@ -454,16 +455,16 @@ register("DataService.setUnifiedProducts persiste y actualiza AppState", () => {
   const ds = loadDataService({ AppState, localStorage });
 
   const unified = [{ id: "u1", scope: "almacen", name: "Prod" }];
-  ds.setUnifiedProducts(unified);
+  const result = ds.setUnifiedProducts(unified);
 
-  const stored = JSON.parse(localStorage.getItem("productosCocinaUnificados"));
-  assert.strictEqual(stored.length, 1, "Guarda unifiedProducts");
-  assert.strictEqual(AppState.state.unifiedProducts.length, 1, "Actualiza AppState");
+  assert.strictEqual(result.length, 0, "Debe devolver la lista actual sin cambios");
+  assert.strictEqual(localStorage.getItem("productosCocinaUnificados"), null);
+  assert.strictEqual(AppState.state.unifiedProducts, undefined, "No debe mutar AppState");
 
   ds.__cleanup();
 });
 
-register("DataService usa fallback si AppStorage.saveUnifiedProducts lanza error", () => {
+register("DataService no usa fallback local si AppStorage.saveUnifiedProducts lanza error sin API", () => {
   const AppStorage = {
     keys: { unifiedProducts: "productosCocinaUnificados" },
     saveUnifiedProducts() {
@@ -476,8 +477,11 @@ register("DataService usa fallback si AppStorage.saveUnifiedProducts lanza error
 
   ds.setUnifiedProducts([{ id: "u1", scope: "almacen", name: "Prod" }]);
 
-  const stored = JSON.parse(localStorage.getItem("productosCocinaUnificados"));
-  assert.strictEqual(stored.length, 1, "Debe guardar mediante fallback si falla AppStorage");
+  assert.strictEqual(
+    localStorage.getItem("productosCocinaUnificados"),
+    null,
+    "No debe guardar mediante fallback si la API no esta conectada"
+  );
 
   ds.__cleanup();
 });

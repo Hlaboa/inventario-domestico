@@ -1494,6 +1494,60 @@ function showToast(message, timeout = 1800) {
   setTimeout(() => toast.remove(), timeout + 400);
 }
 
+function renderPantryApiGuard(status = {}) {
+  if (!document.body) return;
+  let blocker = document.getElementById("pantryApiBlocker");
+  const blocking = status.blocking !== false;
+  if (!blocking) {
+    if (blocker) blocker.classList.remove("visible");
+    document.body.classList.remove("pantry-api-blocked");
+    return;
+  }
+
+  if (!blocker) {
+    blocker = document.createElement("div");
+    blocker.id = "pantryApiBlocker";
+    blocker.className = "pantry-api-blocker";
+    blocker.setAttribute("role", "alertdialog");
+    blocker.setAttribute("aria-modal", "true");
+    blocker.innerHTML = `
+      <div class="pantry-api-dialog">
+        <h2>API de pantry no disponible</h2>
+        <p data-role="message"></p>
+        <p class="pantry-api-command">paprika-recetario pantry-api --host 127.0.0.1 --port 8040 --db-path data/pantry.sqlite</p>
+        <button type="button" class="btn btn-secondary" data-role="retry">Reintentar</button>
+      </div>
+    `;
+    blocker
+      .querySelector("[data-role='retry']")
+      ?.addEventListener("click", () => {
+        if (window.DataService && typeof window.DataService.hydrateFromApi === "function") {
+          window.DataService.hydrateFromApi();
+        }
+      });
+    document.body.appendChild(blocker);
+  }
+
+  const message = status.message || "Arranca la API local para seguir usando el almacen.";
+  const error = status.error ? ` (${status.error})` : "";
+  const messageEl = blocker.querySelector("[data-role='message']");
+  if (messageEl) messageEl.textContent = `${message}${error}`;
+  blocker.classList.add("visible");
+  document.body.classList.add("pantry-api-blocked");
+  blocker.querySelector("button")?.focus?.();
+}
+
+function initPantryApiGuard() {
+  if (initPantryApiGuard.done) return;
+  initPantryApiGuard.done = true;
+  window.addEventListener("pantry:status", (event) => {
+    renderPantryApiGuard(event.detail || {});
+  });
+  if (window.DataService && typeof window.DataService.getPantryStatus === "function") {
+    renderPantryApiGuard(window.DataService.getPantryStatus());
+  }
+}
+
 function shouldShowDuplicateToast(name) {
   const now = Date.now();
   const key = (name || "").trim().toLowerCase();
@@ -1569,6 +1623,7 @@ function getInventoryContext() {
 
 function initAfterDom(tStart = performance.now()) {
   console.log("[perf] DOMContentLoaded start");
+  initPantryApiGuard();
   ensureSaveShortcutBinding();
   const refs =
     window.AppBootstrap && typeof window.AppBootstrap.collectRefs === "function"

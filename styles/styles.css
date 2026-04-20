@@ -1201,6 +1201,50 @@ body.lock-scroll {
   opacity: 1;
 }
 
+.pantry-api-blocker {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(22, 18, 14, 0.48);
+}
+
+.pantry-api-blocker.visible {
+  display: flex;
+}
+
+.pantry-api-dialog {
+  width: min(520px, 100%);
+  border-radius: 0.5rem;
+  background: #fffaf4;
+  color: #2f271e;
+  border: 1px solid rgba(47, 39, 30, 0.14);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.26);
+  padding: 1.25rem;
+}
+
+.pantry-api-dialog h2 {
+  margin: 0 0 0.65rem;
+  font-size: 1.15rem;
+}
+
+.pantry-api-dialog p {
+  margin: 0 0 0.85rem;
+}
+
+.pantry-api-command {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  background: rgba(47, 39, 30, 0.08);
+  border-radius: 0.35rem;
+  padding: 0.65rem;
+  overflow-wrap: anywhere;
+}
+
 .filters-edit {
   margin-top: 0.25rem;
   flex-wrap: nowrap;

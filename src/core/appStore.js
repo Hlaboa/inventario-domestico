@@ -271,6 +271,7 @@
 
   let state = ensureStateShape(appState?.getState?.() || {});
   const listeners = new Set();
+  let suppressAppStateNotify = false;
 
   const captureState = (next = {}) => {
     state = ensureStateShape(next);
@@ -290,8 +291,19 @@
   if (appState?.subscribe) {
     appState.subscribe((next) => {
       captureState(next || {});
-      // No disparamos notify aquí para no entrar en recursión con AppState
+      if (!suppressAppStateNotify) {
+        notify();
+      }
     });
+  }
+
+  function withSuppressedAppStateNotify(fn) {
+    suppressAppStateNotify = true;
+    try {
+      return fn();
+    } finally {
+      suppressAppStateNotify = false;
+    }
   }
 
   const dataSetters = {
@@ -339,10 +351,19 @@
     return () => listeners.delete(fn);
   }
 
+  function isWriteBlocked() {
+    return !!(
+      dataService &&
+      typeof dataService.isPantryWriteBlocked === "function" &&
+      dataService.isPantryWriteBlocked()
+    );
+  }
+
   function setState(patch) {
+    if (isWriteBlocked()) return state;
     const merged = ensureStateShape({ ...state, ...(patch || {}) });
     captureState(merged);
-    appState?.hydrate?.({
+    withSuppressedAppStateNotify(() => appState?.hydrate?.({
       unifiedProducts: state.unifiedProducts,
       products: state.products,
       extraProducts: state.extraProducts,
@@ -350,16 +371,18 @@
       producers: state.producers,
       classifications: state.classifications,
       productInstances: state.productInstances,
-    });
+      orders: state.orders,
+    }));
     dataService?.persistState?.(state);
     notify();
     return state;
   }
 
   function setEntity(name, list) {
+    if (isWriteBlocked()) return state[name] || [];
     const setter = dataSetters[name];
     if (typeof setter === "function") {
-      const res = setter(list);
+      const res = withSuppressedAppStateNotify(() => setter(list));
       const base =
         (appState && typeof appState.getState === "function" && ensureStateShape(appState.getState())) ||
         state ||
@@ -385,18 +408,18 @@
           extraProducts: extras,
         });
         captureState(nextState);
-        appState?.hydrate?.({
+        withSuppressedAppStateNotify(() => appState?.hydrate?.({
           unifiedProducts: nextState.unifiedProducts,
           products: nextState.products,
           extraProducts: nextState.extraProducts,
-        });
+        }));
         notify();
         return res;
       }
 
       const nextState = ensureStateShape({ ...base, [name]: res });
       captureState(nextState);
-      appState?.hydrate?.({ [name]: nextState[name] });
+      withSuppressedAppStateNotify(() => appState?.hydrate?.({ [name]: nextState[name] }));
       notify();
       return res;
     }
@@ -414,17 +437,17 @@
       const nextState = ensureStateShape({ ...current, unifiedProducts: unified });
       captureState(nextState);
       if (name === "products") {
-        appState?.hydrate?.({
+        withSuppressedAppStateNotify(() => appState?.hydrate?.({
           products: nextState.products,
           extraProducts: nextState.extraProducts,
           unifiedProducts: nextState.unifiedProducts,
-        });
+        }));
       } else {
-        appState?.hydrate?.({
+        withSuppressedAppStateNotify(() => appState?.hydrate?.({
           products: nextState.products,
           extraProducts: nextState.extraProducts,
           unifiedProducts: nextState.unifiedProducts,
-        });
+        }));
       }
       dataService?.persistState?.(nextState);
       notify();
@@ -435,11 +458,11 @@
       const unified = normalizeUnifiedList(list);
       const nextState = ensureStateShape({ ...state, unifiedProducts: unified });
       captureState(nextState);
-      appState?.hydrate?.({
+      withSuppressedAppStateNotify(() => appState?.hydrate?.({
         unifiedProducts: nextState.unifiedProducts,
         products: nextState.products,
         extraProducts: nextState.extraProducts,
-      });
+      }));
       dataService?.persistState?.(nextState);
       notify();
       return nextState.unifiedProducts;
@@ -459,7 +482,7 @@
       : [];
     const nextState = ensureStateShape({ ...state, [name]: normalized });
     captureState(nextState);
-    appState?.hydrate?.({ [name]: normalized });
+    withSuppressedAppStateNotify(() => appState?.hydrate?.({ [name]: normalized }));
     dataService?.persistState?.(nextState);
     notify();
     return normalized;
@@ -472,10 +495,10 @@
   function bootstrap() {
     let loaded = null;
     if (dataService?.hydrateFromStorage) {
-      loaded = dataService.hydrateFromStorage();
+      loaded = withSuppressedAppStateNotify(() => dataService.hydrateFromStorage());
     } else if (storage?.loadAllData) {
       loaded = storage.loadAllData();
-      appState?.hydrate?.(loaded);
+      withSuppressedAppStateNotify(() => appState?.hydrate?.(loaded));
     }
     if (loaded) {
       captureState({ ...state, ...loaded });
